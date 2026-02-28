@@ -12,7 +12,7 @@ export interface DayActivity {
 
 export interface Stats {
   totalWords: number;
-  learnedWords: number; // correct_count >= 3
+  learnedWords: number; // correct_count >= 5
   currentStreak: number;
   weekActivity: DayActivity[];
 }
@@ -52,7 +52,7 @@ export const useStats = () => {
     }
 
     const totalWords = allWords.length;
-    const learnedWords = allWords.filter(w => w.correct_count >= 3).length;
+    const learnedWords = allWords.filter(w => w.correct_count >= 5).length;
 
     // --- Активность за текущую неделю (Пн–Вс) ---
     const today = new Date();

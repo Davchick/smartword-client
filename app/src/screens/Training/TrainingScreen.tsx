@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,8 @@ type Props = TrainingScreenProps | TabTrainingScreenProps;
 
 const CARDS_VISIBLE = 3;
 
+type Round = 'initial' | 'retry';
+
 export const TrainingScreen = ({ route, navigation }: Props) => {
   const { colors } = useTheme();
   const params = 'params' in route ? route.params : undefined;
@@ -32,31 +34,88 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [stats, setStats] = useState({ knew: 0, didntKnow: 0 });
+  const [initialTotal, setInitialTotal] = useState(0);
   const [finished, setFinished] = useState(false);
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [round, setRound] = useState<Round>('initial');
+  const initialWrongIdsRef = useRef<Set<string>>(new Set());
+  const retryTotalRef = useRef(0);
   const canGoBack = navigation.canGoBack();
 
   useEffect(() => {
     if (!loading && words.length > 0) {
-      setTrainingWords(getTrainingWords());
+      const tw = getTrainingWords();
+      setTrainingWords(tw);
+      setInitialTotal(tw.length);
       setCurrentIndex(0);
       setStats({ knew: 0, didntKnow: 0 });
       setFinished(false);
+      setRound('initial');
+      initialWrongIdsRef.current = new Set();
+      retryTotalRef.current = 0;
     }
   }, [loading]);
+
+  const formatScore = (value: number) => {
+    return Number.isInteger(value) ? String(value) : value.toFixed(1);
+  };
 
   const handleSwipe = async (knew: boolean) => {
     const currentWord = trainingWords[currentIndex];
     if (!currentWord) return;
 
-    await updateWordProgress(currentWord.id, knew);
+    if (round === 'retry') {
+      if (knew) {
+        await updateWordProgress(currentWord.id, true, { correctDelta: 0.5 });
+      } else {
+        // На повторении ошибок не “штрафуем” прогрессом за повторный промах —
+        // просто отправляем слово в конец очереди.
+        await updateWordProgress(currentWord.id, false, { incorrectDelta: 0 });
+      }
+    } else {
+      await updateWordProgress(currentWord.id, knew);
+    }
 
-    setStats((prev) => ({
-      knew: knew ? prev.knew + 1 : prev.knew,
-      didntKnow: !knew ? prev.didntKnow + 1 : prev.didntKnow,
-    }));
+    if (round === 'initial') {
+      setStats((prev) => ({
+        knew: knew ? prev.knew + 1 : prev.knew,
+        didntKnow: !knew ? prev.didntKnow + 1 : prev.didntKnow,
+      }));
+      if (!knew) initialWrongIdsRef.current.add(currentWord.id);
+    } else {
+      // Во втором круге "не знаю" не штрафуем в отчёте,
+      // а за "знаю" после ошибки в первом круге даём 0.5.
+      if (knew) {
+        setStats((prev) => ({ ...prev, knew: prev.knew + 0.5 }));
+      }
+    }
 
+    if (round === 'retry') {
+      // Очередь повторения: вправо = убрать слово, влево = в конец.
+      setTrainingWords((prev) => {
+        if (prev.length === 0) return prev;
+        const head = prev[0]!;
+        const tail = prev.slice(1);
+        const nextQueue = knew ? tail : [...tail, head];
+        if (nextQueue.length === 0) setFinished(true);
+        return nextQueue;
+      });
+      setCurrentIndex(0);
+      return;
+    }
+
+    // Первый круг — линейно идём по списку, и в конце запускаем повтор ошибок.
     if (currentIndex + 1 >= trainingWords.length) {
+      if (initialWrongIdsRef.current.size > 0) {
+        const retryWords = trainingWords.filter((w) => initialWrongIdsRef.current.has(w.id));
+        if (retryWords.length > 0) {
+          retryTotalRef.current = retryWords.length;
+          setTrainingWords(retryWords);
+          setCurrentIndex(0);
+          setRound('retry');
+          return;
+        }
+      }
       setFinished(true);
     } else {
       setCurrentIndex((prev) => prev + 1);
@@ -64,10 +123,14 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   };
 
   const handleRestart = () => {
-    setTrainingWords(getTrainingWords());
+    const tw = getTrainingWords();
+    setTrainingWords(tw);
+    setInitialTotal(tw.length);
     setCurrentIndex(0);
     setStats({ knew: 0, didntKnow: 0 });
     setFinished(false);
+    setRound('initial');
+    initialWrongIdsRef.current = new Set();
   };
 
   if (loading) {
@@ -96,7 +159,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   }
 
   if (finished) {
-    const total = stats.knew + stats.didntKnow;
+    const total = initialTotal;
     const percent = total > 0 ? Math.round((stats.knew / total) * 100) : 0;
 
     return (
@@ -108,7 +171,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
           <View style={[styles.statsRow, { backgroundColor: colors.elevated }]}>
             <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: colors.success }]}>{stats.knew}</Text>
+              <Text style={[styles.statValue, { color: colors.success }]}>{formatScore(stats.knew)}</Text>
               <Text style={[styles.statLabel, { color: colors.muted }]}>Знаю</Text>
             </View>
             <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
@@ -167,7 +230,12 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   }
 
   const visibleCards = trainingWords.slice(currentIndex, currentIndex + CARDS_VISIBLE);
-  const progress = currentIndex / trainingWords.length;
+  const progress =
+    trainingWords.length > 0
+      ? round === 'retry'
+        ? 1 - trainingWords.length / Math.max(1, retryTotalRef.current || trainingWords.length)
+        : currentIndex / trainingWords.length
+      : 0;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
@@ -181,13 +249,15 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         <View style={styles.headerTitlesAbsolute} pointerEvents="none">
           <Text style={[styles.headerTitle, { color: colors.text }]}>{groupName}</Text>
           <Text style={[styles.headerSubtitle, { color: colors.muted }]}>
-            {currentIndex + 1} / {trainingWords.length}
+            {round === 'retry'
+              ? `Повторение ${currentIndex + 1}/${trainingWords.length}`
+              : `${currentIndex + 1} / ${trainingWords.length}`}
           </Text>
         </View>
         {/* Счётчики по краям */}
         <Text style={[styles.counterLeft, { color: colors.danger }]}>{stats.didntKnow}</Text>
         <View style={styles.headerSpacer} />
-        <Text style={[styles.counterRight, { color: colors.success }]}>{stats.knew}</Text>
+        <Text style={[styles.counterRight, { color: colors.success }]}>{formatScore(stats.knew)}</Text>
       </View>
 
       {/* Прогресс-бар */}

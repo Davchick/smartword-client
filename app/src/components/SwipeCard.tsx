@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -41,6 +41,18 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex }
   // Flip state: 0 = front (original), 1 = back (translation) in degrees 0→180
   const flipRotation = useSharedValue(0);
   const isFlipped = useSharedValue(false);
+
+  // Важно: при циклическом переиспользовании карточек (когда слов мало)
+  // одна и та же карточка может снова стать верхней без размонтирования.
+  // Тогда нужно сбросить анимационные значения, иначе жесты могут “умирать”.
+  useEffect(() => {
+    if (!isTop) return;
+    translateX.value = 0;
+    translateY.value = 0;
+    hapticTriggered.value = false;
+    flipRotation.value = 0;
+    isFlipped.value = false;
+  }, [isTop, word.original, word.translation, flipRotation, hapticTriggered, isFlipped, translateX, translateY]);
 
   const tapGesture = Gesture.Tap()
     .enabled(isTop)

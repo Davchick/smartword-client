@@ -128,13 +128,18 @@ export const useWords = (groupId?: string) => {
     return { error: null };
   };
 
-  const updateWordProgress = async (wordId: string, knew: boolean): Promise<void> => {
+  const updateWordProgress = async (
+    wordId: string,
+    knew: boolean,
+    options?: { correctDelta?: number; incorrectDelta?: number }
+  ): Promise<void> => {
     const word = words.find((w) => w.id === wordId);
     if (!word) return;
 
-    const newCount = knew
-      ? word.correct_count + 1
-      : Math.max(0, word.correct_count - 1);
+    const correctDelta = options?.correctDelta ?? 1;
+    const incorrectDelta = options?.incorrectDelta ?? -1;
+    const delta = knew ? correctDelta : incorrectDelta;
+    const newCount = Math.max(0, word.correct_count + delta);
 
     const {
       data: { user },

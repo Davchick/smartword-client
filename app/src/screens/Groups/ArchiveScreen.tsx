@@ -275,7 +275,7 @@ export const ArchiveScreen = ({ navigation }: Props) => {
                     </Text>
                   </View>
                   <View style={styles.wordScore}>
-                    {Array.from({ length: Math.min(word.correct_count, 5) }).map((_, i) => (
+                    {Array.from({ length: Math.min(Math.floor(word.correct_count), 5) }).map((_, i) => (
                       <View
                         key={i}
                         style={[

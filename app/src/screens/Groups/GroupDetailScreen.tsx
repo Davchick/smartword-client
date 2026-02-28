@@ -197,7 +197,9 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
             <View style={styles.wordRight}>
               {item.correct_count > 0 && (
                 <View style={styles.correctBadge}>
-                  <Text style={[styles.correctCount, { color: colors.success }]}>✓ {item.correct_count}</Text>
+                  <Text style={[styles.correctCount, { color: colors.success }]}>
+                    ✓ {Number.isInteger(item.correct_count) ? item.correct_count : item.correct_count.toFixed(1)}
+                  </Text>
                 </View>
               )}
               <TouchableOpacity
