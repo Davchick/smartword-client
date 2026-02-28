@@ -1,0 +1,121 @@
+import React, { useState } from 'react';
+import {
+  Modal,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { X } from 'lucide-react-native';
+import { useTheme, spacing, radii, typography } from '../theme';
+
+interface Props {
+  visible: boolean;
+  onClose: () => void;
+  onSubmit: (name: string, language: string) => Promise<void>;
+}
+
+export const AddGroupModal = ({ visible, onClose, onSubmit }: Props) => {
+  const { colors } = useTheme();
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!name.trim()) return;
+    setLoading(true);
+    await onSubmit(name.trim(), '');
+    setName('');
+    setLoading(false);
+    onClose();
+  };
+
+  const handleClose = () => {
+    setName('');
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior="padding"
+      >
+        <View style={[styles.sheet, { backgroundColor: colors.elevated }]}>
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: colors.text }]}>Новый словарь</Text>
+            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <X color={colors.muted} size={22} />
+            </TouchableOpacity>
+          </View>
+
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
+            placeholder="Название"
+            placeholderTextColor={colors.muted}
+            value={name}
+            onChangeText={setName}
+            autoFocus
+            returnKeyType="done"
+            onSubmitEditing={handleSubmit}
+          />
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: colors.primary }, (!name.trim() || loading) && styles.buttonDisabled]}
+            onPress={handleSubmit}
+            disabled={loading || !name.trim()}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.buttonText, { color: colors.background }]}>{loading ? 'Создание...' : 'Создать'}</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+};
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl + spacing.lg,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.lg,
+  },
+  title: {
+    fontSize: typography.subtitle,
+    fontWeight: '700',
+  },
+  input: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    fontSize: typography.body,
+    marginBottom: spacing.md,
+  },
+  button: {
+    borderRadius: radii.md,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  buttonText: {
+    fontSize: typography.body,
+    fontWeight: '700',
+  },
+});
