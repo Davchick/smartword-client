@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
   Crown,
   LogOut,
@@ -29,7 +29,7 @@ import {
   Check,
   X,
 } from 'lucide-react-native';
-import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
@@ -52,9 +52,10 @@ export const ProfileScreen = () => {
   const { colors } = useTheme();
   const { showToast } = useToast();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { signOut } = useAuth();
   const { profile, loading, refetch, avatarId, setAvatarId, nickname, setNickname } = useProfile();
-  const { groups } = useGroups();
-  const { totalCount: totalWords } = useWords();
+  const { groups, refetch: refetchGroups } = useGroups();
+  const { totalCount: totalWords, refetch: refetchWords } = useWords();
 
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -71,7 +72,7 @@ export const ProfileScreen = () => {
         style: 'destructive',
         onPress: async () => {
           setSigningOut(true);
-          await supabase.auth.signOut();
+          await signOut();
           setSigningOut(false);
         },
       },
@@ -100,6 +101,15 @@ export const ProfileScreen = () => {
       ],
     );
   };
+
+  // Обновляем профиль, группы и счётчик слов при возврате на экран профиля
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+      refetchGroups();
+      refetchWords();
+    }, [refetch, refetchGroups, refetchWords])
+  );
 
   const handleSupport = () => {
     Linking.openURL('mailto:smartword@gmail.com');

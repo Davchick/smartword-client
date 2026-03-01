@@ -30,7 +30,8 @@ import {
 } from 'lucide-react-native';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { useThemeContext } from '../../theme/ThemeContext';
-import { supabase } from '../../lib/supabase';
+import { apiPatch, getBaseUrl } from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
 
 type ThemeMode = 'system' | 'dark' | 'light';
@@ -56,23 +57,11 @@ export const ProfileSettingsScreen = () => {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [isOAuthUser, setIsOAuthUser] = useState(false);
   const [step, setStep] = useState<'current' | 'new'>('current');
   const [verifying, setVerifying] = useState(false);
 
-  useEffect(() => {
-    const checkProvider = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const providers = user.app_metadata?.providers ?? [];
-        const hasPassword = providers.includes('email') || user.email;
-        // OAuth-only если нет пароля (только google/github и т.д.)
-        const isOAuth = user.app_metadata?.provider && user.app_metadata.provider !== 'email';
-        setIsOAuthUser(!!isOAuth && !providers.includes('email'));
-      }
-    };
-    checkProvider();
-  }, []);
+  const { user: authUser } = useAuth();
+  const canChangePassword = !!authUser && !!getBaseUrl();
 
   const resetModal = () => {
     setCurrentPassword('');
@@ -94,23 +83,6 @@ export const ProfileSettingsScreen = () => {
       showToast('Введите текущий пароль', 'error');
       return;
     }
-    setVerifying(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user?.email) {
-      setVerifying(false);
-      showToast('Не удалось получить данные пользователя', 'error');
-      return;
-    }
-    // Проверяем текущий пароль через signInWithPassword
-    const { error } = await supabase.auth.signInWithPassword({
-      email: user.email,
-      password: currentPassword,
-    });
-    setVerifying(false);
-    if (error) {
-      showToast('Неверный текущий пароль', 'error');
-      return;
-    }
     setStep('new');
   };
 
@@ -128,13 +100,19 @@ export const ProfileSettingsScreen = () => {
       return;
     }
     setChangingPassword(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setChangingPassword(false);
-    if (error) {
-      showToast('Не удалось изменить пароль. Попробуйте снова.', 'error');
-    } else {
+    try {
+      await apiPatch('/auth/password', { currentPassword, newPassword });
       showToast('Пароль успешно изменён', 'success');
       handleCloseModal();
+    } catch (err: unknown) {
+      const e = err as { status?: number; body?: { error?: string } };
+      if (e?.status === 401 || e?.body?.error === 'Invalid current password') {
+        showToast('Неверный текущий пароль', 'error');
+      } else {
+        showToast('Не удалось изменить пароль. Попробуйте снова.', 'error');
+      }
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -189,8 +167,8 @@ export const ProfileSettingsScreen = () => {
           <TouchableOpacity
             style={styles.menuRow}
             onPress={() => {
-              if (isOAuthUser) {
-                showToast('Вы вошли через Google. Смена пароля недоступна.', 'error');
+              if (!canChangePassword) {
+                showToast('Войдите в аккаунт для смены пароля', 'error');
                 return;
               }
               setPasswordModalVisible(true);
@@ -202,8 +180,8 @@ export const ProfileSettingsScreen = () => {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.menuText, { color: colors.text }]}>Изменить пароль</Text>
-              {isOAuthUser && (
-                <Text style={[styles.menuMeta, { color: colors.muted }]}>Недоступно для Google-аккаунта</Text>
+              {!canChangePassword && (
+                <Text style={[styles.menuMeta, { color: colors.muted }]}>Доступно только в аккаунте</Text>
               )}
             </View>
             <ChevronRight color={colors.muted} size={18} />

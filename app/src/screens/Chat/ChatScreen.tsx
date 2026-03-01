@@ -20,7 +20,7 @@ import {
   Languages, Copy, Lightbulb,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { supabase } from '../../lib/supabase';
+import { apiPost, getBaseUrl } from '../../lib/api';
 import { useChat } from '../../hooks/useChat';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
@@ -111,8 +111,7 @@ export const ChatScreen = () => {
 
   // Кнопка "Начать практику" — только проверяем авторизацию и переходим к выбору (без запроса к ИИ)
   const handleStartPractice = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    if (!getBaseUrl() || !profile) {
       navigation.navigate('SignIn');
       return;
     }
@@ -175,8 +174,6 @@ export const ChatScreen = () => {
         item={item}
         isUser={isUser}
         colors={colors}
-        supabaseUrl={process.env.EXPO_PUBLIC_SUPABASE_URL as string}
-        supabaseAnonKey={process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY as string}
       />
     );
   };
@@ -430,14 +427,10 @@ const MessageBubble = ({
   item,
   isUser,
   colors,
-  supabaseUrl,
-  supabaseAnonKey,
 }: {
   item: ChatMessage;
   isUser: boolean;
   colors: any;
-  supabaseUrl: string;
-  supabaseAnonKey: string;
 }) => {
   const showActions = !isUser && isForeignText(item.content);
   const [translation, setTranslation] = useState<string | null>(null);
@@ -448,19 +441,9 @@ const MessageBubble = ({
   const [hintLoading, setHintLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const callAction = async (action: 'translate' | 'hint') => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token ?? supabaseAnonKey;
-    const res = await fetch(`${supabaseUrl}/functions/v1/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'apikey': supabaseAnonKey,
-      },
-      body: JSON.stringify({ action, text: item.content }),
-    });
-    const data = await res.json();
+  const callAction = async (action: 'translate' | 'hint'): Promise<string> => {
+    const endpoint = action === 'translate' ? '/chat/translate' : '/chat/hint';
+    const data = await apiPost<{ result?: string }>(endpoint, { text: item.content });
     return data?.result ?? '';
   };
 

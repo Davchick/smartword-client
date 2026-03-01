@@ -8,6 +8,20 @@ const corsHeaders = {
 
 const FREE_MESSAGES_LIMIT = 999999;
 
+function getUserIdFromAuthHeader(authHeader: string | null): string | null {
+  if (!authHeader) return null;
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : authHeader;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payloadJson = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+    const payload = JSON.parse(payloadJson) as { sub?: string; user_id?: string };
+    return payload.sub ?? payload.user_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -31,19 +45,19 @@ Deno.serve(async (req) => {
       );
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: req.headers.get("Authorization")! } } }
-    );
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    const authHeader = req.headers.get("Authorization");
+    const userId = getUserIdFromAuthHeader(authHeader);
+    if (!userId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+    );
 
     // ── Утилитарные действия (перевод / подсказка) ────────────────────────────
     if (action === "translate" || action === "hint") {
@@ -82,17 +96,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: profile, error: profileError } = await supabase
+    let { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("is_premium, ai_messages_used")
-      .eq("id", user.id)
+      .eq("id", userId)
       .single();
 
     if (profileError || !profile) {
-      return new Response(JSON.stringify({ error: "Profile not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      // Если профиля нет — создаём дефолтный профайл на лету,
+      // чтобы не ронять функцию 404.
+      const { data: createdProfile, error: insertError } = await supabase
+        .from("profiles")
+        .insert({
+          id: userId,
+          is_premium: false,
+          ai_messages_used: 0,
+        })
+        .select("is_premium, ai_messages_used")
+        .single();
+
+      if (insertError || !createdProfile) {
+        console.error("Failed to create profile in chat function:", insertError);
+        return new Response(JSON.stringify({ error: "Profile not found" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      profile = createdProfile;
     }
 
     if (!profile.is_premium && profile.ai_messages_used >= FREE_MESSAGES_LIMIT) {
@@ -106,7 +137,7 @@ Deno.serve(async (req) => {
     let wordsQuery = supabase
       .from("words")
       .select("original, translation, correct_count")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .order("correct_count", { ascending: true })
       .limit(40);
 
@@ -218,7 +249,7 @@ CONVERSATION RULES:
     await supabase
       .from("profiles")
       .update({ ai_messages_used: newCount })
-      .eq("id", user.id);
+      .eq("id", userId);
 
     return new Response(
       JSON.stringify({ reply, messages_used: newCount }),

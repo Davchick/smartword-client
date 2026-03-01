@@ -3,8 +3,7 @@ import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import type { Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { SignInScreen } from '../screens/Auth/SignInScreen';
 import { WelcomeScreen } from '../screens/Auth/WelcomeScreen';
 import { TabNavigator } from './TabNavigator';
@@ -17,49 +16,35 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export const RootNavigator = () => {
   const { colors } = useTheme();
   const navRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { user, loading: authLoading } = useAuth();
   const [hasSeenWelcome, setHasSeenWelcome] = useState(false);
+  const hadUserRef = useRef(false);
 
   useEffect(() => {
-    const init = async () => {
-      const [{ data }, seen] = await Promise.all([
-        supabase.auth.getSession(),
-        AsyncStorage.getItem('smartword_has_seen_welcome'),
-      ]);
-
-      setSession(data.session ?? null);
+    AsyncStorage.getItem('smartword_has_seen_welcome').then((seen) => {
       setHasSeenWelcome(seen === '1');
-      setLoading(false);
-    };
-
-    init();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      setSession(newSession);
-
-      if (event === 'SIGNED_IN' && newSession) {
-        // Сбрасываем гостевой режим
-        await AsyncStorage.removeItem('smartword_guest_mode');
-        // Принудительно переходим на Main и сбрасываем стек
-        navRef.current?.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        });
-      }
-
-      if (event === 'SIGNED_OUT') {
-        navRef.current?.reset({
-          index: 0,
-          routes: [{ name: 'Welcome' }],
-        });
-      }
     });
-
-    return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) {
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) {
+      hadUserRef.current = true;
+      AsyncStorage.removeItem('smartword_guest_mode');
+      navRef.current?.reset({
+        index: 0,
+        routes: [{ name: 'Main' }],
+      });
+    } else if (hadUserRef.current) {
+      hadUserRef.current = false;
+      navRef.current?.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    }
+  }, [authLoading, user]);
+
+  if (authLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.primary} size="large" />
@@ -67,12 +52,11 @@ export const RootNavigator = () => {
     );
   }
 
-  // Определяем начальный экран
-  const initialRoute: keyof RootStackParamList = session
+  const initialRoute: keyof RootStackParamList = user
     ? 'Main'
     : hasSeenWelcome
-    ? 'Main'   // гостевой режим — тоже Main
-    : 'Welcome';
+      ? 'Main'
+      : 'Welcome';
 
   return (
     <NavigationContainer ref={navRef}>

@@ -5,15 +5,11 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  TextInput,
   ActivityIndicator,
-  SectionList,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
-  Search,
-  X,
   Archive,
   Trophy,
   Star,
@@ -22,6 +18,7 @@ import {
 } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { useGroups } from '../../hooks/useGroups';
+import { SearchFilterBar } from '../../components/SearchFilterBar';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { GroupsStackParamList } from '../../navigation/types';
@@ -45,6 +42,8 @@ export const ArchiveScreen = ({ navigation }: Props) => {
   const { words, loading } = useWords();
   const { groups } = useGroups();
   const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'count' | 'name' | 'score'>('count');
+  const [sortSheetVisible, setSortSheetVisible] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   // Все архивированные слова
@@ -62,31 +61,45 @@ export const ArchiveScreen = ({ navigation }: Props) => {
 
   // Фильтруем по запросу
   const filtered = useMemo(() => {
-    if (!query.trim()) return archivedWords;
+    let list = archivedWords;
     const q = query.trim().toLowerCase();
-    return archivedWords.filter(
-      (w) =>
-        w.original.toLowerCase().includes(q) ||
-        w.translation.toLowerCase().includes(q)
-    );
+    if (q) {
+      list = list.filter(
+        (w) =>
+          w.original.toLowerCase().includes(q) ||
+          w.translation.toLowerCase().includes(q)
+      );
+    }
+    return list;
   }, [archivedWords, query]);
 
-  // Группируем по словарям
+  // Группируем по словарям и сортируем
   const sections: Section[] = useMemo(() => {
     const map: Record<string, Word[]> = {};
     for (const w of filtered) {
       if (!map[w.group_id]) map[w.group_id] = [];
       map[w.group_id]!.push(w);
     }
-    return Object.entries(map)
-      .map(([groupId, data]) => ({
-        groupId,
-        groupName: groupMap[groupId]?.name ?? 'Неизвестный словарь',
-        language: groupMap[groupId]?.language ?? '',
-        data: data.sort((a, b) => b.correct_count - a.correct_count),
-      }))
-      .sort((a, b) => b.data.length - a.data.length);
-  }, [filtered, groupMap]);
+    const secs = Object.entries(map).map(([groupId, data]) => ({
+      groupId,
+      groupName: groupMap[groupId]?.name ?? 'Неизвестный словарь',
+      language: groupMap[groupId]?.language ?? '',
+      data: data.sort((a, b) => b.correct_count - a.correct_count),
+    }));
+
+    if (sortBy === 'count') {
+      secs.sort((a, b) => b.data.length - a.data.length);
+    } else if (sortBy === 'name') {
+      secs.sort((a, b) => a.groupName.localeCompare(b.groupName));
+    } else if (sortBy === 'score') {
+      secs.sort((a, b) => {
+        const avgA = a.data.reduce((s, w) => s + w.correct_count, 0) / a.data.length;
+        const avgB = b.data.reduce((s, w) => s + w.correct_count, 0) / b.data.length;
+        return avgB - avgA;
+      });
+    }
+    return secs;
+  }, [filtered, groupMap, sortBy]);
 
   const toggleGroup = (id: string) => {
     setExpandedGroups((prev) => {
@@ -116,8 +129,8 @@ export const ArchiveScreen = ({ navigation }: Props) => {
   }
 
   const renderHeader = () => (
-    <View>
-      {/* Статистика-баннер */}
+    <View style={styles.headerContent}>
+      {/* Статистика — компактный Apple-стиль */}
       <View style={[styles.statsBanner, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.statBannerItem}>
           <View style={[styles.statBannerIcon, { backgroundColor: 'rgba(251,191,36,0.15)' }]}>
@@ -144,31 +157,13 @@ export const ArchiveScreen = ({ navigation }: Props) => {
         </View>
       </View>
 
-      {/* Строка поиска */}
-      <View style={[styles.searchWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Search color={colors.muted} size={16} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          placeholder="Поиск по словам..."
-          placeholderTextColor={colors.muted}
-          value={query}
-          onChangeText={setQuery}
-          returnKeyType="search"
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-        {query.length > 0 && (
-          <TouchableOpacity onPress={() => setQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <X color={colors.muted} size={16} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {query.length > 0 && (
-        <Text style={[styles.resultCount, { color: colors.muted }]}>
-          {filtered.length} {filtered.length === 1 ? 'слово' : filtered.length < 5 ? 'слова' : 'слов'}
-        </Text>
-      )}
+      {/* Поиск + сортировка */}
+      <SearchFilterBar
+        searchQuery={query}
+        onSearchChange={setQuery}
+        searchPlaceholder="Поиск по словам..."
+        onSortPress={() => setSortSheetVisible(true)}
+      />
     </View>
   );
 
@@ -269,10 +264,10 @@ export const ArchiveScreen = ({ navigation }: Props) => {
                   ]}
                 >
                   <View style={styles.wordTexts}>
-                    <Text style={[styles.wordOriginal, { color: colors.text }]}>{word.original}</Text>
-                    <Text style={[styles.wordTranslation, { color: colors.textSecondary }]}>
+                    <Text style={[styles.wordNative, { color: colors.textSecondary }]}>
                       {word.translation}
                     </Text>
+                    <Text style={[styles.wordForeign, { color: colors.text }]}>{word.original}</Text>
                   </View>
                   <View style={styles.wordScore}>
                     {Array.from({ length: Math.min(Math.floor(word.correct_count), 5) }).map((_, i) => (
@@ -378,28 +373,8 @@ const styles = StyleSheet.create({
     width: 1,
     height: 40,
   },
-  // Search
-  searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    gap: spacing.sm,
-    marginBottom: spacing.xs,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: typography.body,
-    fontFamily: fonts.regular,
-    padding: 0,
-  },
-  resultCount: {
-    fontSize: typography.small,
-    fontFamily: fonts.regular,
-    marginBottom: spacing.sm,
-    marginLeft: 2,
+  headerContent: {
+    gap: spacing.md,
   },
   // Section cards
   sectionCard: {
@@ -458,11 +433,11 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  wordOriginal: {
-    fontSize: typography.body,
+  wordForeign: {
+    fontSize: typography.subtitle,
     fontFamily: fonts.bold,
   },
-  wordTranslation: {
+  wordNative: {
     fontSize: typography.small,
     fontFamily: fonts.regular,
   },

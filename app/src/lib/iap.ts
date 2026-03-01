@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { apiPatch } from './api';
 
 export const PRODUCT_IDS = {
   MONTHLY: 'smartword_premium_monthly',
@@ -34,12 +34,10 @@ export const initIAP = async (): Promise<any[]> => {
           for (const purchase of results) {
             if (!purchase.acknowledged) {
               await IAP.finishTransactionAsync(purchase, false);
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                await supabase
-                  .from('profiles')
-                  .update({ is_premium: true })
-                  .eq('id', user.id);
+              try {
+                await apiPatch('/profile', { is_premium: true });
+              } catch {
+                // ignore if not logged in or request failed
               }
             }
           }
@@ -72,12 +70,10 @@ export const restorePurchases = async (): Promise<{ error: string | null }> => {
 
     const { results } = await IAP.getPurchaseHistoryAsync();
     if (results && results.length > 0) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase
-          .from('profiles')
-          .update({ is_premium: true })
-          .eq('id', user.id);
+      try {
+        await apiPatch('/profile', { is_premium: true });
+      } catch {
+        // ignore if not logged in or request failed
       }
     }
     return { error: null };

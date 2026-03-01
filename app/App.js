@@ -19,6 +19,7 @@ import {
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { ToastProvider } from './src/components/Toast';
 import { ThemeProvider, useThemeContext } from './src/theme/ThemeContext';
+import { AuthProvider } from './src/contexts/AuthContext';
 import { useColorScheme } from 'react-native';
 
 // Внутренний компонент, который уже имеет доступ к ThemeContext
@@ -27,9 +28,11 @@ const AppInner = () => {
   return (
     <>
       <StatusBar style={resolvedScheme === 'light' ? 'dark' : 'light'} />
-      <ToastProvider>
-        <RootNavigator />
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <RootNavigator />
+        </ToastProvider>
+      </AuthProvider>
     </>
   );
 };

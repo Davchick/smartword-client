@@ -34,6 +34,7 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
   const [selectedGroup, setSelectedGroup] = useState<WordGroup | null>(null);
 
   const navigateToTraining = (screen: 'Training' | 'TrainingWrite', gId?: string, gName?: string) => {
+    if (isTab && (gId == null || gId === '')) return;
     if (isTab) {
       // Navigate into GroupsStack via parent tab navigator
       (navigation as any).navigate('GroupsTab', {
@@ -67,16 +68,16 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
       icon: Bot,
       onPress: () => {
         try {
-          (navigation as any).getParent()?.navigate('ChatTab');
-        } catch {
           (navigation as any).navigate('ChatTab');
+        } catch {
+          (navigation as any).getParent()?.navigate('ChatTab');
         }
       },
     },
   ];
 
-  // Tab mode: group not yet selected — show group picker
-  if (isTab && !selectedGroup) {
+  // Tab mode: show group picker only when there are 2+ groups and none selected yet
+  if (isTab && !selectedGroup && groups.length > 1) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -126,15 +127,39 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
     );
   }
 
-  // Tab mode: group selected — show mode picker
-  // Stack mode: directly show mode picker
-  const activeGroupId = isTab ? selectedGroup?.id : groupId;
-  const activeGroupName = isTab ? selectedGroup?.name : groupName;
+  // Tab mode with no groups — show empty state
+  if (isTab && groups.length === 0) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <View style={styles.headerCenter}>
+            <Text style={[styles.headerTitle, styles.headerTitleLarge, { color: colors.text }]}>Тренировка</Text>
+            <Text style={[styles.headerSubtitleTab, { color: colors.muted }]}>Выберите словарь для тренировки</Text>
+          </View>
+        </View>
+        <View style={styles.emptyWrap}>
+          <BookOpen color={colors.muted} size={48} strokeWidth={1.5} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет словарей</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
+            Создайте словарь на вкладке «Словари» и добавьте слова
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Tab mode: one group → use it; several → use selected. Stack mode: use params.
+  const activeGroupId = isTab
+    ? (groups.length === 1 ? groups[0]?.id : selectedGroup?.id)
+    : groupId;
+  const activeGroupName = isTab
+    ? (groups.length === 1 ? groups[0]?.name : selectedGroup?.name)
+    : groupName;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        {(isTab ? true : true) && (
+        {(isTab ? groups.length > 1 : true) && (
           <TouchableOpacity
             onPress={() => {
               if (isTab) {
@@ -143,10 +168,11 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
                 (navigation as StackProps['navigation']).goBack();
               }
             }}
-            style={styles.backButton}
+            style={[styles.backButton, { backgroundColor: colors.primaryDim }]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.7}
           >
-            <ArrowLeft color={colors.text} size={24} />
+            <ArrowLeft color={colors.primary} size={22} />
           </TouchableOpacity>
         )}
         <View style={styles.headerCenter}>
@@ -197,7 +223,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   backButton: {
-    padding: spacing.xs,
+    padding: spacing.sm,
+    borderRadius: radii.md,
   },
   headerCenter: {
     flex: 1,

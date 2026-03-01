@@ -38,7 +38,8 @@ function checkAnswer(userInput: string, correct: string): boolean {
 type Direction = 'foreign' | 'native';
 
 export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreenProps) => {
-  const { groupId, groupName } = route.params;
+  const groupId = route.params?.groupId;
+  const groupName = route.params?.groupName ?? 'Все слова';
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { words, loading, updateWordProgress, getTrainingWords } = useWords(groupId);
@@ -111,14 +112,19 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   }
 
   if (words.length === 0 || trainingWords.length === 0) {
+    const allArchived = words.length > 0 && trainingWords.length === 0;
     return (
       <View style={[styles.fill, styles.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={[styles.backBtn, { top: insets.top + 8, left: spacing.md }]}>
           <ArrowLeft color={colors.text} size={22} />
         </TouchableOpacity>
-        <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет слов для тренировки</Text>
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>
+          {allArchived ? 'Все слова выучены' : 'Нет слов для тренировки'}
+        </Text>
         <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-          Добавьте слова в словарь, чтобы начать.
+          {allArchived
+            ? 'В этой группе все слова уже хорошо освоены. Выберите другую группу или добавьте новые слова.'
+            : 'Добавьте слова в словарь, чтобы начать.'}
         </Text>
       </View>
     );

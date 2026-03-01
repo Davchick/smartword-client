@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { Plus, BookOpen, MoreHorizontal, Trash2, Pencil, Archive } from 'lucide-react-native';
 import { useGroups } from '../../hooks/useGroups';
 import { useProfile } from '../../hooks/useProfile';
@@ -31,9 +32,9 @@ const FREE_GROUPS_LIMIT = 3;
 export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { groups, loading, createGroup, deleteGroup, renameGroup } = useGroups();
+  const { groups, loading, createGroup, deleteGroup, renameGroup, refetch: refetchGroups } = useGroups();
   const { profile } = useProfile();
-  const { stats } = useStats();
+  const { stats, refetch: refetchStats } = useStats();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -125,6 +126,14 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
     setRenameSaving(false);
     setRenameGroup(null);
   };
+
+  // Всегда обновляем группы и статистику при возврате на экран "Словари"
+  useFocusEffect(
+    useCallback(() => {
+      refetchGroups();
+      refetchStats();
+    }, [refetchGroups, refetchStats])
+  );
 
   if (loading) {
     return (
