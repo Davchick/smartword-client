@@ -23,6 +23,7 @@ import { ThemeProvider } from './src/theme/ThemeContext';
 import { useTheme } from './src/theme';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { useColorScheme } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
 
 const AppInner = () => {
   const { colors, scheme: resolvedScheme } = useTheme();
@@ -57,6 +58,22 @@ export default function App() {
       });
     }
   }, []);
+
+  useEffect(() => {
+    // Настраиваем цвет системной навигационной панели Android под тему приложения
+    (async () => {
+      try {
+        await NavigationBar.setBackgroundColorAsync(
+          scheme === 'light' ? '#F8FAFC' : '#020617'
+        );
+        await NavigationBar.setButtonStyleAsync(
+          scheme === 'light' ? 'dark' : 'light'
+        );
+      } catch {
+        // игнорируем, если платформа не поддерживает
+      }
+    })();
+  }, [scheme]);
   const [fontsLoaded] = useFonts({
     Poppins_600SemiBold,
     Poppins_700Bold,

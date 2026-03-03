@@ -30,9 +30,14 @@ const FREE_WORDS_LIMIT = 30;
 const ARCHIVE_THRESHOLD = 5;
 
 const getBadgeColors = (count: number) => {
-  const c = Math.floor(count);
-  if (c === 1) return { bg: 'rgba(251, 146, 60, 0.2)', text: '#FB923C' };
-  if (c === 2 || c === 3) return { bg: 'rgba(250, 204, 21, 0.2)', text: '#FACC15' };
+  // 0.5 и другие дробные значения до 2 считаем низким прогрессом (оранжевый),
+  // 2–3.99 — средний (жёлтый), 4+ — высокий (зелёный)
+  if (count > 0 && count < 2) {
+    return { bg: 'rgba(251, 146, 60, 0.2)', text: '#FB923C' };
+  }
+  if (count >= 2 && count < 4) {
+    return { bg: 'rgba(250, 204, 21, 0.2)', text: '#FACC15' };
+  }
   return { bg: 'rgba(52, 211, 153, 0.12)', text: '#34D399' };
 };
 

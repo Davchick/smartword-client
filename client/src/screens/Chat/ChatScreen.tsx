@@ -167,6 +167,12 @@ export const ChatScreen = () => {
     Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
   }, [clearMessages, fadeAnim]);
 
+  const handleInsertFromHint = useCallback((text: string) => {
+    if (!text) return;
+    setInputText(text);
+    setTimeout(() => inputRef.current?.focus(), 80);
+  }, []);
+
   const renderMessage = ({ item }: { item: ChatMessage }) => {
     const isUser = item.role === 'user';
     return (
@@ -174,6 +180,7 @@ export const ChatScreen = () => {
         item={item}
         isUser={isUser}
         colors={colors}
+      onInsertHint={handleInsertFromHint}
       />
     );
   };
@@ -444,10 +451,12 @@ const MessageBubble = ({
   item,
   isUser,
   colors,
+  onInsertHint,
 }: {
   item: ChatMessage;
   isUser: boolean;
   colors: any;
+  onInsertHint?: (text: string) => void;
 }) => {
   const showActions = !isUser && isForeignText(item.content);
   const [translation, setTranslation] = useState<string | null>(null);
@@ -507,6 +516,27 @@ const MessageBubble = ({
     setHintLoading(false);
   };
 
+  const getHintOptions = () => {
+    if (!hint) return [];
+    const trimmed = hint.trim();
+    if (!trimmed) return [];
+
+    const lines = trimmed
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length <= 1) {
+      return [trimmed];
+    }
+
+    return lines
+      .map((line) => line.replace(/^[-•\d.]\s*/, '').trim())
+      .filter(Boolean);
+  };
+
+  const hintOptions = getHintOptions();
+
   return (
     <View style={[styles.messageRow, isUser && styles.messageRowUser]}>
       {!isUser && (
@@ -539,7 +569,30 @@ const MessageBubble = ({
                 <>
                   <View style={[styles.actionDivider, { backgroundColor: colors.border }]} />
                   <Text style={[styles.expandedLabel, { color: colors.muted }]}>Как ответить</Text>
-                  <Text style={[styles.expandedText, { color: colors.textSecondary }]}>{hint}</Text>
+                  {hintOptions.length > 0 ? (
+                    <View style={styles.hintOptionsContainer}>
+                      {hintOptions.map((option, idx) => (
+                        <TouchableOpacity
+                          key={`${idx}-${option.slice(0, 20)}`}
+                          style={[
+                            styles.hintOption,
+                            {
+                              backgroundColor: colors.elevated,
+                              borderColor: colors.border,
+                            },
+                          ]}
+                          activeOpacity={0.8}
+                          onPress={() => onInsertHint?.(option)}
+                        >
+                          <Text style={[styles.hintOptionText, { color: colors.text }]}>
+                            {option}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.expandedText, { color: colors.textSecondary }]}>{hint}</Text>
+                  )}
                 </>
               )}
 
@@ -695,6 +748,18 @@ const styles = StyleSheet.create({
   actionDivider: { height: 1, marginVertical: spacing.sm },
   expandedLabel: { fontSize: typography.xs, fontFamily: fonts.bold, letterSpacing: 0.5, marginBottom: 4, textTransform: 'uppercase' },
   expandedText: { fontSize: typography.small, fontFamily: fonts.regular, lineHeight: 20 },
+  hintOptionsContainer: { marginTop: spacing.xs, gap: spacing.xs },
+  hintOption: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  hintOptionText: {
+    fontSize: typography.body,
+    fontFamily: fonts.medium,
+    lineHeight: 22,
+  },
   typingContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
 
   // Input

@@ -199,8 +199,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const inputPlaceholder = 'Введите перевод';
   const primaryAnswer = answerText.split(/[/,|]/)[0]?.trim() ?? '';
 
-  const accuracy = sessionTotal > 0 ? Math.round((sessionCorrect / sessionTotal) * 100) : 0;
-
   const goToNextWord = () => {
     const next = currentIndex + 1;
     if (next >= trainingWords.length) {
@@ -313,7 +311,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>{groupName}</Text>
           <Text style={[styles.headerSub, { color: colors.muted }]}>
             {currentIndex + 1} / {trainingWords.length}
-            {sessionTotal > 0 ? `  ·  ${accuracy}%` : ''}
           </Text>
         </View>
         <TouchableOpacity
@@ -555,9 +552,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   hintIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: radii.sm,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
