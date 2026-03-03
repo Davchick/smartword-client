@@ -12,12 +12,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Check, X as XIcon, ArrowLeftRight } from 'lucide-react-native';
+import { ArrowLeft, Check, X as XIcon, ArrowLeftRight, Lightbulb, RotateCcw } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import type { TrainingWriteScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
-import { useToast } from '../../components/Toast';
 
 function normalize(str: string): string {
   return str
@@ -44,7 +43,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { words, loading, updateWordProgress, getTrainingWords } = useWords(groupId);
-  const { showToast } = useToast();
 
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -56,6 +54,8 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const [sessionTotal, setSessionTotal] = useState(0);
   const [finished, setFinished] = useState(false);
   const [hintCount, setHintCount] = useState(0);
+  const [sessionHints, setSessionHints] = useState(0);
+  const [skipped, setSkipped] = useState(false);
 
   const feedbackScale = useRef(new Animated.Value(0)).current;
   const feedbackOpacity = useRef(new Animated.Value(0)).current;
@@ -74,6 +74,8 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     setSessionTotal(0);
     setFinished(false);
     setHintCount(0);
+    setSessionHints(0);
+    setSkipped(false);
     progressWidth.setValue(0);
   }, [getTrainingWords, progressWidth]);
 
@@ -171,17 +173,20 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
             </View>
             <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
             <View style={styles.statItem}>
-              <Text style={[styles.statVal, { color: colors.primary }]}>{percent}%</Text>
-              <Text style={[styles.statLbl, { color: colors.muted }]}>точность</Text>
+              <Text style={[styles.statVal, { color: colors.primary }]}>{sessionHints}</Text>
+              <Text style={[styles.statLbl, { color: colors.muted }]}>подсказок</Text>
             </View>
           </View>
 
           <TouchableOpacity
-            style={[styles.cta, { backgroundColor: colors.primary, marginTop: spacing.lg }]}
+            style={[styles.resultCta, { backgroundColor: colors.primary, marginTop: spacing.lg }]}
             onPress={initTraining}
             activeOpacity={0.85}
           >
-            <Text style={styles.ctaText}>Заново</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+              <RotateCcw color="#000" size={18} />
+              <Text style={styles.ctaText}>Повторить игру</Text>
+            </View>
           </TouchableOpacity>
         </View>
       </View>
@@ -209,6 +214,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     setHintCount(0);
     feedbackOpacity.setValue(0);
     feedbackScale.setValue(0);
+    setSkipped(false);
     setTimeout(() => inputRef.current?.focus(), 80);
   };
 
@@ -217,16 +223,16 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     setInput(text);
     if (!text.trim()) return;
     if (checkAnswer(text, answerText)) {
+      setSkipped(false);
       setChecked(true);
       setIsCorrect(true);
       setSessionTotal((t) => t + 1);
       setSessionCorrect((c) => c + 1);
       animateFeedback(true);
-      showToast('Верно!', 'success', 4500);
       void updateWordProgress(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0 });
       setTimeout(() => {
         goToNextWord();
-      }, 120);
+      }, 900);
     }
   };
 
@@ -235,6 +241,9 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     if (!primaryAnswer) return;
     if (hintCount >= primaryAnswer.length) return;
 
+    setSkipped(false);
+    setSessionHints((h) => h + 1);
+
     const nextCount = Math.min(primaryAnswer.length, hintCount + 1);
     setHintCount(nextCount);
     const newInput = primaryAnswer.slice(0, nextCount);
@@ -242,24 +251,24 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
 
     if (nextCount >= primaryAnswer.length) {
       // Полностью раскрыли слово подсказками — считаем попытку без очков
+      setSkipped(true);
       setChecked(true);
       setIsCorrect(false);
       setSessionTotal((t) => t + 1);
       animateFeedback(false);
-      showToast(`Слово раскрыто: ${primaryAnswer}`, 'info', 4500);
       setTimeout(() => {
         goToNextWord();
-      }, 900);
+      }, 1300);
     }
   };
 
   const handleDontRemember = () => {
     if (checked) return;
+    setSkipped(true);
     setChecked(true);
     setIsCorrect(false);
     setSessionTotal((t) => t + 1);
     animateFeedback(false);
-    showToast(`Не помню: ${answerText}`, 'error', 5000);
     setTimeout(() => {
       goToNextWord();
     }, 1600);
@@ -272,10 +281,23 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     setIsCorrect(null);
     setHintCount(0);
     feedbackOpacity.setValue(0);
+    setSkipped(false);
   };
 
-  const cardBorderColor = checked ? (isCorrect ? colors.success : colors.danger) : colors.border;
-  const inputBorderColor = checked ? (isCorrect ? colors.success : colors.danger) : colors.border;
+  const cardBorderColor = skipped
+    ? colors.primary
+    : checked
+    ? isCorrect
+      ? colors.success
+      : colors.danger
+    : colors.border;
+  const inputBorderColor = skipped
+    ? colors.border
+    : checked
+    ? isCorrect
+      ? colors.success
+      : colors.danger
+    : colors.border;
 
   return (
     <KeyboardAvoidingView
@@ -369,7 +391,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
         />
 
         {/* Feedback chip */}
-        {checked && (
+        {checked && !skipped && (
           <Animated.View
             style={[styles.feedbackWrap, { opacity: feedbackOpacity, transform: [{ scale: feedbackScale }] }]}
           >
@@ -390,29 +412,29 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
         {/* Actions: hint + don't remember */}
         <View style={styles.actionsRow}>
           <TouchableOpacity
-            style={[
-              styles.secondaryBtn,
-              {
-                borderColor: colors.border,
-                backgroundColor: colors.elevated,
-              },
-              (checked || !primaryAnswer || hintCount >= primaryAnswer.length) && { opacity: 0.4 },
-            ]}
-            onPress={handleHint}
-            disabled={checked || !primaryAnswer || hintCount >= primaryAnswer.length}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.secondaryBtnText, { color: colors.text }]}>Подсказка</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.cta, { backgroundColor: colors.primary }, checked && { opacity: 0.4 }]}
+          style={[styles.cta, { backgroundColor: colors.primary }, checked && { opacity: 0.4 }]}
             onPress={handleDontRemember}
             disabled={checked}
             activeOpacity={0.85}
           >
             <Text style={styles.ctaText}>Не помню</Text>
           </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.hintIconBtn,
+            {
+              borderColor: colors.border,
+              backgroundColor: colors.elevated,
+            },
+            (checked || !primaryAnswer || hintCount >= primaryAnswer.length) && { opacity: 0.4 },
+          ]}
+          onPress={handleHint}
+          disabled={checked || !primaryAnswer || hintCount >= primaryAnswer.length}
+          activeOpacity={0.85}
+        >
+          <Lightbulb color={colors.text} size={18} />
+        </TouchableOpacity>
         </View>
 
         {/* Session stats */}
@@ -429,8 +451,8 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
             </View>
             <View style={[styles.statDiv, { backgroundColor: colors.border }]} />
             <View style={styles.statItem}>
-              <Text style={[styles.statVal, { color: colors.primary }]}>{accuracy}%</Text>
-              <Text style={[styles.statLbl, { color: colors.muted }]}>точность</Text>
+              <Text style={[styles.statVal, { color: colors.primary }]}>{sessionHints}</Text>
+              <Text style={[styles.statLbl, { color: colors.muted }]}>подсказок</Text>
             </View>
           </View>
         )}
@@ -498,12 +520,21 @@ const styles = StyleSheet.create({
   },
   chipText: { fontSize: typography.small, fontFamily: fonts.bold },
   cta: {
+    flex: 1,
     borderRadius: radii.md,
-    paddingVertical: spacing.md + 2,
+    height: 40,
     alignItems: 'center',
-    marginTop: spacing.xs,
+    justifyContent: 'center',
   },
   ctaText: { fontSize: typography.body, fontFamily: fonts.bold, color: '#000' },
+  resultCta: {
+    borderRadius: radii.lg,
+    paddingVertical: spacing.md + 2,
+    paddingHorizontal: spacing.xl,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   statsRow: {
     flexDirection: 'row',
     borderRadius: radii.md,
@@ -523,16 +554,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  secondaryBtn: {
-    flex: 1,
-    borderRadius: radii.md,
-    paddingVertical: spacing.md + 2,
+  hintIconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-  },
-  secondaryBtnText: {
-    fontSize: typography.body,
-    fontFamily: fonts.medium,
   },
   resultCard: {
     borderRadius: radii.lg,
