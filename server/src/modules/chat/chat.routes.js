@@ -5,7 +5,8 @@ const { env } = require('../../config/env');
 
 const router = express.Router();
 
-const FREE_MESSAGES_LIMIT = 999999;
+// Максимум бесплатных сообщений ИИ для непремиум-пользователя
+const FREE_MESSAGES_LIMIT = 10;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'arcee-ai/trinity-large-preview:free';
 
@@ -87,16 +88,23 @@ router.post('/', authMiddleware, async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { isPremium: true, aiMessagesUsed: true },
+      select: { isPremium: true, aiMessagesUsed: true, subscriptionExpiresAt: true },
     });
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    if (!user.isPremium && user.aiMessagesUsed >= FREE_MESSAGES_LIMIT) {
+    const now = new Date();
+    const hasActiveSubscription =
+      !!user.subscriptionExpiresAt && user.subscriptionExpiresAt.getTime() > now.getTime();
+    const isPremium = user.isPremium || hasActiveSubscription;
+
+    const currentUsed = user.aiMessagesUsed ?? 0;
+
+    if (!isPremium && currentUsed >= FREE_MESSAGES_LIMIT) {
       return res.status(403).json({
         error: 'limit_reached',
-        used: user.aiMessagesUsed,
+        used: currentUsed,
       });
     }
 
@@ -172,11 +180,17 @@ CONVERSATION RULES:
     ];
     const reply = await callOpenRouter(openRouterMessages, 300, 0.85);
 
-    const newCount = (user.aiMessagesUsed ?? 0) + 1;
-    await prisma.user.update({
-      where: { id: req.user.id },
-      data: { aiMessagesUsed: newCount },
-    });
+    // Первое приветственное сообщение ИИ для непремиум-пользователя не засчитываем
+    let newCount = currentUsed;
+    const shouldBill = isPremium ? true : currentUsed > 0;
+
+    if (shouldBill) {
+      newCount = currentUsed + 1;
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { aiMessagesUsed: newCount },
+      });
+    }
 
     res.json({ reply: reply || '...', messages_used: newCount });
   } catch (err) {

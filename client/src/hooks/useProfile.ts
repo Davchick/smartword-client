@@ -8,6 +8,8 @@ export interface Profile {
   is_premium: boolean;
   ai_messages_used: number;
   created_at: string;
+  subscription_type?: string | null;
+  subscription_expires_at?: string | null;
 }
 
 const AVATAR_KEY = 'smartword_avatar_id';
@@ -71,6 +73,8 @@ export const useProfile = () => {
     is_premium: authUser.is_premium,
     ai_messages_used: authUser.ai_messages_used,
     created_at: authUser.created_at,
+    subscription_type: (authUser as any).subscription_type ?? null,
+    subscription_expires_at: (authUser as any).subscription_expires_at ?? null,
   } : null);
 
   return {

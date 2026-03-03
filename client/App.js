@@ -19,21 +19,29 @@ import {
 } from '@expo-google-fonts/montserrat';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { ToastProvider } from './src/components/Toast';
-import { ThemeProvider, useThemeContext } from './src/theme/ThemeContext';
+import { ThemeProvider } from './src/theme/ThemeContext';
+import { useTheme } from './src/theme';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { useColorScheme } from 'react-native';
 
-// Внутренний компонент, который уже имеет доступ к ThemeContext
 const AppInner = () => {
-  const { resolvedScheme } = useThemeContext();
+  const { colors, scheme: resolvedScheme } = useTheme();
+
   return (
     <>
       <StatusBar style={resolvedScheme === 'light' ? 'dark' : 'light'} />
-      <AuthProvider>
-        <ToastProvider>
-          <RootNavigator />
-        </ToastProvider>
-      </AuthProvider>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+        }}
+      >
+        <AuthProvider>
+          <ToastProvider>
+            <RootNavigator />
+          </ToastProvider>
+        </AuthProvider>
+      </View>
     </>
   );
 };

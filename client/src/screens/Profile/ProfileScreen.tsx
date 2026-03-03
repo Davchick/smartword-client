@@ -33,7 +33,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
-import { PaywallModal } from '../../components/PaywallModal';
 import { restorePurchases } from '../../lib/iap';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { useToast } from '../../components/Toast';
@@ -57,7 +56,6 @@ export const ProfileScreen = () => {
   const { groups, refetch: refetchGroups } = useGroups();
   const { totalCount: totalWords, refetch: refetchWords } = useWords();
 
-  const [paywallVisible, setPaywallVisible] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
@@ -140,13 +138,13 @@ export const ProfileScreen = () => {
   }
 
   const aiUsed = profile?.ai_messages_used ?? 0;
-  const aiPercent = Math.min(aiUsed / 6, 1);
+  const aiPercent = Math.min(aiUsed / 10, 1);
   const displayName = nickname || (profile ? 'Мой профиль' : 'Гостевой режим');
   const accentColor = AVATAR_COLORS[avatarId];
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
+      style={{ flex: 1, backgroundColor: 'transparent' }}
       contentContainerStyle={[
         styles.content,
         { paddingTop: insets.top + spacing.sm, paddingBottom: insets.bottom + spacing.xl },
@@ -154,80 +152,84 @@ export const ProfileScreen = () => {
       showsVerticalScrollIndicator={false}
     >
       {/* Кнопка настроек */}
-      <TouchableOpacity
-        style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-        onPress={() => navigation.navigate('ProfileSettings')}
-        activeOpacity={0.7}
-      >
-        <Settings color={colors.muted} size={20} />
-      </TouchableOpacity>
+      <View style={styles.settingsHeader}>
+        <TouchableOpacity
+          style={[styles.settingsBtn, { backgroundColor: 'transparent', borderColor: colors.border }]}
+          onPress={() => navigation.navigate('ProfileSettings')}
+          activeOpacity={0.7}
+        >
+          <Settings color={colors.muted} size={20} />
+        </TouchableOpacity>
+      </View>
 
       {/* Герой — аватар + ник */}
-      <View style={styles.heroSection}>
-        <TouchableOpacity
-          style={[
-            styles.avatarCircle,
-            {
-              backgroundColor: accentColor + '22',
-              borderColor: accentColor + '88',
-              borderWidth: 2.5,
-            },
-          ]}
-          onPress={() => setAvatarModalVisible(true)}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.avatarEmoji}>{AVATAR_CHARS[avatarId]}</Text>
-          <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
-            <Pencil color={colors.background} size={10} />
-          </View>
-        </TouchableOpacity>
-
-        {editingNick ? (
-          <View style={styles.nickEditRow}>
-            <TextInput
-              style={[
-                styles.nickInput,
-                { color: colors.text, borderColor: colors.primary, backgroundColor: colors.card },
-              ]}
-              value={nickDraft}
-              onChangeText={setNickDraft}
-              autoFocus
-              maxLength={20}
-              placeholder="Введите ник..."
-              placeholderTextColor={colors.muted}
-            />
-            <TouchableOpacity
-              onPress={saveNick}
-              style={[styles.nickActionBtn, { backgroundColor: colors.primary }]}
-              activeOpacity={0.8}
-            >
-              <Check color={colors.background} size={16} strokeWidth={3} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setEditingNick(false)}
-              style={[styles.nickActionBtn, { backgroundColor: colors.elevated }]}
-              activeOpacity={0.8}
-            >
-              <X color={colors.muted} size={16} />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity style={styles.nickRow} onPress={startEditNick} activeOpacity={0.7}>
-            <Text style={[styles.heroTitle, { color: colors.text }]}>{displayName}</Text>
-            <Pencil color={colors.muted} size={13} style={{ marginTop: 2 }} />
+      <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+        <View style={styles.heroSection}>
+          <TouchableOpacity
+            style={[
+              styles.avatarCircle,
+              {
+                backgroundColor: accentColor + '22',
+                borderColor: accentColor + '88',
+                borderWidth: 2.5,
+              },
+            ]}
+            onPress={() => setAvatarModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.avatarEmoji}>{AVATAR_CHARS[avatarId]}</Text>
+            <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
+              <Pencil color={colors.background} size={10} />
+            </View>
           </TouchableOpacity>
-        )}
 
-        {profile?.is_premium && (
-          <View style={[styles.premiumBadge, { backgroundColor: colors.primaryDim }]}>
-            <Crown color={colors.primary} size={13} />
-            <Text style={[styles.premiumBadgeText, { color: colors.primary }]}>Premium</Text>
-          </View>
-        )}
+          {editingNick ? (
+            <View style={styles.nickEditRow}>
+              <TextInput
+                style={[
+                  styles.nickInput,
+                  { color: colors.text, borderColor: colors.primary, backgroundColor: colors.card },
+                ]}
+                value={nickDraft}
+                onChangeText={setNickDraft}
+                autoFocus
+                maxLength={20}
+                placeholder="Введите ник..."
+                placeholderTextColor={colors.muted}
+              />
+              <TouchableOpacity
+                onPress={saveNick}
+                style={[styles.nickActionBtn, { backgroundColor: colors.primary }]}
+                activeOpacity={0.8}
+              >
+                <Check color={colors.background} size={16} strokeWidth={3} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setEditingNick(false)}
+                style={[styles.nickActionBtn, { backgroundColor: colors.elevated }]}
+                activeOpacity={0.8}
+              >
+                <X color={colors.muted} size={16} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.nickRow} onPress={startEditNick} activeOpacity={0.7}>
+              <Text style={[styles.heroTitle, { color: colors.text }]}>{displayName}</Text>
+              <Pencil color={colors.muted} size={13} style={{ marginTop: 2 }} />
+            </TouchableOpacity>
+          )}
+
+          {profile?.is_premium && (
+            <View style={[styles.premiumBadge, { backgroundColor: colors.primaryDim }]}>
+              <Crown color={colors.primary} size={13} />
+              <Text style={[styles.premiumBadgeText, { color: colors.primary }]}>Premium</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* Карточка статистики */}
-      <View style={[styles.statsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.statsCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
         <View style={styles.statItem}>
           <View style={[styles.statIconWrap, { backgroundColor: colors.primaryDim }]}>
             <BookOpen color={colors.primary} size={15} />
@@ -249,7 +251,7 @@ export const ProfileScreen = () => {
             <MessageCircle color={colors.primary} size={15} />
           </View>
           <Text style={[styles.statValue, { color: colors.text }]}>
-            {profile?.is_premium ? '∞' : `${aiUsed}/6`}
+            {profile?.is_premium ? '∞' : `${aiUsed}/10`}
           </Text>
           <Text style={[styles.statLabel, { color: colors.muted }]}>AI-чат</Text>
         </View>
@@ -257,10 +259,10 @@ export const ProfileScreen = () => {
 
       {/* AI прогресс */}
       {profile && !profile.is_premium && (
-        <View style={[styles.progressCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.progressCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <View style={styles.progressHeader}>
             <Text style={[styles.progressTitle, { color: colors.text }]}>AI-сообщения</Text>
-            <Text style={[styles.progressCount, { color: colors.muted }]}>{aiUsed} из 6</Text>
+            <Text style={[styles.progressCount, { color: colors.muted }]}>{aiUsed} из 10</Text>
           </View>
           <View style={[styles.progressTrack, { backgroundColor: colors.border }]}>
             <View
@@ -279,26 +281,26 @@ export const ProfileScreen = () => {
       {/* Premium блок */}
       {profile ? (
         !profile.is_premium ? (
-          <TouchableOpacity
-            style={[styles.upgradeCard, { borderColor: colors.primary }]}
-            onPress={() => setPaywallVisible(true)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.upgradeLeft}>
+          <View style={[styles.upgradeCard, { borderColor: colors.primary, backgroundColor: colors.card }]}>
+            <TouchableOpacity
+              style={styles.upgradeLeft}
+              onPress={() => navigation.navigate('BillingPayment')}
+              activeOpacity={0.85}
+            >
               <Crown color={colors.primary} size={26} />
-              <View>
+              <View style={{ flex: 1, marginLeft: spacing.md }}>
                 <Text style={[styles.upgradeTitle, { color: colors.text }]}>SmartWord Premium</Text>
                 <Text style={[styles.upgradeSubtitle, { color: colors.muted }]}>
                   Безлимит · AI-чат · от 299 ₽/мес
                 </Text>
               </View>
-            </View>
-            <View style={[styles.upgradeArrow, { backgroundColor: colors.primary }]}>
-              <ChevronRight color={colors.background} size={18} />
-            </View>
-          </TouchableOpacity>
+              <View style={[styles.upgradeArrow, { backgroundColor: colors.primary }]}>
+                <ChevronRight color={colors.background} size={18} />
+              </View>
+            </TouchableOpacity>
+          </View>
         ) : (
-          <View style={[styles.premiumActiveCard, { backgroundColor: colors.primaryDim, borderColor: colors.primary }]}>
+          <View style={[styles.premiumActiveCard, { borderColor: colors.primary, backgroundColor: colors.card }]}>
             <Crown color={colors.primary} size={22} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.upgradeTitle, { color: colors.primary }]}>Premium активен</Text>
@@ -310,7 +312,7 @@ export const ProfileScreen = () => {
           </View>
         )
       ) : (
-        <View style={[styles.premiumActiveCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.premiumActiveCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <Crown color={colors.primary} size={22} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.upgradeTitle, { color: colors.text }]}>Создайте аккаунт</Text>
@@ -330,7 +332,7 @@ export const ProfileScreen = () => {
 
       {/* Сообщество */}
       <Text style={[styles.sectionLabel, { color: colors.muted }]}>СООБЩЕСТВО</Text>
-      <View style={[styles.menuBlock, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.menuBlock, { borderColor: colors.border, backgroundColor: colors.card }]}>
         <TouchableOpacity
           style={[styles.menuRow, { borderBottomColor: colors.border }]}
           onPress={handleSupport}
@@ -360,7 +362,7 @@ export const ProfileScreen = () => {
 
       {/* Аккаунт */}
       <Text style={[styles.sectionLabel, { color: colors.muted }]}>АККАУНТ</Text>
-      <View style={[styles.menuBlock, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.menuBlock, { borderColor: colors.border, backgroundColor: colors.card }]}>
         {profile ? (
           <>
             {!profile.is_premium && (
@@ -410,15 +412,6 @@ export const ProfileScreen = () => {
       </View>
 
       <Text style={[styles.versionText, { color: colors.muted }]}>SmartWord v1.0.0</Text>
-
-      {profile && (
-        <PaywallModal
-          visible={paywallVisible}
-          onClose={() => setPaywallVisible(false)}
-          reason="groups"
-          onPurchaseSuccess={refetch}
-        />
-      )}
 
       {/* Модальное окно выбора аватарки */}
       <Modal
@@ -483,6 +476,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
+  settingsHeader: {
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
   settingsBtn: {
     alignSelf: 'flex-end',
     width: 40,
@@ -491,6 +489,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  heroCard: {
+    borderRadius: radii.lg,
+    padding: spacing.md,
   },
   heroSection: {
     alignItems: 'center',

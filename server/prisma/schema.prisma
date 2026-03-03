@@ -20,6 +20,10 @@ model User {
   aiMessagesUsed Int            @default(0)
   createdAt      DateTime       @default(now())
 
+  // Подписка через ЮKassa (разовые платежи с продлением срока)
+  subscriptionType      String?
+  subscriptionExpiresAt DateTime?
+
   groups              WordGroup[]
   words               Word[]
   refreshTokens       RefreshToken[]

@@ -18,6 +18,12 @@ const env = {
   smtpPass: process.env.SMTP_PASS || '',
   mailFrom: process.env.MAIL_FROM || process.env.SMTP_USER || 'noreply@smartword.app',
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+
+  // ЮKassa (подписка)
+  yookassaShopId: process.env.YOOKASSA_SHOP_ID || '',
+  yookassaSecretKey: process.env.YOOKASSA_SECRET_KEY || '',
+  // URL, куда ЮKassa вернёт пользователя после оплаты (можно указать маркетплейс / лендинг)
+  yookassaReturnUrl: process.env.YOOKASSA_RETURN_URL || process.env.APP_PUBLIC_URL || process.env.BASE_URL || 'http://localhost:3000',
 };
 
 module.exports = { env };

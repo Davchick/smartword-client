@@ -18,6 +18,7 @@ const groupsRouter = require('./modules/groups/groups.routes');
 const wordsRouter = require('./modules/words/words.routes');
 const statsRouter = require('./modules/stats/stats.routes');
 const chatRouter = require('./modules/chat/chat.routes');
+const billingRouter = require('./modules/billing/billing.routes');
 
 app.use('/auth', authRouter);
 app.use('/profile', profileRouter);
@@ -25,6 +26,7 @@ app.use('/groups', groupsRouter);
 app.use('/words', wordsRouter);
 app.use('/stats', statsRouter);
 app.use('/chat', chatRouter);
+app.use('/billing', billingRouter);
 
 const port = env.port;
 

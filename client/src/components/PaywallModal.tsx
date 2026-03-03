@@ -21,9 +21,9 @@ interface Props {
 }
 
 const REASON_TITLES: Record<Props['reason'], string> = {
-  groups: 'Вы достигли лимита бесплатных словарей',
-  words: 'Вы достигли лимита бесплатных слов',
-  chat: 'Бесплатные сообщения в AI-чате закончились',
+  groups: 'Лимит бесплатных словарей',
+  words: 'Лимит бесплатных слов',
+  chat: 'Лимит бесплатных сообщений в AI-чате',
 };
 
 const FEATURES = [
@@ -68,28 +68,53 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
-        <View style={[styles.sheet, { backgroundColor: colors.elevated }]}>
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           <TouchableOpacity style={styles.closeButton} onPress={onClose}>
             <X color={colors.muted} size={22} />
           </TouchableOpacity>
 
           <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-            <View style={styles.iconRow}>
-              <Crown color={colors.primary} size={44} />
+            <View style={styles.heroRow}>
+              <View style={[styles.heroCircleOuter, { borderColor: `${colors.primary}55` }]}>
+                <View style={[styles.heroCircleInner, { backgroundColor: colors.primary }]}>
+                  <Crown color="#0f172a" size={30} />
+                </View>
+              </View>
+              <View style={styles.heroTextBlock}>
+                <Text style={[styles.title, { color: colors.text }]}>SmartWord Premium</Text>
+                <Text style={[styles.subtitle, { color: colors.muted }]}>{REASON_TITLES[reason]}</Text>
+              </View>
             </View>
 
-            <Text style={[styles.title, { color: colors.text }]}>SmartWord Premium</Text>
-            <Text style={[styles.subtitle, { color: colors.muted }]}>{REASON_TITLES[reason]}</Text>
             <Text style={[styles.subtitleSecondary, { color: colors.textSecondary }]}>
-              Учите нужные слова без ограничений: больше словарей, больше тренировок и живой диалог с AI.
+              Красивые словари, умные тренировки и живой диалог с ИИ — без ограничений и лимитов.
             </Text>
 
-            <View style={[styles.featuresBlock, { backgroundColor: colors.card }]}>
+            <View
+              style={[
+                styles.featuresBlock,
+                {
+                  backgroundColor: 'rgba(15,23,42,0.85)',
+                  borderColor: 'rgba(148,163,184,0.45)',
+                },
+              ]}
+            >
               {FEATURES.map(({ icon: Icon, text }, i) => (
                 <View key={i} style={styles.featureRow}>
-                  <Check color={colors.success} size={18} />
+                  <View style={[styles.featureIconWrap, { backgroundColor: 'rgba(15,23,42,0.9)' }]}>
+                    <Check color={colors.success} size={16} />
+                  </View>
+                  <Icon color={colors.primary} size={18} />
                   <Text style={[styles.featureText, { color: colors.text }]}>{text}</Text>
                 </View>
               ))}
@@ -101,8 +126,12 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
                   key={product.id}
                   style={[
                     styles.productCard,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                    selectedProduct === product.id && { borderColor: colors.primary, backgroundColor: colors.primaryDim },
+                    {
+                      backgroundColor:
+                        selectedProduct === product.id ? 'rgba(15,23,42,0.95)' : 'rgba(15,23,42,0.75)',
+                      borderColor:
+                        selectedProduct === product.id ? colors.primary : 'rgba(148,163,184,0.5)',
+                    },
                   ]}
                   onPress={() => setSelectedProduct(product.id as ProductId)}
                   activeOpacity={0.8}
@@ -110,8 +139,7 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
                   <View style={styles.productInfo}>
                     <Text style={[
                       styles.productLabel,
-                      { color: colors.textSecondary },
-                      selectedProduct === product.id && { color: colors.text },
+                      { color: selectedProduct === product.id ? colors.text : colors.textSecondary },
                     ]}>
                       {product.label}
                     </Text>
@@ -123,8 +151,7 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
                   </View>
                   <Text style={[
                     styles.productPrice,
-                    { color: colors.textSecondary },
-                    selectedProduct === product.id && { color: colors.primary },
+                    { color: selectedProduct === product.id ? colors.primary : colors.textSecondary },
                   ]}>
                     {product.price}
                   </Text>
@@ -133,7 +160,14 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
             </View>
 
             <TouchableOpacity
-              style={[styles.purchaseButton, { backgroundColor: colors.primary }, purchasing && styles.purchaseButtonDisabled]}
+              style={[
+                styles.purchaseButton,
+                {
+                  backgroundColor: colors.primary,
+                  shadowColor: colors.primary,
+                },
+                purchasing && styles.purchaseButtonDisabled,
+              ]}
               onPress={handlePurchase}
               disabled={purchasing}
               activeOpacity={0.85}
@@ -141,7 +175,7 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
               {purchasing ? (
                 <ActivityIndicator color={colors.background} />
               ) : (
-                <Text style={[styles.purchaseButtonText, { color: colors.background }]}>Оформить</Text>
+                <Text style={[styles.purchaseButtonText, { color: '#0f172a' }]}>Оформить Premium</Text>
               )}
             </TouchableOpacity>
 
@@ -164,35 +198,54 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
   },
   sheet: {
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
+    borderRadius: radii.lg,
     padding: spacing.lg,
-    paddingBottom: spacing.xl + spacing.lg,
-    maxHeight: '90%',
+    paddingBottom: spacing.xl,
+    maxHeight: '85%',
+    borderWidth: 1,
   },
   closeButton: {
     alignSelf: 'flex-end',
     marginBottom: spacing.sm,
     padding: spacing.xs,
   },
-  iconRow: {
+  heroRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
     marginBottom: spacing.md,
   },
+  heroCircleOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15,23,42,0.9)',
+  },
+  heroCircleInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTextBlock: {
+    flex: 1,
+    gap: 4,
+  },
   title: {
-    fontSize: typography.title,
+    fontSize: typography.subtitle,
     fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: spacing.xs,
   },
   subtitle: {
     fontSize: typography.small,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
   },
   subtitleSecondary: {
     fontSize: typography.small,
@@ -201,18 +254,30 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   featuresBlock: {
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     padding: spacing.md,
     marginBottom: spacing.lg,
     gap: spacing.sm,
+    borderWidth: 1,
   },
   featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  featureIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.5)',
   },
   featureText: {
     fontSize: typography.body,
+    flex: 1,
   },
   productsBlock: {
     gap: spacing.sm,
@@ -222,7 +287,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     padding: spacing.md,
     borderWidth: 1.5,
   },
@@ -249,10 +314,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   purchaseButton: {
-    borderRadius: radii.md,
-    padding: spacing.md,
+    borderRadius: radii.full,
+    paddingVertical: spacing.md + 2,
     alignItems: 'center',
     marginBottom: spacing.md,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 8,
   },
   purchaseButtonDisabled: {
     opacity: 0.7,
@@ -269,3 +338,4 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
   },
 });
+

@@ -44,7 +44,7 @@ const isForeignText = (text: string): boolean => {
   return foreignChars / totalChars > 0.4;
 };
 
-const FREE_MESSAGES_LIMIT = 6;
+const FREE_MESSAGES_LIMIT = 10;
 
 type ChatStage =
   | 'welcome'    // начальный экран
@@ -264,11 +264,19 @@ export const ChatScreen = () => {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[styles.container, { backgroundColor: 'transparent' }]}
       behavior="padding"
     >
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: insets.top + spacing.sm, borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + spacing.sm,
+            borderBottomWidth: 0,
+          },
+        ]}
+      >
         <View style={styles.headerLeft}>
           <View style={[styles.botAvatarLarge, { backgroundColor: colors.primaryDim }]}>
             <Bot color={colors.primary} size={22} />
@@ -289,7 +297,11 @@ export const ChatScreen = () => {
             </TouchableOpacity>
           )}
           {stage !== 'welcome' && (
-            <TouchableOpacity onPress={handleReset} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} style={styles.clearBtn}>
+            <TouchableOpacity
+              onPress={handleReset}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.clearBtn}
+            >
               <RefreshCw color={colors.muted} size={18} />
             </TouchableOpacity>
           )}
@@ -377,10 +389,15 @@ export const ChatScreen = () => {
             </View>
           )}
 
-          <View style={[
-            styles.inputContainer,
-            { paddingBottom: insets.bottom + spacing.sm, borderTopColor: colors.border, backgroundColor: colors.background },
-          ]}>
+          <View
+            style={[
+              styles.inputContainer,
+              {
+                paddingBottom: insets.bottom + spacing.sm,
+                borderTopWidth: 0,
+              },
+            ]}
+          >
             <TextInput
               ref={inputRef}
               style={[styles.input, { color: colors.text, backgroundColor: colors.card, borderColor: colors.border }]}
