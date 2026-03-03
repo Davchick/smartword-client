@@ -1,38 +1,12 @@
 const express = require('express');
 const { prisma } = require('../../db/prisma');
 const { authMiddleware } = require('../../middleware/auth');
-const { env } = require('../../config/env');
+const aiService = require('./aiService');
 
 const router = express.Router();
 
 // Максимум бесплатных сообщений ИИ для непремиум-пользователя
 const FREE_MESSAGES_LIMIT = 10;
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'arcee-ai/trinity-large-preview:free';
-
-async function callOpenRouter(messages, maxTokens = 300, temperature = 0.85) {
-  const res = await fetch(OPENROUTER_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.openrouterApiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://smartword.app',
-      'X-Title': 'SmartWord',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages,
-      max_tokens: maxTokens,
-      temperature,
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OpenRouter error: ${res.status} ${text}`);
-  }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content ?? '';
-}
 
 /**
  * POST /chat/translate
@@ -45,8 +19,7 @@ router.post('/translate', authMiddleware, async (req, res) => {
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ error: 'text is required' });
     }
-    const prompt = `Translate the following text into Russian. Return ONLY the translation, no explanations, no quotes:\n\n${text}`;
-    const result = await callOpenRouter([{ role: 'user', content: prompt }], 200, 0.5);
+    const result = await aiService.translateText(text);
     res.json({ result: result.trim() });
   } catch (err) {
     console.error('[chat/translate]', err);
@@ -65,8 +38,7 @@ router.post('/hint', authMiddleware, async (req, res) => {
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ error: 'text is required' });
     }
-    const prompt = `The user is learning a foreign language and doesn't know how to respond to this message:\n\n"${text}"\n\nWrite 2-3 short natural reply suggestions. CRITICAL RULES:\n- Use EXACTLY the same language, dialect, and style as the message above. If the message is in American English slang — reply in American English slang. If Arabic — reply in Arabic. If French — reply in French. Zero exceptions.\n- Never use Russian or any other language not present in the message.\n- Match the tone and register precisely (casual, formal, slang, etc.).\n- Keep each suggestion to one short sentence.\n- Format as a numbered list (1. 2. 3.). No explanations, no translations.`;
-    const result = await callOpenRouter([{ role: 'user', content: prompt }], 200, 0.5);
+    const result = await aiService.generateHint(text);
     res.json({ result: result.trim() });
   } catch (err) {
     console.error('[chat/hint]', err);
@@ -174,11 +146,7 @@ CONVERSATION RULES:
 - Never correct grammar. Never say "Great job!". Just talk like a human.`;
     }
 
-    const openRouterMessages = [
-      { role: 'system', content: systemPrompt },
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
-    ];
-    const reply = await callOpenRouter(openRouterMessages, 300, 0.85);
+    const reply = await aiService.chat(messages, systemPrompt);
 
     // Первое приветственное сообщение ИИ для непремиум-пользователя не засчитываем
     let newCount = currentUsed;
@@ -196,6 +164,20 @@ CONVERSATION RULES:
   } catch (err) {
     console.error('[chat POST]', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /chat/usage
+ * Returns usage stats for all API keys
+ */
+router.get('/usage', authMiddleware, async (req, res) => {
+  try {
+    const stats = aiService.getUsageStats();
+    res.json({ stats });
+  } catch (err) {
+    console.error('[chat/usage]', err);
+    res.status(500).json({ error: 'Failed to get usage stats' });
   }
 });
 

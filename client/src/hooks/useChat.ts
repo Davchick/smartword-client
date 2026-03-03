@@ -85,16 +85,26 @@ export const useChat = () => {
       console.error('[useChat] error:', err);
       const e = err as { status?: number; body?: { error?: string } };
       let errorContent = 'Ошибка соединения. Попробуйте позже.';
+      
       if (e?.body?.error === 'limit_reached') {
         setLimitReached(true);
         errorContent = 'Лимит сообщений исчерпан.';
+      } else if (e?.body?.error === 'No OpenRouter API keys configured') {
+        errorContent = 'AI сервис не настроен. Обратитесь к администратору.';
+      } else if (e?.body?.error === 'All OpenRouter API keys exhausted') {
+        errorContent = 'Превышен лимит запросов. Попробуйте через минуту.';
+      } else if (e?.body?.error?.includes('rate limit')) {
+        errorContent = 'Превышен лимит запросов. Попробуйте через минуту.';
       } else if (e?.status === 401) {
         errorContent = 'Необходима авторизация. Войдите в аккаунт.';
       } else if (e?.status === 403) {
         errorContent = 'Лимит сообщений исчерпан.';
+      } else if (e?.status === 502) {
+        errorContent = 'AI сервис временно недоступен. Попробуйте позже.';
       } else if (typeof e?.body?.error === 'string') {
         errorContent = e.body.error;
       }
+      
       setMessages((prev) => {
         const next = [
           ...prev,

@@ -7,8 +7,10 @@ const env = {
   databaseUrl: process.env.DATABASE_URL || '',
   jwtSecret: process.env.JWT_SECRET || 'dev_jwt_secret_change_me',
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET || 'dev_jwt_refresh_secret_change_me',
-  openrouterApiKey: process.env.OPENROUTER_API_KEY || '',
-  // Публичный URL приложения/бэкенда для ссылок в письмах (например https://api.example.com или http://localhost:3000)
+  // OpenRouter API ключи (через запятую для fallback, минимум 1)
+  // Каждый ключ с $10+ даёт 1,000 бесплатных запросов/день
+  openrouterApiKeys: process.env.OPENROUTER_API_KEYS || '',
+  // Публичный URL приложения/бэкенда для ссылок в письмах
   appPublicUrl: process.env.APP_PUBLIC_URL || process.env.BASE_URL || 'http://localhost:3000',
   // SMTP (для разработки можно использовать Ethereal или Mailtrap)
   smtpHost: process.env.SMTP_HOST || '',
@@ -22,9 +24,7 @@ const env = {
   // ЮKassa (подписка)
   yookassaShopId: process.env.YOOKASSA_SHOP_ID || '',
   yookassaSecretKey: process.env.YOOKASSA_SECRET_KEY || '',
-  // URL, куда ЮKassa вернёт пользователя после оплаты (можно указать маркетплейс / лендинг)
   yookassaReturnUrl: process.env.YOOKASSA_RETURN_URL || process.env.APP_PUBLIC_URL || process.env.BASE_URL || 'http://localhost:3000',
 };
 
 module.exports = { env };
-
