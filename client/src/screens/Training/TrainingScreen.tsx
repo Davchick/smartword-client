@@ -196,7 +196,17 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
                 Откройте все словари, больше слов и неограниченные тренировки с SmartWord Premium.
               </Text>
               <TouchableOpacity
-                style={[styles.premiumHintButton, { backgroundColor: colors.primary }]}
+                style={[
+                  styles.premiumHintButton,
+                  {
+                    backgroundColor: colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOffset: { width: 0, height: 8 },
+                    shadowOpacity: 0.5,
+                    shadowRadius: 16,
+                    elevation: 8,
+                  },
+                ]}
                 onPress={() => setPaywallVisible(true)}
                 activeOpacity={0.85}
               >
@@ -205,7 +215,21 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
             </View>
           )}
 
-          <TouchableOpacity style={[styles.restartButton, { backgroundColor: colors.primary }]} onPress={handleRestart} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={[
+              styles.restartButton,
+              {
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.5,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+            onPress={handleRestart}
+            activeOpacity={0.8}
+          >
             <RotateCcw color={colors.background} size={18} />
             <Text style={[styles.restartButtonText, { color: colors.background }]}>Ещё раз</Text>
           </TouchableOpacity>

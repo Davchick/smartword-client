@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -61,6 +61,10 @@ export default function App() {
 
   useEffect(() => {
     // Настраиваем цвет системной навигационной панели Android под тему приложения
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
     (async () => {
       try {
         await NavigationBar.setBackgroundColorAsync(

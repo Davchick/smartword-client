@@ -19,9 +19,7 @@ import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { GroupsStackParamList, MainTabParamList } from '../../navigation/types';
 import type { WordGroup } from '../../hooks/useGroups';
 
-type StackProps = NativeStackScreenProps<GroupsStackParamList, 'TrainingModes'>;
-type TabProps = BottomTabScreenProps<MainTabParamList, 'TrainingTab'>;
-type Props = StackProps | TabProps;
+type Props = NativeStackScreenProps<GroupsStackParamList, 'TrainingModes'> | BottomTabScreenProps<MainTabParamList, 'TrainingTab'>;
 
 const ARCHIVE_THRESHOLD = 5;
 
@@ -41,6 +39,16 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
     return map;
   }, [words]);
 
+  // Auto-select group if only one has words to train
+  const groupWithWords = useMemo(() => {
+    if (groups.length <= 1) return null;
+    const groupsWithWords = groups.filter(g => (activeCountsByGroup[g.id] ?? 0) > 0);
+    if (groupsWithWords.length === 1) {
+      return groupsWithWords[0];
+    }
+    return null;
+  }, [groups, activeCountsByGroup]);
+
   useFocusEffect(
     useCallback(() => {
       refetchGroups();
@@ -50,22 +58,37 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
   const params = 'params' in route ? route.params : undefined;
   const groupId = params && 'groupId' in params ? params.groupId : undefined;
   const groupName = params && 'groupName' in params && params.groupName ? params.groupName : 'Все слова';
-  const isTab = !('params' in route && route.params && 'groupId' in route.params && route.params.groupId);
 
   // For tab mode: two-step flow — pick a group, then pick a mode
   const [selectedGroup, setSelectedGroup] = useState<WordGroup | null>(null);
 
-  const navigateToTraining = (screen: 'Training' | 'TrainingWrite', gId?: string, gName?: string) => {
-    if (isTab && (gId == null || gId === '')) return;
-    if (isTab) {
-      // Navigate into GroupsStack via parent tab navigator
-      (navigation as any).navigate('GroupsTab', {
-        screen,
-        params: { groupId: gId, groupName: gName },
-      });
-      return;
+  // Если groupId передан в TrainingTab, сразу используем его
+  const groupFromParams = useMemo(() => {
+    if (groupId) {
+      return groups.find(g => g.id === groupId) || null;
     }
-    (navigation as StackProps['navigation']).navigate(screen, { groupId, groupName });
+    return null;
+  }, [groupId, groups]);
+
+  // Auto-select group if only one has words to train
+  React.useEffect(() => {
+    if (!selectedGroup && groupFromParams) {
+      setSelectedGroup(groupFromParams);
+    } else if (!selectedGroup && groupWithWords) {
+      setSelectedGroup(groupWithWords);
+    }
+  }, [selectedGroup, groupFromParams, groupWithWords]);
+
+  const navigateToTraining = (screen: 'Training' | 'TrainingWrite', gId?: string, gName?: string) => {
+    const targetGroupId = gId || activeGroupId;
+    const targetGroupName = gName || activeGroupName;
+    if (!targetGroupId) return;
+    
+    // Navigate into GroupsStack via parent tab navigator
+    (navigation as any).navigate('GroupsTab', {
+      screen,
+      params: { groupId: targetGroupId, groupName: targetGroupName },
+    });
   };
 
   const modes = [
@@ -98,8 +121,9 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
     },
   ];
 
-  // Tab mode: show group picker only when there are 2+ groups and none selected yet
-  if (isTab && !selectedGroup && groups.length > 1) {
+  // Show group picker only when there are 2+ groups with words and none selected yet
+  if (!groupId && !selectedGroup && groups.filter(g => (activeCountsByGroup[g.id] ?? 0) > 0).length > 1) {
+    const groupsWithWords = groups.filter(g => (activeCountsByGroup[g.id] ?? 0) > 0);
     return (
       <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -109,17 +133,17 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
           </View>
         </View>
 
-        {groups.length === 0 ? (
+        {groupsWithWords.length === 0 ? (
           <View style={styles.emptyWrap}>
             <BookOpen color={colors.muted} size={48} strokeWidth={1.5} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет словарей</Text>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет слов для тренировки</Text>
             <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-              Создайте словарь на вкладке «Словари» и добавьте слова
+              Добавьте слова в словарь или повторите слова, которые нужно подтянуть
             </Text>
           </View>
         ) : (
           <FlatList
-            data={groups}
+            data={groupsWithWords}
             keyExtractor={(g) => g.id}
             contentContainerStyle={styles.groupList}
             renderItem={({ item }) => (
@@ -157,8 +181,8 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
     );
   }
 
-  // Tab mode with no groups — show empty state
-  if (isTab && groups.length === 0) {
+  // Show empty state when no groups or no words
+  if (!groupId && (groups.length === 0 || groups.filter(g => (activeCountsByGroup[g.id] ?? 0) > 0).length === 0)) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
@@ -169,34 +193,28 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
         </View>
         <View style={styles.emptyWrap}>
           <BookOpen color={colors.muted} size={48} strokeWidth={1.5} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет словарей</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет слов для тренировки</Text>
           <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-            Создайте словарь на вкладке «Словари» и добавьте слова
+            Добавьте слова в словарь или повторите слова, которые нужно подтянуть
           </Text>
         </View>
       </View>
     );
   }
 
-  // Tab mode: one group → use it; several → use selected. Stack mode: use params.
-  const activeGroupId = isTab
-    ? (groups.length === 1 ? groups[0]?.id : selectedGroup?.id)
-    : groupId;
-  const activeGroupName = isTab
-    ? (groups.length === 1 ? groups[0]?.name : selectedGroup?.name)
-    : groupName;
+  // Tab mode: one group with words → use it; several → use selected. Stack mode: use params.
+  const activeGroupId = groupId || (groupWithWords ? groupWithWords.id : selectedGroup?.id);
+  const activeGroupName = groupId ? groupName : (groupWithWords ? groupWithWords.name : selectedGroup?.name);
+  // Кнопка "назад" показывается только когда groupId передан (переход из словаря)
+  const showBackButton = !!groupId;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        {(isTab ? groups.length > 1 : true) && (
+        {showBackButton && (
           <TouchableOpacity
             onPress={() => {
-              if (isTab) {
-                setSelectedGroup(null);
-              } else {
-                (navigation as StackProps['navigation']).goBack();
-              }
+              navigation.goBack();
             }}
             style={[styles.backButton, { backgroundColor: colors.primaryDim }]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -206,8 +224,8 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
           </TouchableOpacity>
         )}
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, isTab && styles.headerTitleLarge, { color: colors.text }]}>
-            {isTab ? 'Режим тренировки' : 'Режим тренировки'}
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Режим тренировки
           </Text>
           <Text style={[styles.headerSubtitle, { color: colors.muted }]} numberOfLines={1}>
             {activeGroupName}
@@ -342,7 +360,7 @@ const styles = StyleSheet.create({
   },
   modeCard: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     borderRadius: radii.lg,
     padding: spacing.md,
     borderWidth: 1,
@@ -357,8 +375,7 @@ const styles = StyleSheet.create({
   },
   modeTextBlock: {
     flex: 1,
-    gap: 5,
-    paddingTop: 2,
+    gap: 4,
   },
   modeTitle: {
     fontSize: typography.body,

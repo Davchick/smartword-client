@@ -1,5 +1,3 @@
-import { apiPatch } from './api';
-
 export const PRODUCT_IDS = {
   MONTHLY: 'smartword_premium_monthly',
   YEARLY: 'smartword_premium_yearly',
@@ -34,11 +32,6 @@ export const initIAP = async (): Promise<any[]> => {
           for (const purchase of results) {
             if (!purchase.acknowledged) {
               await IAP.finishTransactionAsync(purchase, false);
-              try {
-                await apiPatch('/profile', { is_premium: true });
-              } catch {
-                // ignore if not logged in or request failed
-              }
             }
           }
         }
@@ -57,25 +50,6 @@ export const purchaseProduct = async (productId: ProductId): Promise<{ error: st
     const IAP = getIAP();
     if (!IAP) return { error: 'Покупки недоступны в этом окружении' };
     await IAP.purchaseItemAsync(productId);
-    return { error: null };
-  } catch (error) {
-    return { error: String(error) };
-  }
-};
-
-export const restorePurchases = async (): Promise<{ error: string | null }> => {
-  try {
-    const IAP = getIAP();
-    if (!IAP) return { error: null };
-
-    const { results } = await IAP.getPurchaseHistoryAsync();
-    if (results && results.length > 0) {
-      try {
-        await apiPatch('/profile', { is_premium: true });
-      } catch {
-        // ignore if not logged in or request failed
-      }
-    }
     return { error: null };
   } catch (error) {
     return { error: String(error) };

@@ -203,7 +203,21 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
             <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
               Создайте первый словарь, чтобы начать учить слова
             </Text>
-            <TouchableOpacity style={[styles.emptyButton, { backgroundColor: colors.primary }]} onPress={handleAddPress} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={[
+                styles.emptyButton,
+                {
+                  backgroundColor: colors.primary,
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 16,
+                  elevation: 8,
+                },
+              ]}
+              onPress={handleAddPress}
+              activeOpacity={0.8}
+            >
               <Text style={[styles.emptyButtonText, { color: colors.background }]}>Создать словарь</Text>
             </TouchableOpacity>
           </View>

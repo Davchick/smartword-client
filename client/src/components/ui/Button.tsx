@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, Pressable, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
+import { Text, Pressable, StyleSheet, ActivityIndicator, ViewStyle, View } from 'react-native';
 import { useTheme, spacing, typography, fonts, radii } from '../../theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost';
@@ -45,13 +45,18 @@ export const Button: React.FC<Props> = ({
         },
         variant === 'primary' && {
           backgroundColor: colors.primary,
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.5,
+          shadowRadius: 16,
+          elevation: 8,
         },
         variant === 'secondary' && {
           backgroundColor: colors.card,
           borderWidth: 1,
           borderColor: colors.border,
         },
-        pressed && { transform: [{ scale: 0.97 }], opacity: 0.9 },
+        pressed && { transform: [{ scale: 0.96 }], opacity: 0.92 },
         isDisabled && { opacity: 0.5 },
         style,
       ]}
@@ -83,8 +88,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    overflow: 'hidden',
+    paddingVertical: spacing.md + 2,
+    overflow: 'visible',
   },
   primary: {},
   secondary: {
@@ -96,6 +101,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: typography.body,
     fontFamily: fonts.bold,
+    letterSpacing: 0.3,
   },
 });
 

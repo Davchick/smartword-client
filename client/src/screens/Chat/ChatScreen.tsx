@@ -359,7 +359,17 @@ export const ChatScreen = () => {
 
             {!isGuestMode && (
               <TouchableOpacity
-                style={[styles.startBtn, { backgroundColor: colors.primary }]}
+                style={[
+                  styles.startBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOffset: { width: 0, height: 8 },
+                    shadowOpacity: 0.5,
+                    shadowRadius: 16,
+                    elevation: 8,
+                  },
+                ]}
                 onPress={handleStartPractice}
                 activeOpacity={0.85}
               >

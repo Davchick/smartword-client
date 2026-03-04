@@ -14,7 +14,10 @@ export type RootStackParamList = {
 // --- Main Tab ---
 export type MainTabParamList = {
   GroupsTab: undefined;
-  TrainingTab: undefined;
+  TrainingTab: {
+    groupId?: string;
+    groupName?: string;
+  } | undefined;
   ChatTab: undefined;
   ProfileTab: undefined;
 };

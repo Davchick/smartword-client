@@ -277,7 +277,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
             </View>
 
             {/* Google OAuth кнопка — только в dev/build, не в Expo Go */}
-            {googleSignInAvailable && (
+            {googleSignInAvailable && !showForgotPassword && (
               <>
                 <TouchableOpacity
                   style={[styles.googleBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -298,66 +298,70 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                     </>
                   )}
                 </TouchableOpacity>
-                <View style={styles.dividerRow}>
-                  <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-                  <Text style={[styles.dividerText, { color: colors.muted }]}>или</Text>
-                  <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-                </View>
+                {!showForgotPassword && (
+                  <View style={styles.dividerRow}>
+                    <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+                    <Text style={[styles.dividerText, { color: colors.muted }]}>или</Text>
+                    <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+                  </View>
+                )}
               </>
             )}
 
             {/* Форма */}
-            <View style={styles.form}>
-              <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Mail color={colors.muted} size={17} />
-                <TextInput
-                  style={[styles.input, { color: colors.text }]}
-                  placeholder="Email"
-                  placeholderTextColor={colors.muted}
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  returnKeyType="next"
-                />
+            {!showForgotPassword ? (
+              <View style={styles.form}>
+                <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Mail color={colors.muted} size={17} />
+                  <TextInput
+                    style={[styles.input, { color: colors.text }]}
+                    placeholder="Email"
+                    placeholderTextColor={colors.muted}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="next"
+                  />
+                </View>
+
+                <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Lock color={colors.muted} size={17} />
+                  <TextInput
+                    style={[styles.input, styles.inputFlex, { color: colors.text }]}
+                    placeholder="Пароль (минимум 6 символов)"
+                    placeholderTextColor={colors.muted}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry={!showPassword}
+                    returnKeyType="done"
+                    onSubmitEditing={handleAuth}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setShowPassword((v) => !v)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    activeOpacity={0.7}
+                  >
+                    {showPassword
+                      ? <EyeOff color={colors.muted} size={17} />
+                      : <Eye color={colors.muted} size={17} />
+                    }
+                  </TouchableOpacity>
+                </View>
+
+                {!isSignUp && (
+                  <TouchableOpacity
+                    style={styles.forgotLink}
+                    onPress={() => setShowForgotPassword(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.forgotLinkText, { color: colors.primary }]}>Забыли пароль?</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-
-              <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Lock color={colors.muted} size={17} />
-                <TextInput
-                  style={[styles.input, styles.inputFlex, { color: colors.text }]}
-                  placeholder="Пароль (минимум 6 символов)"
-                  placeholderTextColor={colors.muted}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  returnKeyType="done"
-                  onSubmitEditing={handleAuth}
-                />
-                <TouchableOpacity
-                  onPress={() => setShowPassword((v) => !v)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  activeOpacity={0.7}
-                >
-                  {showPassword
-                    ? <EyeOff color={colors.muted} size={17} />
-                    : <Eye color={colors.muted} size={17} />
-                  }
-                </TouchableOpacity>
-              </View>
-
-              {!isSignUp && !showForgotPassword && (
-                <TouchableOpacity
-                  style={styles.forgotLink}
-                  onPress={() => setShowForgotPassword(true)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.forgotLinkText, { color: colors.primary }]}>Забыли пароль?</Text>
-                </TouchableOpacity>
-              )}
-
-              {showForgotPassword && (
+            ) : (
+              <View style={styles.form}>
                 <View style={[styles.forgotBlock, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Text style={[styles.forgotTitle, { color: colors.text }]}>Восстановление пароля</Text>
                   <Text style={[styles.forgotHint, { color: colors.muted }]}>Введите email — отправим ссылку для сброса пароля.</Text>
@@ -383,7 +387,19 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                       <Text style={[styles.forgotBackText, { color: colors.text }]}>Назад</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.submitBtn, { backgroundColor: colors.primary, flex: 1 }, forgotLoading && { opacity: 0.65 }]}
+                      style={[
+                        styles.submitBtn,
+                        {
+                          backgroundColor: colors.primary,
+                          shadowColor: colors.primary,
+                          shadowOffset: { width: 0, height: 8 },
+                          shadowOpacity: 0.5,
+                          shadowRadius: 16,
+                          elevation: 8,
+                          flex: 1,
+                        },
+                        forgotLoading && { opacity: 0.65 },
+                      ]}
                       onPress={handleForgotPassword}
                       disabled={forgotLoading}
                     >
@@ -391,44 +407,52 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                     </TouchableOpacity>
                   </View>
                 </View>
-              )}
-
-              {!showForgotPassword && (
-                <>
-                  <Button
-                    title={isSignUp ? 'Создать аккаунт' : 'Войти'}
-                    onPress={handleAuth}
-                    loading={loading}
-                    variant="primary"
-                    style={styles.submitBtn}
-                  />
-
-                  {emailNotVerifiedShown && (
-                    <TouchableOpacity
-                      style={styles.resendBtn}
-                      onPress={handleResendVerification}
-                      disabled={resendLoading}
-                      activeOpacity={0.7}
-                    >
-                      {resendLoading ? (
-                        <ActivityIndicator color={colors.primary} size="small" />
-                      ) : (
-                        <Text style={[styles.resendText, { color: colors.primary }]}>Отправить письмо повторно</Text>
-                      )}
-                    </TouchableOpacity>
-                  )}
-                </>
-              )}
-
-              <TouchableOpacity style={styles.toggleBtn} onPress={() => { setIsSignUp((v) => !v); setShowForgotPassword(false); setEmailNotVerifiedShown(false); }}>
-                <Text style={[styles.toggleText, { color: colors.muted }]}>
-                  {isSignUp ? 'Уже есть аккаунт? ' : 'Нет аккаунта? '}
-                  <Text style={{ color: colors.primary, fontFamily: fonts.bold }}>
-                    {isSignUp ? 'Войти' : 'Зарегистрироваться'}
+                <TouchableOpacity style={styles.toggleBtn} onPress={() => { setIsSignUp((v) => !v); setShowForgotPassword(false); setEmailNotVerifiedShown(false); }}>
+                  <Text style={[styles.toggleText, { color: colors.muted }]}>
+                    {isSignUp ? 'Уже есть аккаунт? ' : 'Нет аккаунта? '}
+                    <Text style={{ color: colors.primary, fontFamily: fonts.bold }}>
+                      {isSignUp ? 'Войти' : 'Зарегистрироваться'}
+                    </Text>
                   </Text>
-                </Text>
-              </TouchableOpacity>
-            </View>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {!showForgotPassword && (
+              <>
+                <Button
+                  title={isSignUp ? 'Создать аккаунт' : 'Войти'}
+                  onPress={handleAuth}
+                  loading={loading}
+                  variant="primary"
+                  style={styles.submitBtn}
+                />
+
+                {emailNotVerifiedShown && (
+                  <TouchableOpacity
+                    style={styles.resendBtn}
+                    onPress={handleResendVerification}
+                    disabled={resendLoading}
+                    activeOpacity={0.7}
+                  >
+                    {resendLoading ? (
+                      <ActivityIndicator color={colors.primary} size="small" />
+                    ) : (
+                      <Text style={[styles.resendText, { color: colors.primary }]}>Отправить письмо повторно</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity style={styles.toggleBtn} onPress={() => { setIsSignUp((v) => !v); setShowForgotPassword(false); setEmailNotVerifiedShown(false); }}>
+                  <Text style={[styles.toggleText, { color: colors.muted }]}>
+                    {isSignUp ? 'Уже есть аккаунт? ' : 'Нет аккаунта? '}
+                    <Text style={{ color: colors.primary, fontFamily: fonts.bold }}>
+                      {isSignUp ? 'Войти' : 'Зарегистрироваться'}
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </Animated.View>
       </ScrollView>

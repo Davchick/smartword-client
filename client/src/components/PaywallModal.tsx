@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { X, Crown, Zap, MessageCircle, BookOpen, Check } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography } from '../theme';
-import { initIAP, purchaseProduct, restorePurchases, PRODUCT_IDS } from '../lib/iap';
+import { initIAP, purchaseProduct, PRODUCT_IDS } from '../lib/iap';
 import type { ProductId } from '../lib/iap';
 
 interface Props {
@@ -43,7 +43,6 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
   const { colors } = useTheme();
   const [selectedProduct, setSelectedProduct] = useState<ProductId>(PRODUCT_IDS.YEARLY);
   const [purchasing, setPurchasing] = useState(false);
-  const [restoring, setRestoring] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -59,12 +58,6 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
       onPurchaseSuccess?.();
       onClose();
     }
-  };
-
-  const handleRestore = async () => {
-    setRestoring(true);
-    await restorePurchases();
-    setRestoring(false);
   };
 
   return (
@@ -165,6 +158,10 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
                 {
                   backgroundColor: colors.primary,
                   shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 10 },
+                  shadowOpacity: 0.55,
+                  shadowRadius: 20,
+                  elevation: 10,
                 },
                 purchasing && styles.purchaseButtonDisabled,
               ]}
@@ -177,16 +174,6 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
               ) : (
                 <Text style={[styles.purchaseButtonText, { color: '#0f172a' }]}>Оформить Premium</Text>
               )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.restoreButton}
-              onPress={handleRestore}
-              disabled={restoring}
-            >
-              <Text style={[styles.restoreText, { color: colors.muted }]}>
-                {restoring ? 'Восстановление...' : 'Восстановить покупки'}
-              </Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -318,10 +305,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md + 2,
     alignItems: 'center',
     marginBottom: spacing.md,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 8,
   },
   purchaseButtonDisabled: {
     opacity: 0.7,
@@ -329,13 +312,6 @@ const styles = StyleSheet.create({
   purchaseButtonText: {
     fontSize: typography.body,
     fontWeight: '700',
-  },
-  restoreButton: {
-    alignItems: 'center',
-    padding: spacing.sm,
-  },
-  restoreText: {
-    fontSize: typography.small,
   },
 });
 

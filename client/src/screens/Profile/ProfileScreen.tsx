@@ -16,7 +16,6 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
   Crown,
   LogOut,
-  RefreshCw,
   BookOpen,
   Zap,
   MessageCircle,
@@ -33,9 +32,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
-import { restorePurchases } from '../../lib/iap';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
-import { useToast } from '../../components/Toast';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -49,7 +46,6 @@ const AVATAR_COLORS = [
 export const ProfileScreen = () => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { showToast } = useToast();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { signOut } = useAuth();
   const { profile, loading, refetch, avatarId, setAvatarId, nickname, setNickname } = useProfile();
@@ -57,7 +53,6 @@ export const ProfileScreen = () => {
   const { totalCount: totalWords, refetch: refetchWords } = useWords();
 
   const [signingOut, setSigningOut] = useState(false);
-  const [restoring, setRestoring] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [editingNick, setEditingNick] = useState(false);
   const [nickDraft, setNickDraft] = useState('');
@@ -75,18 +70,6 @@ export const ProfileScreen = () => {
         },
       },
     ]);
-  };
-
-  const handleRestorePurchases = async () => {
-    setRestoring(true);
-    const { error } = await restorePurchases();
-    setRestoring(false);
-    if (error) {
-      showToast('Не удалось восстановить покупки', 'error');
-    } else {
-      await refetch();
-      showToast('Покупки успешно восстановлены', 'success');
-    }
   };
 
   const handleDonate = () => {
@@ -121,12 +104,12 @@ export const ProfileScreen = () => {
   const saveNick = () => {
     const trimmed = nickDraft.trim();
     if (trimmed.length > 20) {
-      showToast('Ник не может быть длиннее 20 символов', 'error');
+      Alert.alert('Ошибка', 'Ник не может быть длиннее 20 символов');
       return;
     }
     setNickname(trimmed);
     setEditingNick(false);
-    showToast('Ник сохранён', 'success');
+    Alert.alert('Готово', 'Ник сохранён');
   };
 
   if (loading) {
@@ -152,36 +135,42 @@ export const ProfileScreen = () => {
       showsVerticalScrollIndicator={false}
     >
       {/* Кнопка настроек */}
-      <View style={styles.settingsHeader}>
-        <TouchableOpacity
-          style={[styles.settingsBtn, { backgroundColor: 'transparent', borderColor: colors.border }]}
-          onPress={() => navigation.navigate('ProfileSettings')}
-          activeOpacity={0.7}
-        >
-          <Settings color={colors.muted} size={20} />
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity
+        style={[
+          styles.settingsBtn,
+          {
+            position: 'absolute',
+            top: spacing.xl + 30,
+            right: spacing.xl,
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+        onPress={() => navigation.navigate('ProfileSettings')}
+        activeOpacity={0.7}
+      >
+        <Settings color={colors.muted} size={20} />
+      </TouchableOpacity>
 
       {/* Герой — аватар + ник */}
-      <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-        <View style={styles.heroSection}>
-          <TouchableOpacity
-            style={[
-              styles.avatarCircle,
-              {
-                backgroundColor: accentColor + '22',
-                borderColor: accentColor + '88',
-                borderWidth: 2.5,
-              },
-            ]}
-            onPress={() => setAvatarModalVisible(true)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.avatarEmoji}>{AVATAR_CHARS[avatarId]}</Text>
-            <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
-              <Pencil color={colors.background} size={10} />
-            </View>
-          </TouchableOpacity>
+      <View style={styles.heroSection}>
+        <TouchableOpacity
+          style={[
+            styles.avatarCircle,
+            {
+              backgroundColor: accentColor + '22',
+              borderColor: accentColor + '88',
+              borderWidth: 2.5,
+            },
+          ]}
+          onPress={() => setAvatarModalVisible(true)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.avatarEmoji}>{AVATAR_CHARS[avatarId]}</Text>
+          <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
+            <Pencil color={colors.background} size={10} />
+          </View>
+        </TouchableOpacity>
 
           {editingNick ? (
             <View style={styles.nickEditRow}>
@@ -225,7 +214,6 @@ export const ProfileScreen = () => {
               <Text style={[styles.premiumBadgeText, { color: colors.primary }]}>Premium</Text>
             </View>
           )}
-        </View>
       </View>
 
       {/* Карточка статистики */}
@@ -294,7 +282,19 @@ export const ProfileScreen = () => {
                   Безлимит · AI-чат · от 299 ₽/мес
                 </Text>
               </View>
-              <View style={[styles.upgradeArrow, { backgroundColor: colors.primary }]}>
+              <View
+                style={[
+                  styles.upgradeArrow,
+                  {
+                    backgroundColor: colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOffset: { width: 0, height: 6 },
+                    shadowOpacity: 0.4,
+                    shadowRadius: 12,
+                    elevation: 6,
+                  },
+                ]}
+              >
                 <ChevronRight color={colors.background} size={18} />
               </View>
             </TouchableOpacity>
@@ -365,22 +365,6 @@ export const ProfileScreen = () => {
       <View style={[styles.menuBlock, { borderColor: colors.border, backgroundColor: colors.card }]}>
         {profile ? (
           <>
-            {!profile.is_premium && (
-              <TouchableOpacity
-                style={[styles.menuRow, { borderBottomColor: colors.border }]}
-                onPress={handleRestorePurchases}
-                disabled={restoring}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.menuIcon, { backgroundColor: colors.primaryDim }]}>
-                  <RefreshCw color={colors.primary} size={17} />
-                </View>
-                <Text style={[styles.menuText, { color: colors.text }]}>
-                  {restoring ? 'Восстановление...' : 'Восстановить покупки'}
-                </Text>
-                <ChevronRight color={colors.muted} size={18} />
-              </TouchableOpacity>
-            )}
             <TouchableOpacity
               style={styles.menuRowLast}
               onPress={handleSignOut}
@@ -450,7 +434,7 @@ export const ProfileScreen = () => {
                     onPress={() => {
                       setAvatarId(idx);
                       setAvatarModalVisible(false);
-                      showToast('Аватарка обновлена!', 'success');
+                      Alert.alert('Готово', 'Аватарка обновлена!');
                     }}
                     activeOpacity={0.8}
                   >
@@ -476,11 +460,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
-  settingsHeader: {
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
   settingsBtn: {
     alignSelf: 'flex-end',
     width: 40,
@@ -490,13 +469,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroCard: {
-    borderRadius: radii.lg,
-    padding: spacing.md,
-  },
   heroSection: {
     alignItems: 'center',
-    paddingTop: spacing.xs,
+    paddingTop: spacing.xl,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
   },
@@ -506,7 +481,6 @@ const styles = StyleSheet.create({
     borderRadius: 45,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xs,
   },
   avatarEmoji: {
     fontSize: 46,

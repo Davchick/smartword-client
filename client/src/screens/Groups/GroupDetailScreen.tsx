@@ -140,7 +140,11 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
       Alert.alert('Нет слов', 'Добавьте хотя бы одно слово для тренировки.');
       return;
     }
-    navigation.navigate('TrainingModes', { groupId, groupName });
+    // Переключаемся на таб "Тренировка" и передаём groupId для выбора режима
+    const parentNav = navigation.getParent();
+    if (parentNav) {
+      parentNav.navigate('TrainingTab', { groupId, groupName });
+    }
   };
 
   const handleDeletePress = () => {
@@ -260,7 +264,21 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
                 : 'Измените поиск или сортировку'}
             </Text>
             {visibleWords.length === 0 && (
-              <TouchableOpacity style={[styles.emptyButton, { backgroundColor: colors.primary }]} onPress={handleAddPress} activeOpacity={0.8}>
+              <TouchableOpacity
+                style={[
+                  styles.emptyButton,
+                  {
+                    backgroundColor: colors.primary,
+                    shadowColor: colors.primary,
+                    shadowOffset: { width: 0, height: 8 },
+                    shadowOpacity: 0.5,
+                    shadowRadius: 16,
+                    elevation: 8,
+                  },
+                ]}
+                onPress={handleAddPress}
+                activeOpacity={0.8}
+              >
                 <Text style={[styles.emptyButtonText, { color: colors.background }]}>Добавить слово</Text>
               </TouchableOpacity>
             )}

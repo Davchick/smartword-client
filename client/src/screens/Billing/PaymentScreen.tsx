@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,16 @@ import {
   ScrollView,
   ActivityIndicator,
   Linking,
-  Animated,
-  Easing,
+  Platform,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Crown, ChevronLeft, Clock, Send, MessageCircle, BookOpen, Zap, ChevronDown, CreditCard } from 'lucide-react-native';
-import SbpIcon from '../../../assets/icons/SBP.svg';
-import SberPayIcon from '../../../assets/icons/sber-pay.svg';
-import TPayIcon from '../../../assets/icons/t-pay.svg';
+import { SvgXml } from 'react-native-svg';
+import sbpIcon from '../../../assets/icons/SBP.svg';
+import sberPayIcon from '../../../assets/icons/sber-pay-simple.svg';
+import tpayIcon from '../../../assets/icons/t-pay.svg';
 import { useTheme, spacing, radii, typography } from '../../theme';
 import { useProfile } from '../../hooks/useProfile';
 import { createSubscriptionPayment, type PlanId, type PaymentMethod } from '../../lib/billing';
@@ -44,19 +45,11 @@ export const PaymentScreen = () => {
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('month');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('card');
   const [methodsOpen, setMethodsOpen] = useState(false);
-  const methodsAnim = useRef(new Animated.Value(0)).current;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const toggleMethods = () => {
-    const next = !methodsOpen;
-    setMethodsOpen(next);
-    Animated.timing(methodsAnim, {
-      toValue: next ? 1 : 0,
-      duration: 180,
-      easing: Easing.out(Easing.quad),
-      useNativeDriver: false,
-    }).start();
+    setMethodsOpen(prev => !prev);
   };
 
   const handleActivate = async () => {
@@ -87,14 +80,22 @@ export const PaymentScreen = () => {
     });
   })();
 
-  const selectedMethodMeta = METHODS.find((m) => m.id === selectedMethod) ?? METHODS[0];
+  const selectedMethodData = METHODS.find((m) => m.id === selectedMethod) || METHODS[0];
+
+  const handleGoBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Main');
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: 'transparent', paddingTop: insets.top + spacing.sm }]}>
       <View style={[styles.header, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigation.goBack()}
+          onPress={handleGoBack}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <ChevronLeft color={colors.muted} size={20} />
@@ -153,18 +154,23 @@ export const PaymentScreen = () => {
             onPress={toggleMethods}
             activeOpacity={0.8}
           >
-            <View style={[styles.methodIcon, { backgroundColor: colors.primaryDim }]}>
-              {selectedMethod === 'card' && <CreditCard color={colors.primary} size={18} />}
-              {selectedMethod === 'sbp' && <SbpIcon width={26} height={26} />}
-              {selectedMethod === 'sberpay' && <SberPayIcon width={26} height={26} />}
-              {selectedMethod === 'tpay' && <TPayIcon width={26} height={26} />}
+            <View style={styles.methodIconWrapper}>
+              {selectedMethod === 'card' ? (
+                <CreditCard color={colors.primary} size={24} />
+              ) : selectedMethod === 'sbp' ? (
+                <SvgXml xml={sbpIcon} width={28} height={28} />
+              ) : selectedMethod === 'sberpay' ? (
+                <SvgXml xml={sberPayIcon} width={28} height={28} />
+              ) : (
+                <SvgXml xml={tpayIcon} width={28} height={28} />
+              )}
             </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.methodLabel, { color: colors.text }]}>
-                  {selectedMethodMeta.label}
+                <Text style={[styles.methodRowLabel, { color: colors.text }]}>
+                  {selectedMethodData.label}
                 </Text>
-                <Text style={[styles.methodNote, { color: colors.muted }]} numberOfLines={1}>
-                  {selectedMethodMeta.note}
+                <Text style={[styles.methodRowNote, { color: colors.muted }]} numberOfLines={1}>
+                  {selectedMethodData.note}
                 </Text>
               </View>
               <ChevronDown
@@ -174,51 +180,141 @@ export const PaymentScreen = () => {
               />
           </TouchableOpacity>
 
-          <Animated.View
-            style={[
-              styles.methodsDropdown,
-              {
-                opacity: methodsAnim,
-                transform: [
-                  {
-                    translateY: methodsAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-4, 4],
-                    }),
-                  },
-                ],
-              },
-            ]}
-            pointerEvents={methodsOpen ? 'auto' : 'none'}
-          >
-              {METHODS.map((method) => {
-                const selected = selectedMethod === method.id;
-                return (
-                  <TouchableOpacity
-                    key={method.id}
-                    style={[
-                      styles.methodRow,
-                      selected && { backgroundColor: colors.primaryDim },
-                    ]}
-                    onPress={() => {
-                      setSelectedMethod(method.id);
-                      toggleMethods();
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.methodRowLabel,
-                        { color: selected ? colors.primary : colors.text },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {method.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-          </Animated.View>
+          {methodsOpen && (
+            <View style={styles.dropdownContainer}>
+              {Platform.OS === 'ios' ? (
+                <BlurView 
+                  intensity={100} 
+                  tint={colors.text === '#0f172a' ? 'light' : 'dark'} 
+                  style={styles.blurContainer}
+                  experimentalBlurMethod="dimezisBlurView"
+                >
+                  <View style={[styles.methodsDropdown, {
+                    backgroundColor: colors.text === '#0f172a'
+                      ? 'rgba(255, 255, 255, 0.75)'
+                      : 'rgba(30, 41, 59, 0.75)',
+                    borderColor: (colors.border || '#334155') + '60'
+                  }]}>
+                    {METHODS.map((method) => {
+                      const selected = selectedMethod === method.id;
+                      return (
+                        <TouchableOpacity
+                          key={method.id}
+                          style={[
+                            styles.methodRow,
+                            selected && styles.methodRowSelected,
+                          ]}
+                          onPress={() => {
+                            setSelectedMethod(method.id);
+                            toggleMethods();
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <View style={[styles.methodRowIconWrapper, { backgroundColor: selected ? colors.primary + '20' : colors.background }]}>
+                            {method.id === 'card' ? (
+                              <CreditCard color={selected ? colors.primary : colors.text} size={20} />
+                            ) : method.id === 'sbp' ? (
+                              <SvgXml xml={sbpIcon} width={20} height={20} />
+                            ) : method.id === 'sberpay' ? (
+                              <SvgXml xml={sberPayIcon} width={20} height={20} />
+                            ) : (
+                              <SvgXml xml={tpayIcon} width={20} height={20} />
+                            )}
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.methodRowLabel,
+                                { color: selected ? colors.primary : colors.text },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {method.label}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.methodRowNote,
+                                { color: selected ? colors.primary + '99' : colors.muted },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {method.note}
+                            </Text>
+                          </View>
+                          {selected && (
+                            <View style={[styles.checkmark, { backgroundColor: colors.primary }]}>
+                              <Text style={styles.checkmarkText}>✓</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </BlurView>
+              ) : (
+                <View style={[styles.methodsDropdown, { 
+                  backgroundColor: colors.elevated, 
+                  borderColor: colors.border,
+                  borderWidth: 1,
+                }]}>
+                  {METHODS.map((method) => {
+                    const selected = selectedMethod === method.id;
+                    return (
+                      <TouchableOpacity
+                        key={method.id}
+                        style={[
+                          styles.methodRow,
+                          selected && styles.methodRowSelected,
+                        ]}
+                        onPress={() => {
+                          setSelectedMethod(method.id);
+                          toggleMethods();
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.methodRowIconWrapper}>
+                          {method.id === 'card' ? (
+                            <CreditCard color={selected ? colors.primary : colors.text} size={24} />
+                          ) : method.id === 'sbp' ? (
+                            <SvgXml xml={sbpIcon} width={28} height={28} />
+                          ) : method.id === 'sberpay' ? (
+                            <SvgXml xml={sberPayIcon} width={28} height={28} />
+                          ) : (
+                            <SvgXml xml={tpayIcon} width={28} height={28} />
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.methodRowLabel,
+                              { color: selected ? colors.primary : colors.text },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {method.label}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.methodRowNote,
+                              { color: selected ? colors.primary + '99' : colors.muted },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {method.note}
+                          </Text>
+                        </View>
+                        {selected && (
+                          <View style={[styles.checkmark, { backgroundColor: colors.primary }]}>
+                            <Text style={styles.checkmarkText}>✓</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         <Text style={[styles.sectionLabel, { color: colors.muted }]}>ТАРИФ</Text>
@@ -320,6 +416,10 @@ export const PaymentScreen = () => {
             {
               backgroundColor: colors.primary,
               shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.55,
+              shadowRadius: 20,
+              elevation: 10,
             },
             loading && styles.activateBtnDisabled,
           ]}
@@ -453,66 +553,89 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   methodsCard: {
-    position: 'relative',
     borderRadius: radii.md,
     borderWidth: 1,
     marginTop: spacing.xs,
+    overflow: 'visible',
   },
   methodsCardOpen: {
-    marginBottom: spacing.lg * 1.5,
+    marginBottom: spacing.xl * 2,
   },
   methodSelector: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
     gap: spacing.sm,
   },
-  methodsDropdown: {
+  methodIconWrapper: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dropdownContainer: {
     position: 'absolute',
     top: '100%',
     left: 0,
     right: 0,
     marginTop: 4,
+    zIndex: 100,
+    overflow: 'hidden',
+  },
+  blurContainer: {
     borderRadius: radii.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(148,163,184,0.3)',
-    backgroundColor: 'rgba(15,23,42,0.97)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  methodsDropdown: {
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
     gap: spacing.xs,
     shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 12 },
     elevation: 16,
-    zIndex: 20,
+    borderWidth: 1,
   },
   methodRow: {
-    paddingVertical: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    gap: spacing.md,
+    borderRadius: radii.md,
   },
-  methodIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 16,
+  methodRowSelected: {
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  methodRowIconWrapper: {
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  methodLabel: {
-    fontSize: typography.body,
-    fontWeight: '600',
-  },
-  methodNote: {
-    fontSize: typography.xs,
-    marginTop: 2,
-  },
   methodRowLabel: {
     fontSize: typography.body,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   methodRowNote: {
     fontSize: typography.xs,
     marginTop: 2,
+  },
+  checkmark: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkmarkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
   },
   errorText: {
     marginTop: spacing.md,
