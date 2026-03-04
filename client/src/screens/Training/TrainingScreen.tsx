@@ -12,6 +12,7 @@ import { useWords } from '../../hooks/useWords';
 import { SwipeCard } from '../../components/SwipeCard';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { useProfile } from '../../hooks/useProfile';
+import { useTrainingProgress } from '../../hooks/useTrainingProgress';
 import { PaywallModal } from '../../components/PaywallModal';
 import type { TrainingScreenProps, TabTrainingScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
@@ -31,6 +32,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
   const { words, loading, updateWordProgress, getTrainingWords } = useWords(groupId);
   const { profile } = useProfile();
+  const { addPoints } = useTrainingProgress();
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [stats, setStats] = useState({ knew: 0, didntKnow: 0 });
@@ -67,13 +69,19 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     if (round === 'retry') {
       if (knew) {
         await updateWordProgress(currentWord.id, true, { correctDelta: 0.5 });
+        // Начисляем 0.5 очков за слово, угаданное со второй попытки
+        await addPoints(0.5);
       } else {
-        // На повторении ошибок не “штрафуем” прогрессом за повторный промах —
+        // На повторении ошибок не "штрафуем" прогрессом за повторный промах —
         // просто отправляем слово в конец очереди.
         await updateWordProgress(currentWord.id, false, { incorrectDelta: 0 });
       }
     } else {
       await updateWordProgress(currentWord.id, knew);
+      // Начисляем 1 очко за слово, угаданное с первой попытки
+      if (knew) {
+        await addPoints(1);
+      }
     }
 
     if (round === 'initial') {

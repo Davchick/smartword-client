@@ -28,6 +28,7 @@ model User {
   words               Word[]
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
+  trainingProgress    TrainingProgress[]
 }
 
 model PasswordResetToken {
@@ -70,5 +71,16 @@ model RefreshToken {
   token     String   @unique
   createdAt DateTime @default(now())
   revokedAt DateTime?
+}
+
+model TrainingProgress {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  points    Int      @default(0)
+  date      DateTime @db.Date
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
 }
 

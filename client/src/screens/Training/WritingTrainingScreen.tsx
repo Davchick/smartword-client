@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Check, X as XIcon, ArrowLeftRight, Lightbulb, RotateCcw } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
+import { useTrainingProgress } from '../../hooks/useTrainingProgress';
 import type { TrainingWriteScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
 
@@ -43,6 +44,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { words, loading, updateWordProgress, getTrainingWords } = useWords(groupId);
+  const { addPoints } = useTrainingProgress();
 
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -194,6 +196,10 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   }
 
   const currentWord = trainingWords[currentIndex];
+  if (!currentWord) {
+    setFinished(true);
+    return null;
+  }
   const promptText = direction === 'foreign' ? currentWord.translation : currentWord.original;
   const answerText = direction === 'foreign' ? currentWord.original : currentWord.translation;
   const inputPlaceholder = 'Введите перевод';
@@ -217,7 +223,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   };
 
   const handleInputChange = (text: string) => {
-    if (checked) return;
+    if (checked || !currentWord) return;
     setInput(text);
     if (!text.trim()) return;
     if (checkAnswer(text, answerText)) {
@@ -228,6 +234,9 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       setSessionCorrect((c) => c + 1);
       animateFeedback(true);
       void updateWordProgress(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0 });
+      // Начисляем очки: 1 за полный ответ, 0.5 за ответ с подсказкой
+      const points = hintCount > 0 ? 0.5 : 1;
+      void addPoints(points);
       setTimeout(() => {
         goToNextWord();
       }, 900);
@@ -235,7 +244,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   };
 
   const handleHint = () => {
-    if (checked) return;
+    if (checked || !currentWord) return;
     if (!primaryAnswer) return;
     if (hintCount >= primaryAnswer.length) return;
 

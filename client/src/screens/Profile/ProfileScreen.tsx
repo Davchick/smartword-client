@@ -16,9 +16,6 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
   Crown,
   LogOut,
-  BookOpen,
-  Zap,
-  MessageCircle,
   ChevronRight,
   Star,
   Settings,
@@ -32,9 +29,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
+import { useTrainingProgress } from '../../hooks/useTrainingProgress';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { ProgressChart } from '../../components/ProgressChart';
 
 const AVATAR_CHARS = ['🐱', '🐶', '🦊', '🐸', '🐼', '🐨', '🦁', '🐯', '🐧', '🦋'];
 const AVATAR_COLORS = [
@@ -51,6 +50,7 @@ export const ProfileScreen = () => {
   const { profile, loading, refetch, avatarId, setAvatarId, nickname, setNickname } = useProfile();
   const { groups, refetch: refetchGroups } = useGroups();
   const { totalCount: totalWords, refetch: refetchWords } = useWords();
+  const { progress: trainingProgress, loading: progressLoading, refetch: refetchProgress } = useTrainingProgress();
 
   const [signingOut, setSigningOut] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
@@ -83,13 +83,14 @@ export const ProfileScreen = () => {
     );
   };
 
-  // Обновляем профиль, группы и счётчик слов при возврате на экран профиля
+  // Обновляем профиль, группы, счётчик слов и прогресс тренировок при возврате на экран профиля
   useFocusEffect(
     useCallback(() => {
       refetch();
       refetchGroups();
       refetchWords();
-    }, [refetch, refetchGroups, refetchWords])
+      refetchProgress();
+    }, [refetch, refetchGroups, refetchWords, refetchProgress])
   );
 
   const handleSupport = () => {
@@ -216,34 +217,17 @@ export const ProfileScreen = () => {
           )}
       </View>
 
-      {/* Карточка статистики */}
-      <View style={[styles.statsCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
-        <View style={styles.statItem}>
-          <View style={[styles.statIconWrap, { backgroundColor: colors.primaryDim }]}>
-            <BookOpen color={colors.primary} size={15} />
+      {/* График прогресса тренировок */}
+      {!progressLoading && trainingProgress.length > 0 ? (
+        <ProgressChart data={trainingProgress} />
+      ) : (
+        <View style={[styles.progressCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+          <View style={styles.progressEmpty}>
+            <ActivityIndicator color={colors.primary} size="small" />
+            <Text style={[styles.progressEmptyText, { color: colors.muted }]}>Загрузка прогресса...</Text>
           </View>
-          <Text style={[styles.statValue, { color: colors.text }]}>{groups.length}</Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Словарей</Text>
         </View>
-        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.statItem}>
-          <View style={[styles.statIconWrap, { backgroundColor: colors.primaryDim }]}>
-            <Zap color={colors.primary} size={15} />
-          </View>
-          <Text style={[styles.statValue, { color: colors.text }]}>{totalWords}</Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Слов</Text>
-        </View>
-        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-        <View style={styles.statItem}>
-          <View style={[styles.statIconWrap, { backgroundColor: colors.primaryDim }]}>
-            <MessageCircle color={colors.primary} size={15} />
-          </View>
-          <Text style={[styles.statValue, { color: colors.text }]}>
-            {profile?.is_premium ? '∞' : `${aiUsed}/10`}
-          </Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>AI-чат</Text>
-        </View>
-      </View>
+      )}
 
       {/* AI прогресс */}
       {profile && !profile.is_premium && (
@@ -537,42 +521,22 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     fontFamily: fonts.bold,
   },
-  statsCard: {
-    flexDirection: 'row',
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  statIconWrap: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statValue: {
-    fontSize: typography.subtitle,
-    fontFamily: fonts.headingBlack,
-  },
-  statLabel: {
-    fontSize: typography.xs,
-    fontFamily: fonts.regular,
-  },
-  statDivider: {
-    width: 1,
-    height: 36,
-  },
   progressCard: {
     borderRadius: radii.md,
     borderWidth: 1,
     padding: spacing.md,
     gap: spacing.sm,
+  },
+  progressEmpty: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+  },
+  progressEmptyText: {
+    fontSize: typography.small,
+    fontFamily: fonts.regular,
   },
   progressHeader: {
     flexDirection: 'row',
