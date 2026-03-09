@@ -20,6 +20,8 @@ router.get('/', authMiddleware, async (req, res) => {
         createdAt: true,
         subscriptionType: true,
         subscriptionExpiresAt: true,
+        wordsLearnedThisWeek: true,
+        weekStartDate: true,
       },
     });
 
@@ -32,6 +34,19 @@ router.get('/', authMiddleware, async (req, res) => {
       !!user.subscriptionExpiresAt && user.subscriptionExpiresAt.getTime() > now.getTime();
     const isPremium = user.isPremium || hasActiveSubscription;
 
+    // Проверяем актуальность недели
+    const currentMonday = getMonday(now);
+    let wordsLearnedThisWeek = user.wordsLearnedThisWeek || 0;
+
+    if (!user.weekStartDate || user.weekStartDate < currentMonday) {
+      wordsLearnedThisWeek = 0;
+      // Сбрасываем счётчик в БД
+      await prisma.user.update({
+        where: { id: req.user.id },
+        data: { wordsLearnedThisWeek: 0, weekStartDate: currentMonday },
+      });
+    }
+
     res.json({
       id: user.id,
       email: user.email,
@@ -42,12 +57,24 @@ router.get('/', authMiddleware, async (req, res) => {
       subscription_expires_at: user.subscriptionExpiresAt
         ? user.subscriptionExpiresAt.toISOString()
         : null,
+      words_learned_this_week: wordsLearnedThisWeek,
+      weekly_limit: isPremium ? Infinity : 50,
     });
   } catch (err) {
     console.error('[profile GET]', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// Утилита: получить понедельник текущей недели
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d.setDate(diff));
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
 
 /**
  * PATCH /profile
@@ -70,6 +97,8 @@ router.patch('/', authMiddleware, async (req, res) => {
           createdAt: true,
           subscriptionType: true,
           subscriptionExpiresAt: true,
+          wordsLearnedThisWeek: true,
+          weekStartDate: true,
         },
       });
       if (!user) {
@@ -81,6 +110,14 @@ router.patch('/', authMiddleware, async (req, res) => {
         !!user.subscriptionExpiresAt && user.subscriptionExpiresAt.getTime() > now.getTime();
       const isPremium = user.isPremium || hasActiveSubscription;
 
+      // Проверяем актуальность недели
+      const currentMonday = getMonday(now);
+      let wordsLearnedThisWeek = user.wordsLearnedThisWeek;
+      
+      if (!user.weekStartDate || user.weekStartDate < currentMonday) {
+        wordsLearnedThisWeek = 0;
+      }
+
       return res.json({
         id: user.id,
         email: user.email,
@@ -91,6 +128,8 @@ router.patch('/', authMiddleware, async (req, res) => {
         subscription_expires_at: user.subscriptionExpiresAt
           ? user.subscriptionExpiresAt.toISOString()
           : null,
+        words_learned_this_week: wordsLearnedThisWeek,
+        weekly_limit: isPremium ? Infinity : 50,
       });
     }
 
@@ -105,6 +144,8 @@ router.patch('/', authMiddleware, async (req, res) => {
         createdAt: true,
         subscriptionType: true,
         subscriptionExpiresAt: true,
+        wordsLearnedThisWeek: true,
+        weekStartDate: true,
       },
     });
 
@@ -112,6 +153,14 @@ router.patch('/', authMiddleware, async (req, res) => {
     const hasActiveSubscription =
       !!updated.subscriptionExpiresAt && updated.subscriptionExpiresAt.getTime() > now.getTime();
     const isPremium = updated.isPremium || hasActiveSubscription;
+
+    // Проверяем актуальность недели
+    const currentMonday = getMonday(now);
+    let wordsLearnedThisWeek = updated.wordsLearnedThisWeek;
+    
+    if (!updated.weekStartDate || updated.weekStartDate < currentMonday) {
+      wordsLearnedThisWeek = 0;
+    }
 
     res.json({
       id: updated.id,
@@ -123,6 +172,8 @@ router.patch('/', authMiddleware, async (req, res) => {
       subscription_expires_at: updated.subscriptionExpiresAt
         ? updated.subscriptionExpiresAt.toISOString()
         : null,
+      words_learned_this_week: wordsLearnedThisWeek,
+      weekly_limit: isPremium ? Infinity : 50,
     });
   } catch (err) {
     console.error('[profile PATCH]', err);

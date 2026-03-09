@@ -73,14 +73,7 @@ export const ProfileScreen = () => {
   };
 
   const handleDonate = () => {
-    Alert.alert(
-      'Поддержать разработчика',
-      'Спасибо, что пользуетесь SmartWord!\nВаша поддержка помогает развивать приложение.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        { text: 'Поддержать', onPress: () => Linking.openURL('https://boosty.to') },
-      ],
-    );
+    Linking.openURL('https://dalink.to/davch1ck');
   };
 
   // Обновляем профиль, группы, счётчик слов и прогресс тренировок при возврате на экран профиля
@@ -94,7 +87,7 @@ export const ProfileScreen = () => {
   );
 
   const handleSupport = () => {
-    Linking.openURL('mailto:smartword@gmail.com');
+    Linking.openURL('https://t.me/smartwordd_bot');
   };
 
   const startEditNick = () => {
@@ -208,26 +201,10 @@ export const ProfileScreen = () => {
               <Pencil color={colors.muted} size={13} style={{ marginTop: 2 }} />
             </TouchableOpacity>
           )}
-
-          {profile?.is_premium && (
-            <View style={[styles.premiumBadge, { backgroundColor: colors.primaryDim }]}>
-              <Crown color={colors.primary} size={13} />
-              <Text style={[styles.premiumBadgeText, { color: colors.primary }]}>Premium</Text>
-            </View>
-          )}
       </View>
 
       {/* График прогресса тренировок */}
-      {!progressLoading && trainingProgress.length > 0 ? (
-        <ProgressChart data={trainingProgress} />
-      ) : (
-        <View style={[styles.progressCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
-          <View style={styles.progressEmpty}>
-            <ActivityIndicator color={colors.primary} size="small" />
-            <Text style={[styles.progressEmptyText, { color: colors.muted }]}>Загрузка прогресса...</Text>
-          </View>
-        </View>
-      )}
+      <ProgressChart data={trainingProgress} locked={!profile} />
 
       {/* AI прогресс */}
       {profile && !profile.is_premium && (

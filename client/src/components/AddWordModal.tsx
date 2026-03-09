@@ -12,8 +12,6 @@ import {
 import { X } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography } from '../theme';
 
-const FREE_WORDS_LIMIT = 30;
-
 interface Props {
   visible: boolean;
   onClose: () => void;
@@ -29,7 +27,6 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const nearLimit = !isPremium && totalCount >= FREE_WORDS_LIMIT - 5;
   const isDisabled = !original.trim() || !translation.trim() || loading;
 
   const handleSubmit = async () => {

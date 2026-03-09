@@ -11,13 +11,19 @@ import {
   Animated,
   ScrollView,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Check, X as XIcon, ArrowLeftRight, Lightbulb, RotateCcw } from 'lucide-react-native';
+import { ArrowLeft, Check, X as XIcon, ArrowLeftRight, Lightbulb, RotateCcw, Crown } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import { useTrainingProgress } from '../../hooks/useTrainingProgress';
+import { useProfile } from '../../hooks/useProfile';
+import { PaywallModal } from '../../components/PaywallModal';
 import type { TrainingWriteScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
+
+const WEEKLY_LIMIT_KEY = '@SmartWord:weeklyLimitReached';
+const WEEKLY_LEARNED_KEY = '@SmartWord:wordsLearnedThisWeek';
 
 function normalize(str: string): string {
   return str
@@ -45,6 +51,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const insets = useSafeAreaInsets();
   const { words, loading, updateWordProgress, getTrainingWords } = useWords(groupId);
   const { addPoints } = useTrainingProgress();
+  const { profile } = useProfile();
 
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -58,6 +65,92 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const [hintCount, setHintCount] = useState(0);
   const [sessionHints, setSessionHints] = useState(0);
   const [skipped, setSkipped] = useState(false);
+  const [weeklyLimitReached, setWeeklyLimitReached] = useState(false);
+  const [wordsLearnedThisWeek, setWordsLearnedThisWeek] = useState<number>(0);
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  const weeklyLimit = 50; // слов в неделю для бесплатных пользователей
+  const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
+
+  // Загружаем сохранённые значения из AsyncStorage при монтировании
+  useEffect(() => {
+    const loadSavedState = async () => {
+      try {
+        const [limitReached, learned] = await Promise.all([
+          AsyncStorage.getItem(WEEKLY_LIMIT_KEY),
+          AsyncStorage.getItem(WEEKLY_LEARNED_KEY),
+        ]);
+        if (limitReached !== null) {
+          setWeeklyLimitReached(JSON.parse(limitReached));
+        }
+        if (learned !== null) {
+          setWordsLearnedThisWeek(JSON.parse(learned));
+        }
+      } catch (e) {
+        console.warn('[WritingTraining] Failed to load saved state:', e);
+      }
+    };
+    loadSavedState();
+  }, []);
+
+  // Сохраняем weeklyLimitReached в AsyncStorage при изменении
+  useEffect(() => {
+    AsyncStorage.setItem(WEEKLY_LIMIT_KEY, JSON.stringify(weeklyLimitReached)).catch(e =>
+      console.warn('[WritingTraining] Failed to save weeklyLimitReached:', e)
+    );
+  }, [weeklyLimitReached]);
+
+  // Сохраняем wordsLearnedThisWeek в AsyncStorage при изменении
+  useEffect(() => {
+    AsyncStorage.setItem(WEEKLY_LEARNED_KEY, JSON.stringify(wordsLearnedThisWeek)).catch(e =>
+      console.warn('[WritingTraining] Failed to save wordsLearnedThisWeek:', e)
+    );
+  }, [wordsLearnedThisWeek]);
+
+  // Сбрасываем сохранённые значения в начале новой недели (понедельник)
+  useEffect(() => {
+    const checkWeekReset = async () => {
+      try {
+        const now = new Date();
+        const currentMonday = new Date(now);
+        const day = currentMonday.getDay();
+        const diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1);
+        currentMonday.setDate(diff);
+        currentMonday.setHours(0, 0, 0, 0);
+
+        const savedMonday = await AsyncStorage.getItem('@SmartWord:lastMonday');
+        if (savedMonday === null || new Date(savedMonday) < currentMonday) {
+          // Новая неделя — сбрасываем
+          await AsyncStorage.setItem('@SmartWord:lastMonday', currentMonday.toISOString());
+          await AsyncStorage.setItem(WEEKLY_LIMIT_KEY, 'false');
+          await AsyncStorage.setItem(WEEKLY_LEARNED_KEY, '0');
+          setWeeklyLimitReached(false);
+          setWordsLearnedThisWeek(0);
+          console.log('[WritingTraining] Week reset - new Monday:', currentMonday);
+        }
+      } catch (e) {
+        console.warn('[WritingTraining] Week reset error:', e);
+      }
+    };
+    checkWeekReset();
+  }, []);
+
+  // Проверяем лимит при загрузке тренировки
+  useEffect(() => {
+    if (weeklyLimitReached) {
+      return;
+    }
+
+    if (!loading && words.length > 0) {
+      const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
+      if (currentLearned >= weeklyLimit && !profile?.is_premium) {
+        setWeeklyLimitReached(true);
+        setWordsLearnedThisWeek(currentLearned);
+        return;
+      }
+
+      initTraining();
+    }
+  }, [loading, profile, weeklyLimitReached, words.length, wordsLearnedThisWeek, initTraining]);
 
   const feedbackScale = useRef(new Animated.Value(0)).current;
   const feedbackOpacity = useRef(new Animated.Value(0)).current;
@@ -140,9 +233,129 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     );
   }
 
+  // Экран блокировки (лимит достигнут)
+  if (weeklyLimitReached && !profile?.is_premium) {
+    return (
+      <View style={[styles.fill, styles.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+        <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={styles.resultEmoji}>🔒</Text>
+          <Text style={[styles.resultTitle, { color: colors.text }]}>Лимит на этой неделе исчерпан</Text>
+          <Text style={[styles.resultSubtitle, { color: colors.muted }]}>
+            Вы выучили {wordsLearnedThisWeek} из {weeklyLimit} слов
+          </Text>
+
+          <View style={[styles.limitCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+            <Text style={[styles.limitText, { color: colors.text }]}>
+              🎉 Это отличнo! Вы выучили {weeklyLimit} слов на этой неделе.
+            </Text>
+            <Text style={[styles.limitSubText, { color: colors.muted }]}>
+              Но больше слов выучить нельзя до понедельника.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.premiumButton,
+              {
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.5,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+            onPress={() => setPaywallVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Crown color={colors.background} size={20} />
+            <Text style={[styles.premiumButtonText, { color: colors.background }]}>
+              Оформить Premium — учиться без ограничений
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.backToGroupButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
+          </TouchableOpacity>
+        </View>
+
+        <PaywallModal
+          visible={paywallVisible}
+          onClose={() => setPaywallVisible(false)}
+          reason="words"
+        />
+      </View>
+    );
+  }
+
   if (finished) {
     const total = sessionTotal;
     const percent = total > 0 ? Math.round((sessionCorrect / total) * 100) : 0;
+    
+    // Проверяем, достигли ли лимита
+    const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
+    const hitLimitThisSession = currentLearned >= weeklyLimit && (profile?.words_learned_this_week ?? 0) < weeklyLimit;
+
+    if (hitLimitThisSession && !profile?.is_premium) {
+      setWeeklyLimitReached(true);
+      return (
+        <View style={[styles.fill, styles.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
+          <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={styles.resultEmoji}>🔒</Text>
+            <Text style={[styles.resultTitle, { color: colors.text }]}>Лимит на этой неделе исчерпан</Text>
+            <Text style={[styles.resultSubtitle, { color: colors.muted }]}>
+              Вы выучили {Math.min(currentLearned, weeklyLimit)} из {weeklyLimit} слов
+            </Text>
+
+            <View style={[styles.limitCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+              <Text style={[styles.limitText, { color: colors.text }]}>
+                🎉 Это отличнo! Вы выучили {weeklyLimit} слов на этой неделе.
+              </Text>
+              <Text style={[styles.limitSubText, { color: colors.muted }]}>
+                Но больше слов выучить нельзя до понедельника.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.premiumButton,
+                {
+                  backgroundColor: colors.primary,
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 16,
+                  elevation: 8,
+                },
+              ]}
+              onPress={() => setPaywallVisible(true)}
+              activeOpacity={0.85}
+            >
+              <Crown color={colors.background} size={20} />
+              <Text style={[styles.premiumButtonText, { color: colors.background }]}>
+                Оформить Premium — учиться без ограничений
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.backToGroupButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
+            </TouchableOpacity>
+          </View>
+
+          <PaywallModal
+            visible={paywallVisible}
+            onClose={() => setPaywallVisible(false)}
+            reason="words"
+          />
+        </View>
+      );
+    }
 
     return (
       <View style={[styles.fill, styles.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
@@ -234,6 +447,24 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       setSessionCorrect((c) => c + 1);
       animateFeedback(true);
       void updateWordProgress(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0 });
+      
+      // Проверяем, выучено ли слово (correct_count стал >= 5)
+      const wasLearnedBefore = currentWord.correct_count >= 5;
+      const isNowLearned = (currentWord.correct_count + 1) >= 5;
+      const justLearned = !wasLearnedBefore && isNowLearned;
+      
+      if (justLearned) {
+        setWordsLearnedInSession((prev) => prev + 1);
+        setWordsLearnedThisWeek((prev) => {
+          const newVal = prev + 1;
+          // Проверяем лимит после обновления
+          if (newVal >= weeklyLimit && !profile?.is_premium) {
+            setWeeklyLimitReached(true);
+          }
+          return newVal;
+        });
+      }
+      
       // Начисляем очки: 1 за полный ответ, 0.5 за ответ с подсказкой
       const points = hintCount > 0 ? 0.5 : 1;
       void addPoints(points);
@@ -586,6 +817,47 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   resultSubtitle: {
+    fontSize: typography.small,
+    textAlign: 'center',
+  },
+  limitCard: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    marginTop: spacing.sm,
+    width: '100%',
+  },
+  limitText: {
+    fontSize: typography.body,
+    fontFamily: fonts.bold,
+    textAlign: 'center',
+  },
+  limitSubText: {
+    fontSize: typography.small,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  premiumButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.lg,
+    marginTop: spacing.lg,
+    width: '100%',
+  },
+  premiumButtonText: {
+    fontSize: typography.body,
+    fontFamily: fonts.bold,
+    flex: 1,
+  },
+  backToGroupButton: {
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  backToGroupText: {
     fontSize: typography.small,
     textAlign: 'center',
   },

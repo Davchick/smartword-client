@@ -22,6 +22,7 @@ interface Props {
   onSwipeLeft: () => void;
   isTop: boolean;
   stackIndex: number; // 0 = top, 1 = middle, 2 = bottom
+  disabled?: boolean; // Блокировка свайпов
 }
 
 const triggerHapticMedium = () => {
@@ -32,7 +33,7 @@ const triggerHapticLight = () => {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 };
 
-export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex }: Props) => {
+export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, disabled = false }: Props) => {
   const { colors } = useTheme();
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -55,7 +56,7 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex }
   }, [isTop, word.original, word.translation, flipRotation, hapticTriggered, isFlipped, translateX, translateY]);
 
   const tapGesture = Gesture.Tap()
-    .enabled(isTop)
+    .enabled(isTop && !disabled)
     .onEnd(() => {
       if (!isFlipped.value) {
         // Flip to show translation
@@ -66,7 +67,7 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex }
     });
 
   const panGesture = Gesture.Pan()
-    .enabled(isTop)
+    .enabled(isTop && !disabled)
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY / 6;
@@ -80,6 +81,12 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex }
       }
     })
     .onEnd((event) => {
+      if (disabled) {
+        // Reset position if disabled
+        translateX.value = withSpring(0, { damping: 15 });
+        translateY.value = withSpring(0, { damping: 15 });
+        return;
+      }
       if (event.translationX > SWIPE_THRESHOLD) {
         translateX.value = withSpring(SCREEN_WIDTH * 1.5, {
           velocity: event.velocityX,

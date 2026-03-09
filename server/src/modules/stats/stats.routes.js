@@ -4,6 +4,12 @@ const { authMiddleware } = require('../../middleware/auth');
 
 const router = express.Router();
 
+// Логирование всех запросов для отладки
+router.use((req, res, next) => {
+  console.log('[stats.routes] Request:', req.method, req.path, 'URL:', req.url);
+  next();
+});
+
 const DAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 const LEARNED_THRESHOLD = 5;
 

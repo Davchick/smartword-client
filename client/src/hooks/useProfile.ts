@@ -10,6 +10,8 @@ export interface Profile {
   created_at: string;
   subscription_type?: string | null;
   subscription_expires_at?: string | null;
+  words_learned_this_week?: number;
+  weekly_limit?: number;
 }
 
 const AVATAR_KEY = 'smartword_avatar_id';

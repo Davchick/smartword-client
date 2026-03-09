@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || '';
 const ACCESS_TOKEN_KEY = 'smartword_access_token';
 const REFRESH_TOKEN_KEY = 'smartword_refresh_token';
 
@@ -53,6 +53,7 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
     throw new Error('EXPO_PUBLIC_API_URL is not set');
   }
   const url = path.startsWith('http') ? path : `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  console.log('[apiFetch] URL:', url, 'Path:', path);
   const { skipAuth, ...fetchInit } = init;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -65,9 +66,12 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
       token = await refreshAccessToken();
     }
     if (token) headers.Authorization = `Bearer ${token}`;
+    console.log('[apiFetch] Token:', token ? 'present' : 'missing');
   }
 
+  console.log('[apiFetch] Fetching...', url);
   let res = await fetch(url, { ...fetchInit, headers });
+  console.log('[apiFetch] Response:', res.status, res.url);
   if (res.status === 401 && !skipAuth) {
     const newToken = await refreshAccessToken();
     if (newToken) {

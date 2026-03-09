@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,18 +15,17 @@ import {
   Pressable,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { ArrowLeft, Plus, Dumbbell, BookOpen, MoreHorizontal, Trash2, Pencil } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { useProfile } from '../../hooks/useProfile';
 import { AddWordModal } from '../../components/AddWordModal';
-import { PaywallModal } from '../../components/PaywallModal';
 import { SearchFilterBar } from '../../components/SearchFilterBar';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import type { GroupDetailScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
 
-const FREE_WORDS_LIMIT = 30;
 const ARCHIVE_THRESHOLD = 5;
 
 const getBadgeColors = (count: number) => {
@@ -45,14 +44,13 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
   const { groupId, groupName } = route.params;
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { words, loading, totalCount, addWord, deleteWord, updateWord, getTrainingWords } = useWords(groupId);
+  const { words, loading, totalCount, addWord, deleteWord, updateWord, getTrainingWords, refetch } = useWords(groupId);
   const visibleWords = words.filter((w) => w.correct_count < ARCHIVE_THRESHOLD);
   const activeCount = visibleWords.length;
   const activeCountLabel = `${activeCount} ${pluralizeRu(activeCount, ['слово', 'слова', 'слов'])}`;
   const { profile } = useProfile();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
-  const [paywallVisible, setPaywallVisible] = useState(false);
 
   // Search & sort
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,6 +104,15 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
   const [editTranslation, setEditTranslation] = useState('');
   const [editSaving, setEditSaving] = useState(false);
 
+  // Обновляем слова при возврате на экран (после тренировки)
+  // Примечание: useWords уже обновляет состояние локально при updateWordProgress,
+  // поэтому refetch не нужен - данные уже актуальны
+  useFocusEffect(
+    useCallback(() => {
+      // refetch(); // Закомментировано, чтобы избежать race condition
+    }, [])
+  );
+
   const openActionMenu = (word: Word) => {
     setActionMenuWord(word);
     Animated.spring(actionMenuAnim, {
@@ -128,10 +135,6 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
   };
 
   const handleAddPress = () => {
-    if (!profile?.is_premium && totalCount >= FREE_WORDS_LIMIT) {
-      setPaywallVisible(true);
-      return;
-    }
     setAddModalVisible(true);
   };
 
@@ -470,11 +473,6 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
         onSubmit={(original, translation) => addWord(original, translation, groupId)}
         totalCount={totalCount}
         isPremium={profile?.is_premium ?? false}
-      />
-      <PaywallModal
-        visible={paywallVisible}
-        onClose={() => setPaywallVisible(false)}
-        reason="words"
       />
 
       {/* Sort bottom sheet */}

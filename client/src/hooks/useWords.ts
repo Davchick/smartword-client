@@ -57,8 +57,7 @@ export const useWords = (groupId?: string) => {
     if (authUser && getBaseUrl()) {
       try {
         const created = await apiPost<Word>('/words', { original, translation, group_id: gId });
-        setWords((prev) => [created, ...prev]);
-        setTotalCount((c) => c + 1);
+        await fetchWords(); // Полностью обновляем список слов
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
@@ -79,8 +78,7 @@ export const useWords = (groupId?: string) => {
     };
     const updated = [newWord, ...existing];
     await AsyncStorage.setItem('smartword_guest_words', JSON.stringify(updated));
-    setWords((prev) => [newWord, ...prev]);
-    setTotalCount(updated.length);
+    await fetchWords(); // Полностью обновляем список слов
     return { error: null };
   };
 
@@ -88,8 +86,7 @@ export const useWords = (groupId?: string) => {
     if (authUser && getBaseUrl()) {
       try {
         await apiDelete(`/words/${wordId}`);
-        setWords((prev) => prev.filter((w) => w.id !== wordId));
-        setTotalCount((c) => Math.max(0, c - 1));
+        await fetchWords(); // Полностью обновляем список слов
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
@@ -100,8 +97,7 @@ export const useWords = (groupId?: string) => {
     const existing: Word[] = wordsRaw ? JSON.parse(wordsRaw) : [];
     const updated = existing.filter((w) => w.id !== wordId);
     await AsyncStorage.setItem('smartword_guest_words', JSON.stringify(updated));
-    setWords((prev) => prev.filter((w) => w.id !== wordId));
-    setTotalCount(updated.length);
+    await fetchWords(); // Полностью обновляем список слов
     return { error: null };
   };
 
@@ -109,19 +105,67 @@ export const useWords = (groupId?: string) => {
     wordId: string,
     knew: boolean,
     options?: { correctDelta?: number; incorrectDelta?: number }
-  ): Promise<void> => {
+  ): Promise<{ success: boolean; weeklyLimitReached?: boolean; wordsLearnedThisWeek?: number; newCorrectCount?: number; limitReached?: boolean }> => {
     const word = words.find((w) => w.id === wordId);
-    if (!word) return;
+    if (!word) return { success: false };
     const correctDelta = options?.correctDelta ?? 1;
     const incorrectDelta = options?.incorrectDelta ?? -1;
     const delta = knew ? correctDelta : incorrectDelta;
     const newCount = Math.max(0, word.correct_count + delta);
 
+    console.log('[useWords] updateWordProgress:', { wordId, knew, delta, oldCount: word.correct_count, newCount });
+
+    // Сначала обновляем локальное состояние (оптимистичное обновление)
+    setWords((prev) =>
+      prev.map((w) =>
+        w.id === wordId ? { ...w, correct_count: newCount, last_reviewed: new Date().toISOString() } : w
+      )
+    );
+    console.log('[useWords] Local state updated');
+
     if (authUser && getBaseUrl()) {
       try {
-        await apiPost(`/words/${wordId}/progress`, { knew, correctDelta, incorrectDelta });
-      } catch {
-        //
+        const response = await apiPost(`/words/${wordId}/progress`, { knew, correctDelta, incorrectDelta });
+        console.log('[useWords] API response:', response);
+        
+        // Если сервер вернул обновлённые данные, используем их
+        if (response && typeof response === 'object' && 'correct_count' in response) {
+          const serverCount = (response as { correct_count: number }).correct_count;
+          const serverLastReviewed = (response as { last_reviewed?: string }).last_reviewed;
+          const limitReached = (response as { limit_reached?: boolean }).limit_reached;
+          const wordsLearned = (response as { words_learned_this_week?: number }).words_learned_this_week;
+          
+          setWords((prev) =>
+            prev.map((w) =>
+              w.id === wordId ? { ...w, correct_count: serverCount, last_reviewed: serverLastReviewed || w.last_reviewed } : w
+            )
+          );
+          console.log('[useWords] Updated from server:', { serverCount, limitReached, wordsLearned });
+          return { 
+            success: true, 
+            newCorrectCount: serverCount,
+            weeklyLimitReached: false,
+            limitReached: limitReached,
+            wordsLearnedThisWeek: wordsLearned,
+          };
+        }
+      } catch (err: unknown) {
+        const e = err as { body?: { error?: string; words_learned_this_week?: number } };
+        if (e?.body?.error === 'WEEKLY_LIMIT_REACHED') {
+          console.log('[useWords] Weekly limit reached!');
+          // Откатываем локальное изменение
+          setWords((prev) =>
+            prev.map((w) =>
+              w.id === wordId ? { ...w, correct_count: word.correct_count, last_reviewed: w.last_reviewed } : w
+            )
+          );
+          return {
+            success: false,
+            weeklyLimitReached: true,
+            wordsLearnedThisWeek: e.body.words_learned_this_week,
+          };
+        }
+        console.error('[useWords] API error:', err);
       }
     } else {
       const wordsRaw = await AsyncStorage.getItem('smartword_guest_words');
@@ -131,18 +175,15 @@ export const useWords = (groupId?: string) => {
       );
       await AsyncStorage.setItem('smartword_guest_words', JSON.stringify(updated));
     }
-    setWords((prev) =>
-      prev.map((w) =>
-        w.id === wordId ? { ...w, correct_count: newCount, last_reviewed: new Date().toISOString() } : w
-      )
-    );
+    
+    return { success: true, newCorrectCount: newCount };
   };
 
   const updateWord = async (wordId: string, original: string, translation: string): Promise<{ error: string | null }> => {
     if (authUser && getBaseUrl()) {
       try {
         await apiPatch<Word>(`/words/${wordId}`, { original, translation });
-        setWords((prev) => prev.map((w) => (w.id === wordId ? { ...w, original, translation } : w)));
+        await fetchWords(); // Полностью обновляем список слов
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
@@ -153,7 +194,7 @@ export const useWords = (groupId?: string) => {
     const existing: Word[] = wordsRaw ? JSON.parse(wordsRaw) : [];
     const updated = existing.map((w) => (w.id === wordId ? { ...w, original, translation } : w));
     await AsyncStorage.setItem('smartword_guest_words', JSON.stringify(updated));
-    setWords((prev) => prev.map((w) => (w.id === wordId ? { ...w, original, translation } : w)));
+    await fetchWords(); // Полностью обновляем список слов
     return { error: null };
   };
 

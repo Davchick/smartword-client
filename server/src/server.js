@@ -28,6 +28,10 @@ app.use('/stats', statsRouter);
 app.use('/chat', chatRouter);
 app.use('/billing', billingRouter);
 
+// Telegram bot long-polling
+const { startPolling } = require('./modules/support/telegram.polling');
+startPolling();
+
 const port = env.port;
 
 app.listen(port, () => {

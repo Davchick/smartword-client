@@ -1,11 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, Platform } from 'react-native';
+import { BlurView } from 'expo-blur';
 import Svg, { Path, G, Defs, LinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import { useTheme, spacing, radii, typography, fonts } from '../theme';
 import type { TrainingDayProgress } from '../hooks/useTrainingProgress';
 
+// Проверяем, что blur работает (не Expo Go)
+const supportsBlur = Platform.OS !== 'ios' || !__DEV__;
+
 interface ProgressChartProps {
   data: TrainingDayProgress[];
+  locked?: boolean;
 }
 
 const CHART_HEIGHT = 160;
@@ -16,14 +21,28 @@ const PADDING = 40;
 const GRADIENT_START = '#06D6A0';
 const GRADIENT_END = '#04916A';
 
-export const ProgressChart: React.FC<ProgressChartProps> = ({ data }) => {
+// Default empty data for 7 days - attractive curve to tempt users
+const DEFAULT_EMPTY_DATA: TrainingDayProgress[] = [
+  { date: '', dayLabel: 'Пн', points: 12, isToday: false },
+  { date: '', dayLabel: 'Вт', points: 28, isToday: false },
+  { date: '', dayLabel: 'Ср', points: 15, isToday: false },
+  { date: '', dayLabel: 'Чт', points: 42, isToday: false },
+  { date: '', dayLabel: 'Пт', points: 35, isToday: false },
+  { date: '', dayLabel: 'Сб', points: 58, isToday: false },
+  { date: '', dayLabel: 'Вс', points: 47, isToday: true },
+];
+
+export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = false }) => {
   const { colors } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0));
   const lineAnim = useRef(new Animated.Value(0));
   const [lineProgress, setLineProgress] = useState(0);
 
-  const maxPoints = Math.max(...data.map((d) => d.points), 1);
-  const totalPoints = data.reduce((sum, d) => sum + d.points, 0);
+  const chartData = data.length > 0 ? data : DEFAULT_EMPTY_DATA;
+  const maxPoints = Math.max(...chartData.map((d) => d.points), 1);
+  const totalPoints = locked 
+    ? DEFAULT_EMPTY_DATA.reduce((sum, d) => sum + d.points, 0)
+    : chartData.reduce((sum, d) => sum + d.points, 0);
 
   useEffect(() => {
     fadeAnim.current.setValue(0);
@@ -51,17 +70,17 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data }) => {
     return () => {
       lineAnim.current.removeListener(listener);
     };
-  }, [data]);
+  }, [chartData]);
 
   // Generate smooth curve path
   const generateCurvePath = (progress: number) => {
-    if (data.length === 0) return '';
+    if (chartData.length === 0) return '';
 
     const chartInnerWidth = CHART_WIDTH - PADDING * 2;
     const chartInnerHeight = CHART_HEIGHT - PADDING * 2;
-    const stepX = chartInnerWidth / (data.length - 1 || 1);
+    const stepX = chartInnerWidth / (chartData.length - 1 || 1);
 
-    const points = data.map((day, i) => ({
+    const points = chartData.map((day, i) => ({
       x: PADDING + i * stepX,
       y: CHART_HEIGHT - PADDING - (day.points / maxPoints) * chartInnerHeight,
       points: day.points,
@@ -120,6 +139,11 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data }) => {
               <Stop offset="0" stopColor={GRADIENT_START} stopOpacity="1" />
               <Stop offset="1" stopColor={GRADIENT_END} stopOpacity="1" />
             </LinearGradient>
+            {/* Gradient overlay for locked state */}
+            <LinearGradient id="lockGradient" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
+              <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0.3" />
+            </LinearGradient>
           </Defs>
 
           {/* Area fill */}
@@ -136,15 +160,15 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data }) => {
           />
 
           {/* Data points and labels */}
-          {data.map((day, i) => {
+          {chartData.map((day, i) => {
             const chartInnerWidth = CHART_WIDTH - PADDING * 2;
             const chartInnerHeight = CHART_HEIGHT - PADDING * 2;
-            const stepX = chartInnerWidth / (data.length - 1 || 1);
+            const stepX = chartInnerWidth / (chartData.length - 1 || 1);
             const x = PADDING + i * stepX;
             const y = CHART_HEIGHT - PADDING - (day.points / maxPoints) * chartInnerHeight;
 
             return (
-              <G key={day.date}>
+              <G key={`${day.date}-${day.dayLabel}-${i}`}>
                 {/* Point */}
                 <SvgText
                   x={x}
@@ -184,8 +208,45 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data }) => {
               </G>
             );
           })}
+
+          {/* White overlay for locked state to obscure the chart */}
+          {locked && (
+            <Path
+              d={`M ${PADDING} ${CHART_HEIGHT - PADDING} L ${CHART_WIDTH - PADDING} ${CHART_HEIGHT - PADDING} L ${CHART_WIDTH - PADDING} ${PADDING * 0.5} L ${PADDING} ${PADDING * 0.5} Z`}
+              fill="url(#lockGradient)"
+            />
+          )}
         </Svg>
       </View>
+
+      {/* Lock overlay */}
+      {locked && (
+        <View style={styles.lockOverlay}>
+          {supportsBlur ? (
+            <BlurView intensity={100} tint="light" style={styles.blurView} experimentalBlurMethod="dimezisBlurView">
+              <View style={styles.lockContent}>
+                <View style={styles.lockIconContainer}>
+                  <Text style={styles.lockIcon}>🔒</Text>
+                </View>
+                <Text style={[styles.lockTitle, { color: colors.text }]}>Войдите в аккаунт</Text>
+                <Text style={[styles.lockSubtitle, { color: colors.muted }]}>
+                  Чтобы видеть статистику и отслеживать свой прогресс
+                </Text>
+              </View>
+            </BlurView>
+          ) : (
+            <View style={styles.lockContent}>
+              <View style={styles.lockIconContainer}>
+                <Text style={styles.lockIcon}>🔒</Text>
+              </View>
+              <Text style={[styles.lockTitle, { color: colors.text }]}>Войдите в аккаунт</Text>
+              <Text style={[styles.lockSubtitle, { color: colors.muted }]}>
+                Чтобы видеть статистику и отслеживать свой прогресс
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
     </Animated.View>
   );
 };
@@ -213,5 +274,59 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     alignItems: 'center',
+  },
+  lockOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: radii.lg,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  blurView: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: radii.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lockContent: {
+    borderRadius: radii.lg,
+    padding: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: supportsBlur 
+      ? 'rgba(255, 255, 255, 0.15)'
+      : 'rgba(255, 255, 255, 0.92)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  lockIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(6, 214, 160, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+    borderWidth: 2,
+    borderColor: 'rgba(6, 214, 160, 0.3)',
+  },
+  lockIcon: {
+    fontSize: 26,
+  },
+  lockTitle: {
+    fontSize: typography.body,
+    fontFamily: fonts.headingBold,
+  },
+  lockSubtitle: {
+    fontSize: typography.small,
+    fontFamily: fonts.regular,
+    textAlign: 'center',
+    maxWidth: 200,
   },
 });

@@ -45,6 +45,22 @@ export type GroupsStackParamList = {
   };
 };
 
+// --- Training Stack (внутри таба Тренировка) ---
+export type TrainingStackParamList = {
+  TrainingModes: {
+    groupId?: string;
+    groupName?: string;
+  };
+  Training: {
+    groupId?: string;
+    groupName?: string;
+  };
+  TrainingWrite: {
+    groupId?: string;
+    groupName?: string;
+  };
+};
+
 // --- Типизация props экранов ---
 export type GroupsScreenProps = CompositeScreenProps<
   NativeStackScreenProps<GroupsStackParamList, 'Groups'>,
@@ -59,15 +75,24 @@ export type GroupDetailScreenProps = NativeStackScreenProps<
 export type TrainingScreenProps = NativeStackScreenProps<
   GroupsStackParamList,
   'Training'
+> | NativeStackScreenProps<
+  TrainingStackParamList,
+  'Training'
 >;
 
 export type TrainingModesScreenProps = NativeStackScreenProps<
   GroupsStackParamList,
   'TrainingModes'
+> | NativeStackScreenProps<
+  TrainingStackParamList,
+  'TrainingModes'
 >;
 
 export type TrainingWriteScreenProps = NativeStackScreenProps<
   GroupsStackParamList,
+  'TrainingWrite'
+> | NativeStackScreenProps<
+  TrainingStackParamList,
   'TrainingWrite'
 >;
 

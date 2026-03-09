@@ -36,7 +36,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { groups, loading, createGroup, deleteGroup, renameGroup, refetch: refetchGroups } = useGroups();
-  const { words } = useWords();
+  const { words, refetch: refetchWords } = useWords();
   const { profile } = useProfile();
   const { stats, refetch: refetchStats } = useStats();
 
@@ -149,7 +149,8 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
     useCallback(() => {
       refetchGroups();
       refetchStats();
-    }, [refetchGroups, refetchStats])
+      refetchWords();
+    }, [refetchGroups, refetchStats, refetchWords])
   );
 
   if (loading) {

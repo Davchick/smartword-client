@@ -25,6 +25,10 @@ const env = {
   yookassaShopId: process.env.YOOKASSA_SHOP_ID || '',
   yookassaSecretKey: process.env.YOOKASSA_SECRET_KEY || '',
   yookassaReturnUrl: process.env.YOOKASSA_RETURN_URL || process.env.APP_PUBLIC_URL || process.env.BASE_URL || 'http://localhost:3000',
+
+  // Telegram Support Bot
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramAdminChatId: process.env.TELEGRAM_ADMIN_CHAT_ID || '',
 };
 
 module.exports = { env };

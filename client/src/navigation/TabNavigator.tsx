@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BookOpen, Dumbbell, MessageCircle, User } from 'lucide-react-native';
 import { useTheme, fonts } from '../theme';
-import type { MainTabParamList, GroupsStackParamList } from './types';
+import type { MainTabParamList, GroupsStackParamList, TrainingStackParamList } from './types';
 
 import { GroupsScreen } from '../screens/Groups/GroupsScreen';
 import { GroupDetailScreen } from '../screens/Groups/GroupDetailScreen';
@@ -17,6 +17,7 @@ import { ProfileScreen } from '../screens/Profile/ProfileScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 const GroupsStack = createNativeStackNavigator<GroupsStackParamList>();
+const TrainingStack = createNativeStackNavigator<TrainingStackParamList>();
 
 const GroupsNavigator = () => (
   <GroupsStack.Navigator screenOptions={{ headerShown: false }}>
@@ -27,6 +28,14 @@ const GroupsNavigator = () => (
     <GroupsStack.Screen name="Training" component={TrainingScreen} />
     <GroupsStack.Screen name="TrainingWrite" component={WritingTrainingScreen} />
   </GroupsStack.Navigator>
+);
+
+const TrainingNavigator = () => (
+  <TrainingStack.Navigator screenOptions={{ headerShown: false }}>
+    <TrainingStack.Screen name="TrainingModes" component={TrainingModesScreen} />
+    <TrainingStack.Screen name="Training" component={TrainingScreen} />
+    <TrainingStack.Screen name="TrainingWrite" component={WritingTrainingScreen} />
+  </TrainingStack.Navigator>
 );
 
 export const TabNavigator = () => {
@@ -62,7 +71,7 @@ export const TabNavigator = () => {
       />
       <Tab.Screen
         name="TrainingTab"
-        component={TrainingModesScreen}
+        component={TrainingNavigator}
         options={{
           tabBarLabel: 'Тренировка',
           tabBarIcon: ({ color, size }) => <Dumbbell color={color} size={size} />,

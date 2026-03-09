@@ -5,7 +5,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, RotateCcw, Dumbbell, Crown } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
@@ -23,6 +25,9 @@ const CARDS_VISIBLE = 3;
 
 type Round = 'initial' | 'retry';
 
+const WEEKLY_LIMIT_KEY = '@SmartWord:weeklyLimitReached';
+const WEEKLY_LEARNED_KEY = '@SmartWord:wordsLearnedThisWeek';
+
 export const TrainingScreen = ({ route, navigation }: Props) => {
   const { colors } = useTheme();
   const params = 'params' in route ? route.params : undefined;
@@ -30,8 +35,8 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const groupName = params && 'groupName' in params ? params.groupName : 'Все слова';
   const insets = useSafeAreaInsets();
 
-  const { words, loading, updateWordProgress, getTrainingWords } = useWords(groupId);
-  const { profile } = useProfile();
+  const { words, loading, updateWordProgress, getTrainingWords, refetch: refetchWords } = useWords(groupId);
+  const { profile, refetch: refetchProfile } = useProfile();
   const { addPoints } = useTrainingProgress();
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -43,10 +48,107 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const initialWrongIdsRef = useRef<Set<string>>(new Set());
   const retryTotalRef = useRef(0);
   const canGoBack = navigation.canGoBack();
+  const [weeklyLimitReached, setWeeklyLimitReached] = useState(false);
+  const [wordsLearnedThisWeek, setWordsLearnedThisWeek] = useState<number>(0);
+  const weeklyLimit = 50; // слов в неделю для бесплатных пользователей
+  const [isProcessing, setIsProcessing] = useState(false); // Блокировка спама кнопок
+  const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0); // Сколько слов выучили в ЭТОЙ сессии
 
+  // Загружаем сохранённые значения из AsyncStorage при монтировании
   useEffect(() => {
+    const loadSavedState = async () => {
+      try {
+        const [limitReached, learned] = await Promise.all([
+          AsyncStorage.getItem(WEEKLY_LIMIT_KEY),
+          AsyncStorage.getItem(WEEKLY_LEARNED_KEY),
+        ]);
+        if (limitReached !== null) {
+          setWeeklyLimitReached(JSON.parse(limitReached));
+        }
+        if (learned !== null) {
+          setWordsLearnedThisWeek(JSON.parse(learned));
+        }
+      } catch (e) {
+        console.warn('[Training] Failed to load saved state:', e);
+      }
+    };
+    loadSavedState();
+  }, []);
+
+  // Сохраняем weeklyLimitReached в AsyncStorage при изменении
+  useEffect(() => {
+    AsyncStorage.setItem(WEEKLY_LIMIT_KEY, JSON.stringify(weeklyLimitReached)).catch(e =>
+      console.warn('[Training] Failed to save weeklyLimitReached:', e)
+    );
+  }, [weeklyLimitReached]);
+
+  // Сохраняем wordsLearnedThisWeek в AsyncStorage при изменении
+  useEffect(() => {
+    AsyncStorage.setItem(WEEKLY_LEARNED_KEY, JSON.stringify(wordsLearnedThisWeek)).catch(e =>
+      console.warn('[Training] Failed to save wordsLearnedThisWeek:', e)
+    );
+  }, [wordsLearnedThisWeek]);
+
+  // Сбрасываем сохранённые значения в начале новой недели (понедельник)
+  useEffect(() => {
+    const checkWeekReset = async () => {
+      try {
+        const now = new Date();
+        const currentMonday = new Date(now);
+        const day = currentMonday.getDay();
+        const diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1);
+        currentMonday.setDate(diff);
+        currentMonday.setHours(0, 0, 0, 0);
+
+        const savedMonday = await AsyncStorage.getItem('@SmartWord:lastMonday');
+        if (savedMonday === null || new Date(savedMonday) < currentMonday) {
+          // Новая неделя — сбрасываем
+          await AsyncStorage.setItem('@SmartWord:lastMonday', currentMonday.toISOString());
+          await AsyncStorage.setItem(WEEKLY_LIMIT_KEY, 'false');
+          await AsyncStorage.setItem(WEEKLY_LEARNED_KEY, '0');
+          setWeeklyLimitReached(false);
+          setWordsLearnedThisWeek(0);
+          console.log('[Training] Week reset - new Monday:', currentMonday);
+        }
+      } catch (e) {
+        console.warn('[Training] Week reset error:', e);
+      }
+    };
+    checkWeekReset();
+  }, []);
+
+  // Проверяем лимит при загрузке тренировки (блокируем следующие сессии)
+  useEffect(() => {
+    console.log('[Training] useEffect check:', {
+      loading,
+      wordsLength: words.length,
+      weeklyLimitReached,
+      profileIsPremium: profile?.is_premium,
+      profileWordsLearned: profile?.words_learned_this_week,
+      wordsLearnedThisWeek,
+      weeklyLimit,
+    });
+
+    // Если уже заблокировано - не продолжаем
+    if (weeklyLimitReached) {
+      console.log('[Training] Already blocked, skipping');
+      return;
+    }
+
     if (!loading && words.length > 0) {
+      // Используем wordsLearnedThisWeek (сохраняется между рендерами) + profile
+      const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
+      console.log('[Training] Checking limit:', { currentLearned, weeklyLimit, isPremium: profile?.is_premium, wordsLearnedThisWeek });
+
+      if (currentLearned >= weeklyLimit && !profile?.is_premium) {
+        console.log('[Training] 🔒 LIMIT REACHED - blocking session');
+        setWeeklyLimitReached(true);
+        setWordsLearnedThisWeek(currentLearned);
+        return;
+      }
+
       const tw = getTrainingWords();
+      console.log('[Training] Starting session:', { trainingWords: tw.length });
       setTrainingWords(tw);
       setInitialTotal(tw.length);
       setCurrentIndex(0);
@@ -56,81 +158,139 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       initialWrongIdsRef.current = new Set();
       retryTotalRef.current = 0;
     }
-  }, [loading]);
+  }, [loading, profile, weeklyLimitReached, words.length, wordsLearnedThisWeek]);
 
   const formatScore = (value: number) => {
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
   };
 
   const handleSwipe = async (knew: boolean) => {
-    const currentWord = trainingWords[currentIndex];
-    if (!currentWord) return;
+    // Игнорируем нажатия если уже обрабатываем предыдущее
+    if (isProcessing) return;
 
-    if (round === 'retry') {
-      if (knew) {
-        await updateWordProgress(currentWord.id, true, { correctDelta: 0.5 });
-        // Начисляем 0.5 очков за слово, угаданное со второй попытки
-        await addPoints(0.5);
-      } else {
-        // На повторении ошибок не "штрафуем" прогрессом за повторный промах —
-        // просто отправляем слово в конец очереди.
-        await updateWordProgress(currentWord.id, false, { incorrectDelta: 0 });
-      }
-    } else {
-      await updateWordProgress(currentWord.id, knew);
-      // Начисляем 1 очко за слово, угаданное с первой попытки
-      if (knew) {
-        await addPoints(1);
-      }
-    }
-
-    if (round === 'initial') {
-      setStats((prev) => ({
-        knew: knew ? prev.knew + 1 : prev.knew,
-        didntKnow: !knew ? prev.didntKnow + 1 : prev.didntKnow,
-      }));
-      if (!knew) initialWrongIdsRef.current.add(currentWord.id);
-    } else {
-      // Во втором круге "не знаю" не штрафуем в отчёте,
-      // а за "знаю" после ошибки в первом круге даём 0.5.
-      if (knew) {
-        setStats((prev) => ({ ...prev, knew: prev.knew + 0.5 }));
-      }
-    }
-
-    if (round === 'retry') {
-      // Очередь повторения: вправо = убрать слово, влево = в конец.
-      setTrainingWords((prev) => {
-        if (prev.length === 0) return prev;
-        const head = prev[0]!;
-        const tail = prev.slice(1);
-        const nextQueue = knew ? tail : [...tail, head];
-        if (nextQueue.length === 0) setFinished(true);
-        return nextQueue;
-      });
-      setCurrentIndex(0);
+    // Блокируем свайпы если достигнут лимит
+    if (weeklyLimitReached && !profile?.is_premium) {
+      console.log('[Training] 🚫 Swipe blocked - weekly limit reached');
       return;
     }
 
-    // Первый круг — линейно идём по списку, и в конце запускаем повтор ошибок.
-    if (currentIndex + 1 >= trainingWords.length) {
-      if (initialWrongIdsRef.current.size > 0) {
-        const retryWords = trainingWords.filter((w) => initialWrongIdsRef.current.has(w.id));
-        if (retryWords.length > 0) {
-          retryTotalRef.current = retryWords.length;
-          setTrainingWords(retryWords);
-          setCurrentIndex(0);
-          setRound('retry');
-          return;
+    const currentWord = trainingWords[currentIndex];
+    if (!currentWord) return;
+
+    setIsProcessing(true);
+
+    try {
+      if (round === 'retry') {
+        if (knew) {
+          await updateWordProgress(currentWord.id, true, { correctDelta: 0.5 });
+          // Начисляем 0.5 очков за слово, угаданное со второй попытки
+          await addPoints(0.5);
+        } else {
+          // На повторении ошибок не "штрафуем" прогрессом за повторный промах —
+          // просто отправляем слово в конец очереди.
+          await updateWordProgress(currentWord.id, false, { incorrectDelta: 0 });
+        }
+      } else {
+        const result = await updateWordProgress(currentWord.id, knew);
+
+        // Считаем сколько слов выучили в этой сессии (correct_count стал >= 5)
+        const wasLearnedBefore = currentWord.correct_count >= 5;
+        const isNowLearned = knew && (currentWord.correct_count + 1) >= 5;
+        const justLearned = !wasLearnedBefore && isNowLearned;
+
+        if (justLearned && knew) {
+          // Обновляем оба счётчика
+          setWordsLearnedInSession((prev) => {
+            const newVal = prev + 1;
+            console.log('[Training] 📚 Word learned in session:', { wordId: currentWord.id, sessionCount: newVal });
+            return newVal;
+          });
+          setWordsLearnedThisWeek((prev) => {
+            const newVal = prev + 1;
+            console.log('[Training] 📚 Word learned this week:', { wordId: currentWord.id, weekCount: newVal });
+            return newVal;
+          });
+        }
+
+        // Логируем прогресс
+        console.log('[Training] 📊 Swipe:', {
+          wordId: currentWord.id,
+          knew,
+          oldCorrectCount: currentWord.correct_count,
+          newCorrectCount: result.newCorrectCount,
+          justLearned,
+          wordsLearnedInSession,
+          result,
+        });
+
+        // Начисляем 1 очко за слово, угаданное с первой попытки
+        if (knew) {
+          await addPoints(1);
         }
       }
-      setFinished(true);
-    } else {
-      setCurrentIndex((prev) => prev + 1);
+
+      if (round === 'initial') {
+        setStats((prev) => ({
+          knew: knew ? prev.knew + 1 : prev.knew,
+          didntKnow: !knew ? prev.didntKnow + 1 : prev.didntKnow,
+        }));
+        if (!knew) initialWrongIdsRef.current.add(currentWord.id);
+      } else {
+        // Во втором круге "не знаю" не штрафуем в отчёте,
+        // а за "знаю" после ошибки в первом круге даём 0.5.
+        if (knew) {
+          setStats((prev) => ({ ...prev, knew: prev.knew + 0.5 }));
+        }
+      }
+
+      if (round === 'retry') {
+        // Очередь повторения: вправо = убрать слово, влево = в конец.
+        setTrainingWords((prev) => {
+          if (prev.length === 0) return prev;
+          const head = prev[0]!;
+          const tail = prev.slice(1);
+          const nextQueue = knew ? tail : [...tail, head];
+          if (nextQueue.length === 0) setFinished(true);
+          return nextQueue;
+        });
+        setCurrentIndex(0);
+        setIsProcessing(false);
+        return;
+      }
+
+      // Первый круг — линейно идём по списку, и в конце запускаем повтор ошибок.
+      if (currentIndex + 1 >= trainingWords.length) {
+        if (initialWrongIdsRef.current.size > 0) {
+          const retryWords = trainingWords.filter((w) => initialWrongIdsRef.current.has(w.id));
+          if (retryWords.length > 0) {
+            retryTotalRef.current = retryWords.length;
+            setTrainingWords(retryWords);
+            setCurrentIndex(0);
+            setRound('retry');
+            setIsProcessing(false);
+            return;
+          }
+        }
+        setFinished(true);
+      } else {
+        setCurrentIndex((prev) => prev + 1);
+      }
+    } catch (err) {
+      console.error('[Training] handleSwipe error:', err);
     }
+    
+    setIsProcessing(false);
   };
 
   const handleRestart = () => {
+    // Не позволяем перезапустить если лимит достигнут
+    const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
+    if (currentLearned >= weeklyLimit && !profile?.is_premium) {
+      console.log('[Training] 🚫 Restart blocked - weekly limit reached');
+      setWeeklyLimitReached(true);
+      return;
+    }
+
     const tw = getTrainingWords();
     setTrainingWords(tw);
     setInitialTotal(tw.length);
@@ -139,6 +299,8 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     setFinished(false);
     setRound('initial');
     initialWrongIdsRef.current = new Set();
+    retryTotalRef.current = 0;
+    setWordsLearnedInSession(0); // Сбрасываем счётчик сессии
   };
 
   if (loading) {
@@ -166,33 +328,226 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     );
   }
 
+  if (weeklyLimitReached && !profile?.is_premium) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+        <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={styles.resultEmoji}>🔒</Text>
+          <Text style={[styles.resultTitle, { color: colors.text }]}>Лимит на этой неделе исчерпан</Text>
+          <Text style={[styles.resultSubtitle, { color: colors.muted }]}>
+            Вы выучили {wordsLearnedThisWeek} из {weeklyLimit} слов
+          </Text>
+
+          <View style={[styles.limitCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+            <Text style={[styles.limitText, { color: colors.text }]}>
+              🎉 Это отличнo! Вы выучили {weeklyLimit} слов на этой неделе.
+            </Text>
+            <Text style={[styles.limitSubText, { color: colors.muted }]}>
+              Но больше слов выучить нельзя до понедельника.
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.premiumButton,
+              {
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.5,
+                shadowRadius: 16,
+                elevation: 8,
+              },
+            ]}
+            onPress={() => setPaywallVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Crown color={colors.background} size={20} />
+            <Text style={[styles.premiumButtonText, { color: colors.background }]}>
+              Оформить Premium — учиться без ограничений
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.backToGroupButton}
+            onPress={() => {
+              navigation.goBack();
+            }}
+          >
+            <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
+          </TouchableOpacity>
+        </View>
+
+        <PaywallModal
+          visible={paywallVisible}
+          onClose={() => setPaywallVisible(false)}
+          reason="words"
+        />
+      </View>
+    );
+  }
+
   if (finished) {
     const total = initialTotal;
     const percent = total > 0 ? Math.round((stats.knew / total) * 100) : 0;
 
+    // Проверяем, остались ли слова для тренировки
+    const remainingWords = getTrainingWords();
+    const allWordsArchived = remainingWords.length === 0;
+
+    // Проверяем, достигли ли лимита на этой неделе (мягкий лимит - блокируем только СЛЕДУЮЩИЕ сессии)
+    const currentLearned = profile?.words_learned_this_week ?? 0;
+    const totalLearnedAfterSession = currentLearned + wordsLearnedThisWeek;
+    const hitLimitThisSession = totalLearnedAfterSession >= weeklyLimit && currentLearned < weeklyLimit;
+    const alreadyHitLimitBeforeSession = currentLearned >= weeklyLimit;
+
+    console.log('[Training] Finished check:', {
+      currentLearned,
+      wordsLearnedThisWeek,
+      totalLearnedAfterSession,
+      weeklyLimit,
+      hitLimitThisSession,
+      alreadyHitLimitBeforeSession,
+      isPremium: profile?.is_premium,
+    });
+
+    // Если лимит был достигнут ДО этой сессии или в конце сессии — показываем блокировку
+    if ((!profile?.is_premium && alreadyHitLimitBeforeSession) || hitLimitThisSession) {
+      console.log('[Training] 🔒 Showing limit screen');
+
+      // Обновляем состояние без refetch (чтобы избежать бесконечного цикла ререндеров)
+      setWeeklyLimitReached(true);
+
+      return (
+        <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+          <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={styles.resultEmoji}>🔒</Text>
+            <Text style={[styles.resultTitle, { color: colors.text }]}>Лимит на этой неделе исчерпан</Text>
+            <Text style={[styles.resultSubtitle, { color: colors.muted }]}>
+              Вы выучили {Math.min(totalLearnedAfterSession, weeklyLimit)} из {weeklyLimit} слов
+            </Text>
+
+            <View style={[styles.limitCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+              <Text style={[styles.limitText, { color: colors.text }]}>
+                🎉 Это отличнo! Вы выучили {weeklyLimit} слов на этой неделе.
+              </Text>
+              <Text style={[styles.limitSubText, { color: colors.muted }]}>
+                Но больше слов выучить нельзя до понедельника.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.premiumButton,
+                {
+                  backgroundColor: colors.primary,
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 16,
+                  elevation: 8,
+                },
+              ]}
+              onPress={() => setPaywallVisible(true)}
+              activeOpacity={0.85}
+            >
+              <Crown color={colors.background} size={20} />
+              <Text style={[styles.premiumButtonText, { color: colors.background }]}>
+                Оформить Premium — учиться без ограничений
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.backToGroupButton}
+              onPress={() => {
+                navigation.goBack();
+              }}
+            >
+              <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
+            </TouchableOpacity>
+          </View>
+
+          <PaywallModal
+            visible={paywallVisible}
+            onClose={() => setPaywallVisible(false)}
+            reason="words"
+          />
+        </View>
+      );
+    }
+
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
         <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={styles.resultEmoji}>{percent >= 80 ? '🎉' : percent >= 50 ? '💪' : '📚'}</Text>
-          <Text style={[styles.resultTitle, { color: colors.text }]}>Тренировка завершена!</Text>
+          <Text style={styles.resultEmoji}>{allWordsArchived ? '🎓' : percent >= 80 ? '🎉' : percent >= 50 ? '💪' : '📚'}</Text>
+          <Text style={[styles.resultTitle, { color: colors.text }]}>
+            {allWordsArchived ? 'Все слова выучены!' : 'Тренировка завершена!'}
+          </Text>
           <Text style={[styles.resultSubtitle, { color: colors.muted }]}>{groupName}</Text>
 
-          <View style={[styles.statsRow, { backgroundColor: colors.elevated }]}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: colors.success }]}>{formatScore(stats.knew)}</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Знаю</Text>
+          {!allWordsArchived && (
+            <View style={[styles.statsRow, { backgroundColor: colors.elevated }]}>
+              <View style={styles.statItem}>
+                <Text style={[styles.statValue, { color: colors.success }]}>{formatScore(stats.knew)}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Знаю</Text>
+              </View>
+              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.statItem}>
+                <Text style={[styles.statValue, { color: colors.danger }]}>{stats.didntKnow}</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Не знаю</Text>
+              </View>
+              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.statItem}>
+                <Text style={[styles.statValue, { color: colors.primary }]}>{percent}%</Text>
+                <Text style={[styles.statLabel, { color: colors.muted }]}>Результат</Text>
+              </View>
             </View>
-            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: colors.danger }]}>{stats.didntKnow}</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Не знаю</Text>
+          )}
+
+          {allWordsArchived ? (
+            // Все слова выучены — показываем сообщение и кнопку "Назад к словарю"
+            <View style={[styles.successCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+              <Text style={[styles.successTitle, { color: colors.success }]}>
+                🎉 Отличная работа!
+              </Text>
+              <Text style={[styles.successText, { color: colors.muted }]}>
+                Все слова из этого словаря выучены и отправлены в архив.
+              </Text>
+              <Text style={[styles.successSubText, { color: colors.muted }]}>
+                Вы можете вернуться к словарю и добавить новые слова для продолжения тренировок.
+              </Text>
             </View>
-            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: colors.primary }]}>{percent}%</Text>
-              <Text style={[styles.statLabel, { color: colors.muted }]}>Результат</Text>
+          ) : weeklyLimitReached && !profile?.is_premium ? (
+            // Лимит достигнут — показываем сообщение
+            <View style={[styles.successCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+              <Text style={[styles.successTitle, { color: colors.muted }]}>
+                🔒 Лимит на этой неделе исчерпан
+              </Text>
+              <Text style={[styles.successText, { color: colors.muted }]}>
+                Вы выучили {weeklyLimit} слов. Возвращайтесь в понедельник для продолжения тренировок!
+              </Text>
             </View>
-          </View>
+          ) : (
+            // Есть слова для тренировки — показываем кнопку "Ещё раз"
+            <TouchableOpacity
+              style={[
+                styles.restartButton,
+                {
+                  backgroundColor: colors.primary,
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 16,
+                  elevation: 8,
+                },
+              ]}
+              onPress={handleRestart}
+              activeOpacity={0.8}
+            >
+              <RotateCcw color={colors.background} size={18} />
+              <Text style={[styles.restartButtonText, { color: colors.background }]}>Ещё раз</Text>
+            </TouchableOpacity>
+          )}
 
           {!profile?.is_premium && (
             <View style={[styles.premiumHintCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
@@ -224,32 +579,13 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
           )}
 
           <TouchableOpacity
-            style={[
-              styles.restartButton,
-              {
-                backgroundColor: colors.primary,
-                shadowColor: colors.primary,
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.5,
-                shadowRadius: 16,
-                elevation: 8,
-              },
-            ]}
-            onPress={handleRestart}
-            activeOpacity={0.8}
+            style={styles.backToGroupButton}
+            onPress={() => {
+              navigation.goBack();
+            }}
           >
-            <RotateCcw color={colors.background} size={18} />
-            <Text style={[styles.restartButtonText, { color: colors.background }]}>Ещё раз</Text>
+            <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
           </TouchableOpacity>
-
-          {navigation.canGoBack() && (
-            <TouchableOpacity
-              style={styles.backToGroupButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         <PaywallModal
@@ -309,6 +645,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
               stackIndex={stackIndex}
               onSwipeRight={() => handleSwipe(true)}
               onSwipeLeft={() => handleSwipe(false)}
+              disabled={isProcessing}
             />
           );
         })}
@@ -317,17 +654,33 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       {/* Кнопки-подсказки */}
       <View style={[styles.buttonsRow, { paddingBottom: insets.bottom + spacing.lg }]}>
         <TouchableOpacity
-          style={[styles.actionButton, styles.actionButtonLeft, { borderColor: colors.danger }]}
+          style={[
+            styles.actionButton,
+            styles.actionButtonLeft,
+            {
+              borderColor: colors.danger,
+              opacity: isProcessing ? 0.5 : 1,
+            },
+          ]}
           onPress={() => handleSwipe(false)}
           activeOpacity={0.8}
+          disabled={isProcessing}
         >
           <Text style={[styles.actionButtonText, { color: colors.danger }]}>✕</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.actionButtonRight, { borderColor: colors.success }]}
+          style={[
+            styles.actionButton,
+            styles.actionButtonRight,
+            {
+              borderColor: colors.success,
+              opacity: isProcessing ? 0.5 : 1,
+            },
+          ]}
           onPress={() => handleSwipe(true)}
           activeOpacity={0.8}
+          disabled={isProcessing}
         >
           <Text style={[styles.actionButtonText, { color: colors.success }]}>✓</Text>
         </TouchableOpacity>
@@ -483,6 +836,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: typography.body,
   },
+  successCard: {
+    width: '100%',
+    borderRadius: radii.md,
+    padding: spacing.lg,
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  successTitle: {
+    fontSize: typography.body,
+    fontFamily: fonts.headingBold,
+  },
+  successText: {
+    fontSize: typography.small,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  successSubText: {
+    fontSize: typography.xs,
+    textAlign: 'center',
+  },
   backToGroupButton: {
     padding: spacing.sm,
   },
@@ -521,6 +896,39 @@ const styles = StyleSheet.create({
   premiumHintButtonText: {
     fontSize: typography.small,
     fontFamily: fonts.medium,
+  },
+  limitCard: {
+    width: '100%',
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  limitText: {
+    fontSize: typography.body,
+    fontFamily: fonts.medium,
+    textAlign: 'center',
+  },
+  limitSubText: {
+    fontSize: typography.small,
+    textAlign: 'center',
+  },
+  premiumButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    marginTop: spacing.lg,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  premiumButtonText: {
+    fontWeight: '700',
+    fontSize: typography.body,
   },
   emptyTitle: {
     fontSize: typography.subtitle,

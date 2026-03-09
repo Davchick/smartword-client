@@ -20,6 +20,10 @@ model User {
   aiMessagesUsed Int            @default(0)
   createdAt      DateTime       @default(now())
 
+  // Лимит выученных слов в неделю (50 для бесплатных, безлимит для Premium)
+  wordsLearnedThisWeek Int      @default(0)
+  weekStartDate        DateTime @db.Date @default("2026-03-02T00:00:00Z")
+
   // Подписка через ЮKassa (разовые платежи с продлением срока)
   subscriptionType      String?
   subscriptionExpiresAt DateTime?
