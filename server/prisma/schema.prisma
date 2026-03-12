@@ -69,12 +69,16 @@ model Word {
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
-  createdAt DateTime @default(now())
-  revokedAt DateTime?
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token           String    @unique
+  deviceFingerprint String? @db.VarChar(64)
+  createdAt       DateTime  @default(now())
+  revokedAt       DateTime?
+  lastUsedAt      DateTime?
+  
+  @@index([userId, deviceFingerprint])
 }
 
 model TrainingProgress {

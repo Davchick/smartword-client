@@ -7,6 +7,7 @@ const { prisma } = require('../../db/prisma');
 const { env } = require('../../config/env');
 const { authMiddleware } = require('../../middleware/auth');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../../email/send');
+const { authLimiter, refreshLimiter, passwordResetLimiter, strictLimiter } = require('../../middleware/rateLimiter');
 const {
   getVerificationSuccessHtml,
   getVerificationPageHtml,
@@ -52,7 +53,7 @@ function signRefreshToken(userId, jti) {
  * Создаёт аккаунт с emailVerified: false, отправляет письмо со ссылкой подтверждения.
  * Returns: { message, email } — войти можно только после перехода по ссылке из письма.
  */
-router.post('/register', async (req, res) => {
+router.post('/register', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
@@ -104,7 +105,7 @@ router.post('/register', async (req, res) => {
  * Returns: { access_token, refresh_token, expires_in, user }
  * 403 + code EMAIL_NOT_VERIFIED если почта не подтверждена.
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
@@ -138,8 +139,13 @@ router.post('/login', async (req, res) => {
     }
 
     const jti = crypto.randomBytes(16).toString('hex');
+    const deviceFingerprint = req.deviceFingerprint || null;
     await prisma.refreshToken.create({
-      data: { userId: user.id, token: jti },
+      data: { 
+        userId: user.id, 
+        token: jti,
+        deviceFingerprint,
+      },
     });
     const refreshToken = signRefreshToken(user.id, jti);
     const accessToken = signAccessToken(user.id);
@@ -234,8 +240,13 @@ router.post('/google', async (req, res) => {
     }
 
     const jti = crypto.randomBytes(16).toString('hex');
+    const deviceFingerprint = req.deviceFingerprint || null;
     await prisma.refreshToken.create({
-      data: { userId: user.id, token: jti },
+      data: { 
+        userId: user.id, 
+        token: jti,
+        deviceFingerprint,
+      },
     });
     const refreshToken = signRefreshToken(user.id, jti);
     const accessToken = signAccessToken(user.id);
@@ -261,8 +272,9 @@ router.post('/google', async (req, res) => {
  * POST /auth/refresh
  * Body: { refresh_token }
  * Returns: { access_token, refresh_token, expires_in }
+ * Validates device fingerprint to detect suspicious activity.
  */
-router.post('/refresh', async (req, res) => {
+router.post('/refresh', refreshLimiter, async (req, res) => {
   try {
     const { refresh_token: refreshTokenFromBody } = req.body;
     const authHeader = req.headers.authorization;
@@ -292,14 +304,44 @@ router.post('/refresh', async (req, res) => {
     if (!record || record.revokedAt) {
       return res.status(401).json({ error: 'Refresh token revoked or not found' });
     }
+    
+    // Device fingerprint validation (security monitoring)
+    const currentFingerprint = req.deviceFingerprint;
+    if (record.deviceFingerprint && currentFingerprint && record.deviceFingerprint !== currentFingerprint) {
+      // Different device using the same refresh token - potential token theft
+      console.warn('[SECURITY] Refresh token used from different device:', {
+        userId,
+        originalFingerprint: record.deviceFingerprint,
+        currentFingerprint,
+      });
+      
+      // Revoke the token for security
+      await prisma.refreshToken.update({
+        where: { id: record.id },
+        data: { revokedAt: new Date() },
+      });
+      
+      return res.status(401).json({ 
+        error: 'Suspicious activity detected. Please log in again.',
+        code: 'SUSPICIOUS_ACTIVITY'
+      });
+    }
+    
     const newJti = crypto.randomBytes(16).toString('hex');
     await prisma.$transaction([
       prisma.refreshToken.update({
         where: { id: record.id },
-        data: { revokedAt: new Date() },
+        data: { 
+          revokedAt: new Date(),
+          lastUsedAt: new Date(),
+        },
       }),
       prisma.refreshToken.create({
-        data: { userId: record.userId, token: newJti },
+        data: { 
+          userId: record.userId, 
+          token: newJti,
+          deviceFingerprint: currentFingerprint,
+        },
       }),
     ]);
 
@@ -456,7 +498,7 @@ router.get('/verify-email', async (req, res) => {
  * Body: { email }
  * Отправляет повторное письмо с ссылкой подтверждения.
  */
-router.post('/resend-verification', async (req, res) => {
+router.post('/resend-verification', strictLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -489,7 +531,7 @@ router.post('/resend-verification', async (req, res) => {
  * Body: { email }
  * Отправляет письмо со ссылкой для сброса пароля. Всегда 200, чтобы не раскрывать наличие email.
  */
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', passwordResetLimiter, async (req, res) => {
   try {
     const { email } = req.body;
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';

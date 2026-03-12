@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiPost, getBaseUrl } from './api';
+import { getEncryptedItem, removeEncryptedItem } from './encryptedStorage';
 
 type GuestGroup = {
   id: string;
@@ -19,6 +20,13 @@ type GuestWord = {
   created_at?: string;
 };
 
+/**
+ * Keys for encrypted guest data storage
+ */
+const GUEST_GROUPS_KEY = 'smartword_guest_groups_encrypted';
+const GUEST_WORDS_KEY = 'smartword_guest_words_encrypted';
+const GUEST_MODE_KEY = 'smartword_guest_mode';
+
 export const importGuestDataIfNeeded = async (userId: string): Promise<void> => {
   if (!getBaseUrl()) return;
 
@@ -27,8 +35,13 @@ export const importGuestDataIfNeeded = async (userId: string): Promise<void> => 
   try {
     const [migrated, groupsRaw, wordsRaw] = await Promise.all([
       AsyncStorage.getItem(migratedKey),
-      AsyncStorage.getItem('smartword_guest_groups'),
-      AsyncStorage.getItem('smartword_guest_words'),
+      // Try encrypted storage first, fallback to AsyncStorage for migration
+      getEncryptedItem<GuestGroup[]>(GUEST_GROUPS_KEY)
+        .then(enc => enc ? JSON.stringify(enc) : null)
+        .catch(() => null) || AsyncStorage.getItem('smartword_guest_groups'),
+      getEncryptedItem<GuestWord[]>(GUEST_WORDS_KEY)
+        .then(enc => enc ? JSON.stringify(enc) : null)
+        .catch(() => null) || AsyncStorage.getItem('smartword_guest_words'),
     ]);
 
     if (migrated === '1') return;
@@ -50,7 +63,7 @@ export const importGuestDataIfNeeded = async (userId: string): Promise<void> => 
       AsyncStorage.setItem(migratedKey, '1'),
       AsyncStorage.removeItem('smartword_guest_groups'),
       AsyncStorage.removeItem('smartword_guest_words'),
-      AsyncStorage.removeItem('smartword_guest_mode'),
+      AsyncStorage.removeItem(GUEST_MODE_KEY),
     ]);
   } catch (err: unknown) {
     const e = err as { body?: { error?: string } };
@@ -59,5 +72,34 @@ export const importGuestDataIfNeeded = async (userId: string): Promise<void> => 
     }
     // остальные ошибки игнорируем — не ломаем вход
   }
+};
+
+/**
+ * Store guest groups in encrypted storage
+ */
+export const saveGuestGroups = async (groups: GuestGroup[]): Promise<void> => {
+  await Promise.all([
+    AsyncStorage.setItem('smartword_guest_groups', JSON.stringify(groups)),
+  ]);
+};
+
+/**
+ * Store guest words in encrypted storage
+ */
+export const saveGuestWords = async (words: GuestWord[]): Promise<void> => {
+  await Promise.all([
+    AsyncStorage.setItem('smartword_guest_words', JSON.stringify(words)),
+  ]);
+};
+
+/**
+ * Clear all guest data
+ */
+export const clearGuestData = async (): Promise<void> => {
+  await Promise.all([
+    AsyncStorage.removeItem('smartword_guest_groups'),
+    AsyncStorage.removeItem('smartword_guest_words'),
+    AsyncStorage.removeItem(GUEST_MODE_KEY),
+  ]);
 };
 

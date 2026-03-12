@@ -1,6 +1,17 @@
 const jwt = require('jsonwebtoken');
 const { env } = require('../config/env');
 const { prisma } = require('../db/prisma');
+const crypto = require('crypto');
+
+/**
+ * Generate a device fingerprint from request headers
+ */
+function generateDeviceFingerprint(req) {
+  const userAgent = req.headers['user-agent'] || '';
+  const acceptLanguage = req.headers['accept-language'] || '';
+  const fingerprint = `${userAgent}-${acceptLanguage}`;
+  return crypto.createHash('sha256').update(fingerprint).digest('hex');
+}
 
 /**
  * Проверяет Authorization: Bearer <access_token>, верифицирует JWT,
@@ -12,7 +23,7 @@ async function authMiddleware(req, res, next) {
     console.log('[authMiddleware] Path:', req.path, 'Method:', req.method);
     const authHeader = req.headers.authorization;
     console.log('[authMiddleware] Auth header:', authHeader ? 'present' : 'missing');
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       console.log('[authMiddleware] Missing or invalid Authorization header');
       return res.status(401).json({ error: 'Unauthorized', message: 'Missing or invalid Authorization header' });
@@ -54,6 +65,9 @@ async function authMiddleware(req, res, next) {
       return res.status(401).json({ error: 'Unauthorized', message: 'User not found' });
     }
 
+    // Store device fingerprint for security monitoring
+    req.deviceFingerprint = generateDeviceFingerprint(req);
+    
     console.log('[authMiddleware] User authenticated:', user.id);
     req.user = user;
     next();
