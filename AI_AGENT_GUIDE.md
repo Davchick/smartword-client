@@ -173,8 +173,11 @@ TrainingProgress
 
 ### Server (.env)
 ```bash
+# Для разработки: скопируйте в .env.development
+# Для production: скопируйте в .env
+
 DATABASE_URL=postgresql://user:password@localhost:5432/smartword
-PORT=4000
+PORT=3000
 JWT_SECRET=change_me_super_secret
 JWT_REFRESH_SECRET=change_me_refresh_secret
 
@@ -182,7 +185,7 @@ JWT_REFRESH_SECRET=change_me_refresh_secret
 # Each $10+ key gives 1000 free requests/day
 OPENROUTER_API_KEYS=key1,key2,key3
 
-APP_PUBLIC_URL=http://localhost:4000
+APP_PUBLIC_URL=http://localhost:3000
 
 # SMTP (email verification, password reset)
 SMTP_HOST=
@@ -198,16 +201,19 @@ GOOGLE_CLIENT_ID=
 # YooKassa (payments)
 YOOKASSA_SHOP_ID=
 YOOKASSA_SECRET_KEY=
-YOOKASSA_RETURN_URL=http://localhost:4000
+YOOKASSA_RETURN_URL=http://localhost:3000
 
 # Telegram Support Bot
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ADMIN_CHAT_ID=
+
+# CORS Allowed Origins (comma-separated)
+ALLOWED_ORIGINS=http://localhost:19006,http://localhost:8081
 ```
 
 ### Client (.env)
 ```bash
-EXPO_PUBLIC_API_URL=http://localhost:4000
+EXPO_PUBLIC_API_URL=http://localhost:3000
 EXPO_PUBLIC_GOOGLE_CLIENT_ID=
 ```
 
