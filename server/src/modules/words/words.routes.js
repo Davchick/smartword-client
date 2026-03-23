@@ -1,6 +1,8 @@
 const express = require('express');
 const { prisma } = require('../../db/prisma');
 const { authMiddleware } = require('../../middleware/auth');
+const achievementsService = require('../achievements/achievements.service');
+const streaksService = require('../streaks/streaks.service');
 
 const router = express.Router();
 
@@ -251,11 +253,38 @@ router.post('/:id/progress', async (req, res) => {
       },
     });
 
-    console.log('[words/progress] Updated:', { 
-      id: updated.id, 
+    console.log('[words/progress] Updated:', {
+      id: updated.id,
       correct_count: updated.correctCount,
       justLearned,
-      newWeeklyCount: wordsLearnedThisWeek 
+      newWeeklyCount: wordsLearnedThisWeek
+    });
+
+    // Обновляем достижения
+    if (justLearned) {
+      try {
+        const unlockedAchievements = await achievementsService.checkAndUpdate(req.user.id, 'word_learned', 1);
+        if (unlockedAchievements.length > 0) {
+          console.log('[words/progress] Achievements unlocked:', unlockedAchievements.map(a => a.title));
+        }
+      } catch (err) {
+        console.error('[words/progress] Achievement check error:', err);
+      }
+    }
+
+    // Обновляем streak (check-in при активности)
+    try {
+      await streaksService.checkIn(req.user.id);
+    } catch (err) {
+      console.error('[words/progress] Streak check-in error:', err);
+    }
+
+    console.log('[words/progress] Updated:', {
+      id: updated.id,
+      correct_count: updated.correctCount,
+      just_learned: justLearned,
+      words_learned_this_week: wordsLearnedThisWeek,
+      limit_reached: wordsLearnedThisWeek >= 50 && !user.isPremium,
     });
 
     res.json({

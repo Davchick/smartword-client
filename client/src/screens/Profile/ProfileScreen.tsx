@@ -30,10 +30,12 @@ import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
 import { useTrainingProgress } from '../../hooks/useTrainingProgress';
+import { useStreak } from '../../hooks/useStreak';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ProgressChart } from '../../components/ProgressChart';
+import { StreakCounter } from '../../components/StreakCounter';
 
 const AVATAR_CHARS = ['🐱', '🐶', '🦊', '🐸', '🐼', '🐨', '🦁', '🐯', '🐧', '🦋'];
 const AVATAR_COLORS = [
@@ -51,6 +53,7 @@ export const ProfileScreen = () => {
   const { groups, refetch: refetchGroups } = useGroups();
   const { totalCount: totalWords, refetch: refetchWords } = useWords();
   const { progress: trainingProgress, loading: progressLoading, refetch: refetchProgress } = useTrainingProgress();
+  const { streak, refetch: refetchStreak } = useStreak();
 
   const [signingOut, setSigningOut] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
@@ -83,7 +86,8 @@ export const ProfileScreen = () => {
       refetchGroups();
       refetchWords();
       refetchProgress();
-    }, [refetch, refetchGroups, refetchWords, refetchProgress])
+      refetchStreak();
+    }, [refetch, refetchGroups, refetchWords, refetchProgress, refetchStreak])
   );
 
   const handleSupport = () => {
@@ -205,6 +209,15 @@ export const ProfileScreen = () => {
 
       {/* График прогресса тренировок */}
       <ProgressChart data={trainingProgress} locked={!profile} />
+
+      {/* Streak Counter */}
+      {streak && (
+        <StreakCounter
+          streak={streak.currentStreak}
+          longestStreak={streak.longestStreak}
+          size="large"
+        />
+      )}
 
       {/* AI прогресс */}
       {profile && !profile.is_premium && (

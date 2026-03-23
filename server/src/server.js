@@ -75,6 +75,8 @@ const wordsRouter = require('./modules/words/words.routes');
 const statsRouter = require('./modules/stats/stats.routes');
 const chatRouter = require('./modules/chat/chat.routes');
 const billingRouter = require('./modules/billing/billing.routes');
+const achievementsRouter = require('./modules/achievements/achievements.routes');
+const streaksRouter = require('./modules/streaks/streaks.routes');
 
 app.use('/auth', authRouter);
 app.use('/profile', profileRouter);
@@ -83,6 +85,8 @@ app.use('/words', wordsRouter);
 app.use('/stats', statsRouter);
 app.use('/chat', chatRouter);
 app.use('/billing', billingRouter);
+app.use('/achievements', achievementsRouter);
+app.use('/streaks', streaksRouter);
 
 // 404 handler for unknown routes
 app.use(notFoundHandler);
@@ -93,6 +97,14 @@ app.use(errorHandler);
 // Telegram bot long-polling
 const { startPolling } = require('./modules/support/telegram.polling');
 startPolling();
+
+// Initialize cron jobs
+const { initCronJobs } = require('./cron');
+initCronJobs();
+
+// Initialize achievements
+const { initializeAchievements } = require('./modules/achievements/achievements.service');
+initializeAchievements();
 
 const port = env.port;
 
