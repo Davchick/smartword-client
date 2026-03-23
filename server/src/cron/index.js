@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { dailyStreakCheck, syncAchievementsProgress } = require('./streaks.cron');
-const prisma = require('../db/prisma');
+const { prisma } = require('../db/prisma');
 
 /**
  * Инициализация cron задач

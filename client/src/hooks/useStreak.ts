@@ -4,13 +4,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { UserStreak, StreakHistory } from '../types/achievements';
 
 export const useStreak = () => {
-  const { user: authUser } = useAuth();
+  const { user } = useAuth();
   const [streak, setStreak] = useState<UserStreak | null>(null);
   const [history, setHistory] = useState<StreakHistory[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchStreak = useCallback(async () => {
-    if (!authUser || !getBaseUrl()) {
+    if (!user || !getBaseUrl()) {
       setStreak(null);
       setHistory([]);
       setLoading(false);
@@ -21,15 +21,17 @@ export const useStreak = () => {
       const data = await apiGet<UserStreak>('/streaks');
       setStreak(data);
     } catch (error) {
-      console.error('[useStreak] Fetch error:', error);
+      if ((error as any)?.status !== 401) {
+        console.error('[useStreak] Fetch error:', error);
+      }
       setStreak(null);
     } finally {
       setLoading(false);
     }
-  }, [authUser]);
+  }, [user]);
 
   const fetchHistory = useCallback(async () => {
-    if (!authUser || !getBaseUrl()) {
+    if (!user || !getBaseUrl()) {
       setHistory([]);
       return;
     }
@@ -38,13 +40,15 @@ export const useStreak = () => {
       const data = await apiGet<StreakHistory[]>('/streaks/history');
       setHistory(data);
     } catch (error) {
-      console.error('[useStreak] History fetch error:', error);
+      if ((error as any)?.status !== 401) {
+        console.error('[useStreak] History fetch error:', error);
+      }
       setHistory([]);
     }
-  }, [authUser]);
+  }, [user]);
 
   const checkIn = useCallback(async () => {
-    if (!authUser || !getBaseUrl()) return null;
+    if (!user || !getBaseUrl()) return null;
 
     try {
       const result = await apiPost<UserStreak>('/streaks/check-in', {});
@@ -54,7 +58,7 @@ export const useStreak = () => {
       console.error('[useStreak] Check-in error:', error);
       return null;
     }
-  }, [authUser]);
+  }, [user]);
 
   useEffect(() => {
     fetchStreak();

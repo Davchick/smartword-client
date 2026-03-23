@@ -166,9 +166,6 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={[styles.title, { color: colors.text }]}>Словари</Text>
-          <Text style={[styles.subtitle, { color: colors.muted }]}>
-            Собирай словари и тренируйся каждый день.
-          </Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity
@@ -197,6 +194,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
           groups.length === 0 && styles.listEmpty,
         ]}
         ListHeaderComponent={<StatsWidget stats={stats} />}
+        ListHeaderComponentStyle={{ marginBottom: 0 }}
         ListEmptyComponent={
           <View style={styles.empty}>
             <BookOpen color={colors.muted} size={56} strokeWidth={1.5} />
@@ -421,8 +419,8 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
+    paddingTop: spacing.md,
+    paddingBottom: 0,
   },
   headerLeft: {
     flex: 1,
@@ -433,7 +431,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.headingBlack,
   },
   subtitle: {
-    marginTop: spacing.xs,
     fontSize: typography.small,
     fontFamily: fonts.regular,
     lineHeight: 20,
@@ -457,12 +454,12 @@ const styles = StyleSheet.create({
     padding: spacing.xs,
   },
   list: {
-    padding: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
   listEmpty: {
-    flex: 1,
-    justifyContent: 'center',
+    paddingTop: spacing.xl,
   },
   card: {
     borderRadius: radii.md,
@@ -493,6 +490,7 @@ const styles = StyleSheet.create({
   empty: {
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
     gap: spacing.md,
   },
   emptyTitle: {

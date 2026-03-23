@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { useTheme, spacing, typography, fonts, radii } from '../../theme';
-import { Achievement } from '../../types/achievements';
+import { useTheme, spacing, typography, fonts, radii } from '../theme';
+import { Achievement } from '../types/achievements';
 
 type Props = {
   achievement: Achievement;

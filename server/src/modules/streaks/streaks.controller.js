@@ -1,4 +1,4 @@
-const prisma = require('../../db/prisma');
+const { prisma } = require('../../db/prisma');
 const streaksService = require('./streaks.service');
 
 /**

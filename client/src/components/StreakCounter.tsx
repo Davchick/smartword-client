@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
-import { useTheme, spacing, typography, fonts, radii } from '../../theme';
+import { useTheme, spacing, typography, fonts, radii } from '../theme';
 
 type Props = {
   streak: number;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Flame } from 'lucide-react-native';
+import { Flame, BookOpen, CheckCircle2 } from 'lucide-react-native';
 import { useTheme, fonts, spacing, radii, typography } from '../theme';
 import type { Stats } from '../hooks/useStats';
 
@@ -12,172 +12,329 @@ export const StatsWidget = ({ stats }: Props) => {
   const { colors } = useTheme();
 
   return (
-    <View style={styles.wrapper}>
-      {/* Три круглых показателя */}
-      <View style={styles.circlesRow}>
-        <StatCircle
+    <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {/* Верхний ряд: метрики */}
+      <View style={styles.metricsRow}>
+        <MetricItem
+          icon={<BookOpen color={colors.primary} size={16} />}
           value={stats.totalWords}
-          label="Записано"
-          color={colors.primary}
-          bg={colors.primaryDim}
+          label="записано"
           colors={colors}
+          compact
         />
-        <StatCircle
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <MetricItem
+          icon={<CheckCircle2 color={colors.success} size={16} />}
           value={stats.learnedWords}
-          label="Изучено"
-          color={colors.success}
-          bg={'rgba(52,211,153,0.12)'}
+          label="изучено"
           colors={colors}
+          valueColor={colors.success}
+          compact
         />
-        <StatCircle
-          value={stats.currentStreak}
-          label="Дней подряд"
-          color={'#FBBF24'}
-          bg={'rgba(251,191,36,0.12)'}
-          colors={colors}
-          icon={stats.currentStreak > 0 ? <Flame color="#FBBF24" size={16} fill="#FBBF24" /> : undefined}
-        />
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <View style={styles.streakItem}>
+          <View style={styles.streakRow}>
+            <Text style={[styles.streakValue, { color: colors.primary }]}>{stats.currentStreak}</Text>
+            <View style={[styles.streakIconWrapper, { backgroundColor: colors.primaryDim }]}>
+              <Flame color={colors.primary} size={14} fill={colors.primary} />
+            </View>
+          </View>
+          <Text style={[styles.streakLabel, { color: colors.muted }]}>дней подряд</Text>
+        </View>
       </View>
 
-      {/* 7 дней недели */}
-      <View style={[styles.weekRow]}>
-        {stats.weekActivity.map((day) => {
-          const isActive = day.hasActivity;
-          const isToday = day.isToday;
-          const isFuture = day.isFuture;
+      {/* Нижний ряд: неделя активности */}
+      <View style={[styles.weekSection, { backgroundColor: colors.background }]}>
+        <View style={styles.weekDays}>
+          {stats.weekActivity.map((day) => {
+            const isActive = day.hasActivity;
+            const isToday = day.isToday;
 
-          // Цвет кружка: активный день → синий, сегодня без активности → обводка primary, прошлый/будущий → серый
-          const circleBorder = isActive
-            ? colors.primary
-            : isToday
-            ? colors.primary
-            : colors.border;
-          const circleBg = isActive
-            ? colors.primaryDim
-            : 'transparent';
+            const bgColor = isActive
+              ? colors.primaryDim
+              : isToday
+              ? colors.primary + '15'
+              : 'transparent';
 
-          return (
-            <View key={day.date} style={styles.dayItem}>
-              <View style={[
-                styles.dayCircle,
-                {
-                  borderWidth: isToday || isActive ? 2 : 1.5,
-                  borderColor: circleBorder,
-                  backgroundColor: circleBg,
-                },
-              ]}>
-                {isActive && (
-                  <View style={[styles.dayDot, { backgroundColor: colors.primary }]} />
-                )}
-                {isToday && !isActive && (
-                  <View style={[styles.dayDot, { backgroundColor: colors.primary, opacity: 0.45 }]} />
-                )}
+            const borderColor = isActive || isToday ? colors.primary : colors.border;
+
+            // Получаем день месяца из даты
+            const dayOfMonth = new Date(day.date).getDate();
+
+            return (
+              <View key={day.date} style={styles.dayItem}>
+                <View style={[
+                  styles.daySquare,
+                  {
+                    backgroundColor: bgColor,
+                    borderColor: borderColor,
+                    borderWidth: isActive || isToday ? 2 : 1.5,
+                  },
+                ]}>
+                  <Text style={[
+                    styles.dayWeekday,
+                    {
+                      color: isActive || isToday ? colors.primary : colors.muted,
+                      fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
+                    },
+                  ]}>
+                    {day.dayLabel}
+                  </Text>
+                  <Text style={[
+                    styles.dayDate,
+                    {
+                      color: isActive || isToday ? colors.primary : colors.text,
+                      fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
+                    },
+                  ]}>
+                    {dayOfMonth}
+                  </Text>
+                </View>
               </View>
-              <Text style={[
-                styles.dayLabel,
-                {
-                  color: isActive
-                    ? colors.primary
-                    : isToday
-                    ? colors.primary
-                    : isFuture
-                    ? colors.border
-                    : colors.muted,
-                  fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
-                },
-              ]}>
-                {day.dayLabel}
-              </Text>
-            </View>
-          );
-        })}
+            );
+          })}
+        </View>
       </View>
     </View>
   );
 };
 
-interface CircleProps {
+interface MetricItemProps {
+  icon: React.ReactNode;
   value: number;
   label: string;
-  color: string;
-  bg: string;
   colors: any;
-  icon?: React.ReactNode;
+  valueColor?: string;
+  compact?: boolean;
 }
 
-const StatCircle = ({ value, label, color, bg, colors, icon }: CircleProps) => (
-  <View style={styles.circleItem}>
-    <View style={[styles.circle, { backgroundColor: bg, borderColor: color, borderWidth: 2 }]}>
-      {icon ? (
-        <View style={styles.iconInCircle}>
-          {icon}
-          <Text style={[styles.circleValue, { color }]}>{value}</Text>
-        </View>
-      ) : (
-        <Text style={[styles.circleValue, { color }]}>{value}</Text>
-      )}
+const MetricItem = ({ icon, value, label, colors, valueColor, compact }: MetricItemProps) => (
+  <View style={compact ? styles.metricItemCompact : styles.metricItem}>
+    <View style={styles.metricRow}>
+      <Text style={[compact ? styles.metricValueCompact : styles.metricValue, { color: valueColor || colors.text }]}>
+        {value}
+      </Text>
+      {compact && <View style={styles.metricIconWrapperCompact}>{icon}</View>}
     </View>
-    <Text style={[styles.circleLabel, { color: colors.muted }]}>{label}</Text>
+    <Text style={[compact ? styles.metricLabelCompact : styles.metricLabel, { color: colors.muted }]}>
+      {label}
+    </Text>
   </View>
 );
 
 const styles = StyleSheet.create({
-  wrapper: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.md,
+  container: {
+    marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
-  circlesRow: {
+  metricsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  circleItem: {
     alignItems: 'center',
-    gap: spacing.xs,
+    justifyContent: 'space-around',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
-  circle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+  metricItemCompact: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  metricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  divider: {
+    width: 1,
+    height: 32,
+    marginHorizontal: spacing.sm,
+  },
+  metricIconWrapperCompact: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconInCircle: {
-    alignItems: 'center',
-    gap: 1,
-  },
-  circleValue: {
-    fontSize: typography.subtitle,
+  metricValueCompact: {
+    fontSize: typography.body,
     fontFamily: fonts.headingBlack,
+    lineHeight: 26,
   },
-  circleLabel: {
-    fontSize: typography.small,
+  metricLabelCompact: {
+    fontSize: typography.xsmall,
     fontFamily: fonts.regular,
-    textAlign: 'center',
-    maxWidth: 80,
   },
-  weekRow: {
+  streakItem: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  streakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  streakIconWrapper: {
+    width: 26,
+    height: 26,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakValue: {
+    fontSize: typography.body,
+    fontFamily: fonts.headingBlack,
+    lineHeight: 26,
+  },
+  streakLabel: {
+    fontSize: typography.xsmall,
+    fontFamily: fonts.regular,
+  },
+  weekSection: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  weekDays: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.xs,
+    gap: spacing.sm,
   },
   dayItem: {
     alignItems: 'center',
+  },
+  daySquare: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 1,
+    paddingVertical: 4,
+  },
+  dayWeekday: {
+    fontSize: typography.xsmall,
+    textTransform: 'lowercase',
+    fontFamily: fonts.regular,
+  },
+  dayDate: {
+    fontSize: typography.small,
+    fontFamily: fonts.headingBlack,
+  },
+
+  // Старые стили (для обратной совместимости)
+  metricItem: {
+    flex: 1,
+    alignItems: 'center',
     gap: spacing.xs,
   },
-  dayCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  metricIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  metricValue: {
+    fontSize: typography.title,
+    fontFamily: fonts.headingBlack,
+  },
+  metricLabel: {
+    fontSize: typography.small,
+    fontFamily: fonts.regular,
+  },
+  weekHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  weekTitle: {
+    fontSize: typography.small,
+    fontFamily: fonts.medium,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  streakIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+  },
+  streakIndicatorText: {
+    fontSize: typography.xs,
+    fontFamily: fonts.bold,
+  },
+  contentRow: {
+    flexDirection: 'row',
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  metricsCol: {
+    flex: 1,
+    gap: spacing.sm,
+  },
+  dividerH: {
+    height: 1,
+    marginVertical: spacing.xs,
+  },
+  weekCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  dayItemCompact: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  dayCircleCompact: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  dayDotCompact: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
-  dayLabel: {
-    fontSize: typography.small,
+  dayLabelCompact: {
+    fontSize: typography.xsmall,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: typography.xsmall,
+    fontFamily: fonts.bold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.full,
+  },
+  streakText: {
+    fontSize: typography.xsmall,
+    fontFamily: fonts.bold,
   },
 });
