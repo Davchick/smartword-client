@@ -7,6 +7,9 @@ const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
+// Trust proxy (required for express-rate-limit to work correctly behind Render's proxy)
+app.set('trust proxy', true);
+
 // Security first: Apply security headers to ALL routes
 app.use(securityHeaders);
 
