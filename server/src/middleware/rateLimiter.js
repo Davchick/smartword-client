@@ -16,6 +16,7 @@ const authLimiter = rateLimit({
   },
   standardHeaders: true, // Return rate limit info in headers
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, trustProxy: false },
   // Use built-in IP handling (works with IPv4 and IPv6)
 });
 
@@ -33,6 +34,7 @@ const passwordResetLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, trustProxy: false },
 });
 
 /**
@@ -49,6 +51,7 @@ const refreshLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, trustProxy: false },
 });
 
 /**
@@ -64,6 +67,7 @@ const apiLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, trustProxy: false },
 });
 
 /**
@@ -79,6 +83,7 @@ const strictLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, trustProxy: false },
 });
 
 module.exports = {
