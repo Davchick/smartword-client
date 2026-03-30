@@ -86,11 +86,21 @@ export const ProfileSettingsScreen = () => {
     }
     setVerifying(true);
     try {
-      await apiPost('/auth/verify-password', { currentPassword });
+      // Таймаут 10 секунд для защиты от зависания
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      await apiPost('/auth/verify-password', { currentPassword }, { signal: controller.signal });
+      
+      clearTimeout(timeoutId);
       setStep('new');
     } catch (err: unknown) {
-      const e = err as { status?: number; body?: { error?: string } };
-      showToast(e?.body?.error || 'Неверный текущий пароль', 'error');
+      const e = err as { status?: number; body?: { error?: string }; message?: string };
+      if (e?.name === 'AbortError' || e?.message?.includes('abort')) {
+        showToast('Превышено время ожидания. Попробуйте снова.', 'error');
+      } else {
+        showToast(e?.body?.error || 'Неверный текущий пароль', 'error');
+      }
     } finally {
       setVerifying(false);
     }
@@ -111,12 +121,20 @@ export const ProfileSettingsScreen = () => {
     }
     setChangingPassword(true);
     try {
-      await apiPatch('/auth/password', { currentPassword, newPassword });
+      // Таймаут 10 секунд для защиты от зависания
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      await apiPatch('/auth/password', { currentPassword, newPassword }, { signal: controller.signal });
+      
+      clearTimeout(timeoutId);
       showToast('Пароль успешно изменён', 'success');
       handleCloseModal();
     } catch (err: unknown) {
-      const e = err as { status?: number; body?: { error?: string } };
-      if (e?.status === 401) {
+      const e = err as { status?: number; body?: { error?: string }; message?: string };
+      if (e?.name === 'AbortError' || e?.message?.includes('abort')) {
+        showToast('Превышено время ожидания. Попробуйте снова.', 'error');
+      } else if (e?.status === 401) {
         showToast(e?.body?.error || 'Неверный текущий пароль', 'error');
       } else {
         showToast('Не удалось изменить пароль. Попробуйте снова.', 'error');

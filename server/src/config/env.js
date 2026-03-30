@@ -72,10 +72,6 @@ function validateSecurityConfig() {
 
   // Production-only validations
   if (isProduction) {
-    if (!process.env.ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS.includes('localhost')) {
-      errors.push('ALLOWED_ORIGINS must be set to production domains (no localhost)');
-    }
-    
     if (!process.env.SMTP_HOST) {
       errors.push('SMTP_HOST is required in production');
     }

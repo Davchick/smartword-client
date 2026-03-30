@@ -92,12 +92,6 @@ cp .env.example .env
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-#### ALLOWED_ORIGINS
-Только ваши домены (никаких localhost!):
-```env
-ALLOWED_ORIGINS=https://smartword.app,https://www.smartword.app
-```
-
 #### SMTP (обязательно для email)
 ```env
 SMTP_HOST=smtp.your-provider.com
@@ -146,12 +140,6 @@ npm start
 
 ## 🔍 Диагностика проблем
 
-### CORS ошибки
-```
-[CORS] Blocked origin: http://something
-```
-**Решение:** Добавьте origin в `ALLOWED_ORIGINS` или проверьте, что используете dev режим
-
 ### JWT секрет слишком слабый
 ```
 JWT_SECRET must be at least 32 characters long
@@ -169,7 +157,6 @@ DATABASE_URL is required
 ## 🛡️ Security Checklist для Production
 
 - [ ] JWT секреты сгенерированы (32+ символа)
-- [ ] `ALLOWED_ORIGINS` содержит только production домены
 - [ ] HTTPS настроен для API
 - [ ] SMTP настроен для email
 - [ ] Google OAuth настроен

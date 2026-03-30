@@ -135,27 +135,56 @@ export const SignInScreen = ({ route, navigation }: Props) => {
     }
     setForgotLoading(true);
     try {
-      const data = await apiPost<{ message?: string }>('/auth/forgot-password', { email: email.trim() }, { skipAuth: true });
+      // Таймаут 10 секунд для защиты от зависания
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      const data = await apiPost<{ message?: string }>('/auth/forgot-password', { email: email.trim() }, { 
+        skipAuth: true,
+        signal: controller.signal 
+      });
+      
+      clearTimeout(timeoutId);
       showToast(data?.message || 'Письмо отправлено. Проверьте почту.', 'success');
       setShowForgotPassword(false);
     } catch (err: unknown) {
-      const e = err as { body?: { error?: string } };
-      showToast(e?.body?.error || 'Ошибка. Попробуйте позже.', 'error');
+      const e = err as { body?: { error?: string }; message?: string };
+      if (e?.name === 'AbortError' || e?.message?.includes('abort')) {
+        showToast('Превышено время ожидания. Проверьте интернет и попробуйте снова.', 'error');
+      } else {
+        showToast(e?.body?.error || 'Ошибка. Попробуйте позже.', 'error');
+      }
     } finally {
       setForgotLoading(false);
     }
   };
 
   const handleResendVerification = async () => {
-    if (!email.trim()) return;
+    if (!email.trim()) {
+      showToast('Введите email', 'error');
+      return;
+    }
     setResendLoading(true);
     try {
-      await apiPost<{ message?: string }>('/auth/resend-verification', { email: email.trim() }, { skipAuth: true });
+      // Таймаут 10 секунд для защиты от зависания
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
+      await apiPost<{ message?: string }>('/auth/resend-verification', { email: email.trim() }, { 
+        skipAuth: true,
+        signal: controller.signal 
+      });
+      
+      clearTimeout(timeoutId);
       showToast('Письмо отправлено повторно. Проверьте почту.', 'success');
       setEmailNotVerifiedShown(false);
     } catch (err: unknown) {
-      const e = err as { body?: { error?: string } };
-      showToast(e?.body?.error || 'Ошибка. Попробуйте позже.', 'error');
+      const e = err as { body?: { error?: string }; message?: string };
+      if (e?.name === 'AbortError' || e?.message?.includes('abort')) {
+        showToast('Превышено время ожидания. Проверьте интернет и попробуйте снова.', 'error');
+      } else {
+        showToast(e?.body?.error || 'Ошибка. Попробуйте позже.', 'error');
+      }
     } finally {
       setResendLoading(false);
     }
