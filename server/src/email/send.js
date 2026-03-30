@@ -14,17 +14,32 @@ async function sendMail({ to, subject, html }) {
     console.warn('[email] SMTP not configured. Skipping send.');
     return { skipped: true };
   }
-  const info = await transport.sendMail({
-    from: env.mailFrom || 'noreply@smartword.app',
-    to,
-    subject,
-    html,
-  });
-  if (nodemailer.getTestMessageUrl) {
-    const url = nodemailer.getTestMessageUrl(info);
-    if (url) console.log('[email] Письмо в тестовом режиме. Посмотреть: ' + url);
+  
+  console.log(`[email] Sending email to ${to} with subject: ${subject}`);
+  
+  try {
+    const info = await transport.sendMail({
+      from: env.mailFrom || 'noreply@smartword.app',
+      to,
+      subject,
+      html,
+    });
+    
+    console.log(`[email] Message sent to ${to}: ${info.messageId}`);
+    
+    if (nodemailer.getTestMessageUrl) {
+      const url = nodemailer.getTestMessageUrl(info);
+      if (url) {
+        console.log(`[email] Ethereal test message URL: ${url}`);
+        console.log(`[email] === ETHereal LINK FOR ${to}: ${url} ===`);
+      }
+    }
+    
+    return { sent: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`[email] Failed to send email to ${to}:`, error.message);
+    return { error: error.message };
   }
-  return { sent: true };
 }
 
 async function sendVerificationEmail(email, token) {

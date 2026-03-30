@@ -61,7 +61,7 @@ export const useWords = (groupId?: string) => {
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
-        return { error: e?.body?.error ?? 'Ошибка добавления' };
+        return { error: e?.body?.error ?? 'Не удалось добавить слово' };
       }
     }
     const wordsRaw = await AsyncStorage.getItem('smartword_guest_words');
@@ -90,7 +90,7 @@ export const useWords = (groupId?: string) => {
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
-        return { error: e?.body?.error ?? 'Ошибка удаления' };
+        return { error: e?.body?.error ?? 'Не удалось удалить слово' };
       }
     }
     const wordsRaw = await AsyncStorage.getItem('smartword_guest_words');
@@ -187,7 +187,7 @@ export const useWords = (groupId?: string) => {
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
-        return { error: e?.body?.error ?? 'Ошибка обновления' };
+        return { error: e?.body?.error ?? 'Не удалось обновить слово' };
       }
     }
     const wordsRaw = await AsyncStorage.getItem('smartword_guest_words');

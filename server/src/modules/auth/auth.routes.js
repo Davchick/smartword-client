@@ -56,20 +56,26 @@ function signRefreshToken(userId, jti) {
 router.post('/register', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log(`[auth/register] Attempting registration for email: ${email}`);
+    
     if (!email || typeof email !== 'string' || !password || typeof password !== 'string') {
+      console.log('[auth/register] Missing email or password');
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
     if (normalizedEmail.length === 0) {
+      console.log('[auth/register] Invalid email format');
       return res.status(400).json({ error: 'Invalid email' });
     }
     if (password.length < 6) {
+      console.log('[auth/register] Password too short');
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
     const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existing) {
+      console.log(`[auth/register] User already exists: ${normalizedEmail}`);
       return res.status(409).json({ error: 'User with this email already exists' });
     }
 
@@ -77,7 +83,7 @@ router.post('/register', authLimiter, async (req, res) => {
     const emailVerifyTokenExpiresAt = new Date(Date.now() + EMAIL_VERIFY_EXPIRY_HOURS * 60 * 60 * 1000);
 
     const passwordHash = await hashPassword(password);
-    await prisma.user.create({
+    const newUser = await prisma.user.create({
       data: {
         email: normalizedEmail,
         passwordHash,
@@ -86,15 +92,22 @@ router.post('/register', authLimiter, async (req, res) => {
         emailVerifyTokenExpiresAt,
       },
     });
+    
+    console.log(`[auth/register] User created: ${newUser.id}`);
 
-    await sendVerificationEmail(normalizedEmail, emailVerifyToken);
+    const emailResult = await sendVerificationEmail(normalizedEmail, emailVerifyToken);
+    console.log(`[auth/register] Email send result:`, emailResult);
+
+    if (emailResult.error) {
+      console.error('[auth/register] Email send failed, but user created. User should request resend.');
+    }
 
     res.status(201).json({
       message: 'На почту отправлена ссылка для подтверждения. Перейдите по ней, затем войдите в аккаунт.',
       email: normalizedEmail,
     });
   } catch (err) {
-    console.error('[auth/register]', err);
+    console.error('[auth/register] Unexpected error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

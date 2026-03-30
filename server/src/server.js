@@ -51,9 +51,12 @@ app.use(notFoundHandler);
 // Global error handler (must be last)
 app.use(errorHandler);
 
-// Telegram bot long-polling
-const { startPolling } = require('./modules/support/telegram.polling');
-startPolling();
+// Telegram bot long-polling (FROZEN - disabled by default)
+// To enable: set TELEGRAM_BOT_ENABLED=true in .env
+const { isEnabled: isTelegramEnabled } = require('./modules/telegram-bot');
+if (isTelegramEnabled) {
+  console.log('[Server] Telegram bot is enabled');
+}
 
 // Initialize cron jobs
 const { initCronJobs } = require('./cron');

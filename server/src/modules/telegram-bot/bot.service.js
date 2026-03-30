@@ -1,17 +1,19 @@
-const { env } = require('../../config/env');
+const config = require('./bot.config');
 
 const TELEGRAM_API = 'https://api.telegram.org/bot';
 
 /**
  * Отправить сообщение пользователю
  */
-async function sendMessage(chatId, text, replyToMessageId = null) {
-  const url = `${TELEGRAM_API}${env.telegramBotToken}/sendMessage`;
+async function sendMessage(chatId, text, options = {}) {
+  const { replyToMessageId, parseMode = 'HTML' } = options;
+  
+  const url = `${TELEGRAM_API}${config.getToken()}/sendMessage`;
 
   const body = {
     chat_id: chatId,
     text,
-    parse_mode: 'HTML',
+    parse_mode: parseMode,
   };
 
   if (replyToMessageId) {
@@ -38,7 +40,7 @@ async function sendMessage(chatId, text, replyToMessageId = null) {
  * Отправить сообщение с inline кнопками
  */
 async function sendInline(chatId, text, inlineKeyboard) {
-  const url = `${TELEGRAM_API}${env.telegramBotToken}/sendMessage`;
+  const url = `${TELEGRAM_API}${config.getToken()}/sendMessage`;
 
   const body = {
     chat_id: chatId,
@@ -66,8 +68,8 @@ async function sendInline(chatId, text, inlineKeyboard) {
 /**
  * Получить последние обновления (long-polling)
  */
-async function getUpdates(offset = 0, timeout = 30) {
-  const url = `${TELEGRAM_API}${env.telegramBotToken}/getUpdates`;
+async function getUpdates(offset = 0, timeout = config.POLLING_TIMEOUT) {
+  const url = `${TELEGRAM_API}${config.getToken()}/getUpdates`;
 
   const params = new URLSearchParams({
     offset: offset.toString(),
@@ -91,8 +93,46 @@ async function getUpdates(offset = 0, timeout = 30) {
   return data.result || [];
 }
 
+/**
+ * Ответ на callback query
+ */
+async function answerCallbackQuery(callbackQueryId) {
+  const url = `${TELEGRAM_API}${config.getToken()}/answerCallbackQuery`;
+
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: callbackQueryId }),
+  });
+}
+
+/**
+ * Редактировать сообщение
+ */
+async function editMessage(chatId, messageId, text, replyMarkup = {}) {
+  const url = `${TELEGRAM_API}${config.getToken()}/editMessageText`;
+
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: messageId,
+        text,
+        parse_mode: 'HTML',
+        reply_markup: replyMarkup,
+      }),
+    });
+  } catch (err) {
+    // Игнорируем ошибки редактирования (сообщение могло не измениться)
+  }
+}
+
 module.exports = {
   sendMessage,
   sendInline,
   getUpdates,
+  answerCallbackQuery,
+  editMessage,
 };

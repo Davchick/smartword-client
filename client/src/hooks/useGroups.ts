@@ -63,7 +63,7 @@ export const useGroups = () => {
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
-        return { error: e?.body?.error ?? 'Ошибка создания' };
+        return { error: e?.body?.error ?? 'Не удалось создать словарь' };
       }
     }
     const groupsRaw = await AsyncStorage.getItem('smartword_guest_groups');
@@ -88,7 +88,7 @@ export const useGroups = () => {
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
-        return { error: e?.body?.error ?? 'Ошибка удаления' };
+        return { error: e?.body?.error ?? 'Не удалось удалить словарь' };
       }
     }
     const [groupsRaw, wordsRaw] = await Promise.all([
@@ -115,7 +115,7 @@ export const useGroups = () => {
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
-        return { error: e?.body?.error ?? 'Ошибка обновления' };
+        return { error: e?.body?.error ?? 'Не удалось обновить словарь' };
       }
     }
     const groupsRaw = await AsyncStorage.getItem('smartword_guest_groups');

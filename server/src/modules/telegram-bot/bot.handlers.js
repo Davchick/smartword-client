@@ -1,16 +1,12 @@
-const { sendMessage, getUpdates, sendInline } = require('./telegram.service');
-const { env } = require('../../config/env');
 const db = require('./ticket.db');
-
-let lastUpdateId = 0;
-let isRunning = false;
+const telegram = require('./bot.service');
+const config = require('./bot.config');
 
 // Временное хранилище состояний (ожидание ответа админа)
-const adminReplyState = new Map(); // chat_id → { ticketId, userId }
+const adminReplyState = new Map(); // chat_id → { ticketId, messageId }
 
 // Обработанные update_id
 const processedUpdates = new Set();
-const MAX_UPDATES = 200;
 
 /**
  * Обработка сообщения от пользователя
@@ -25,7 +21,7 @@ async function handleUserMessage(update) {
 
   // Команда /start
   if (text === '/start') {
-    await sendMessage(
+    await telegram.sendMessage(
       chatId,
       `👋 Привет, ${from.first_name}!\n\n` +
         `Напишите ваше обращение — я передам его разработчику.\n` +
@@ -36,7 +32,7 @@ async function handleUserMessage(update) {
 
   // Команда /help
   if (text === '/help') {
-    await sendMessage(
+    await telegram.sendMessage(
       chatId,
       'Напишите ваше сообщение — я передам его разработчику.\n\n' +
         'Команды:\n' +
@@ -77,7 +73,7 @@ async function handleNewTicket(userId, from, messageText) {
       await notifyNewTicket(ticket, userId, from, messageText);
 
       // Подтверждение пользователю (только для новых тикетов)
-      await sendMessage(
+      await telegram.sendMessage(
         userId,
         '✅ Ваше сообщение отправлено разработчику.\n' +
           'Я отвечу вам здесь, как только получу ответ.',
@@ -87,7 +83,7 @@ async function handleNewTicket(userId, from, messageText) {
     console.log(`[Telegram] Ticket from ${userId}: ${messageText.substring(0, 50)}`);
   } catch (err) {
     console.error('[Telegram] Error handling ticket:', err);
-    await sendMessage(userId, '❌ Произошла ошибка. Попробуйте позже.');
+    await telegram.sendMessage(userId, '❌ Произошла ошибка. Попробуйте позже.');
   }
 }
 
@@ -95,9 +91,9 @@ async function handleNewTicket(userId, from, messageText) {
  * Уведомление админа о новом тикете
  */
 async function notifyNewTicket(ticket, userId, from, messageText) {
-  const adminChatId = env.telegramAdminChatId;
-  
-  const text = 
+  const adminChatId = config.getAdminChatId();
+
+  const text =
     `🆕 <b>НОВЫЙ ТИКЕТ #${ticket.id}</b>\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `👤 <b>${from.first_name || ''} ${from.last_name || ''}</b>\n` +
@@ -113,21 +109,21 @@ async function notifyNewTicket(ticket, userId, from, messageText) {
     ]],
   };
 
-  await sendInline(adminChatId, text, keyboard);
+  await telegram.sendInline(adminChatId, text, keyboard);
 }
 
 /**
  * Уведомление админа об обновлении тикета
  */
 async function notifyTicketUpdate(ticketId, userId, from, messageText) {
-  const adminChatId = env.telegramAdminChatId;
+  const adminChatId = config.getAdminChatId();
   const ticket = db.getTicket(ticketId);
   const messageCount = db.getTicketMessages(ticketId).length;
 
   const statusEmoji = { new: '🆕', open: '🟡', closed: '✅' };
   const statusText = { new: 'Новый', open: 'В работе', closed: 'Закрыт' };
 
-  const text = 
+  const text =
     `🔔 <b>ТИКЕТ #${ticketId} — НОВОЕ СООБЩЕНИЕ</b>\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `👤 <b>${from.first_name || ''}</b>\n` +
@@ -147,7 +143,7 @@ async function notifyTicketUpdate(ticketId, userId, from, messageText) {
     ]],
   };
 
-  await sendInline(adminChatId, text, keyboard);
+  await telegram.sendInline(adminChatId, text, keyboard);
 }
 
 /**
@@ -162,16 +158,12 @@ async function handleCallback(update) {
   const messageId = callbackQuery.message.message_id;
 
   // Проверяем, что это админ
-  if (chatId.toString() !== env.telegramAdminChatId.toString()) {
+  if (chatId.toString() !== config.getAdminChatId().toString()) {
     return;
   }
 
   // СРАЗУ подтверждаем callback чтобы Telegram не слал повторно
-  await fetch(`https://api.telegram.org/bot${env.telegramBotToken}/answerCallbackQuery`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ callback_query_id: callbackQuery.id }),
-  });
+  await telegram.answerCallbackQuery(callbackQuery.id);
 
   const [action, param] = data.split('_');
 
@@ -197,14 +189,14 @@ async function handleCallback(update) {
 async function handleReplyButton(adminChatId, messageId, ticketId) {
   const ticket = db.getTicket(ticketId);
   if (!ticket) {
-    await sendMessage(adminChatId, '❌ Тикет не найден');
+    await telegram.sendMessage(adminChatId, '❌ Тикет не найден');
     return;
   }
 
   // Сохраняем состояние ожидания ответа
   adminReplyState.set(adminChatId.toString(), { ticketId, messageId });
 
-  await sendMessage(
+  await telegram.sendMessage(
     adminChatId,
     `✏️ <b>Введите ответ для тикета #${ticketId}</b>\n\n` +
       `Просто отправьте текст следующим сообщением — я перешлю его пользователю.`,
@@ -217,21 +209,21 @@ async function handleReplyButton(adminChatId, messageId, ticketId) {
 async function handleCloseButton(adminChatId, messageId, ticketId) {
   const ticket = db.getTicket(ticketId);
   if (!ticket) {
-    await sendMessage(adminChatId, '❌ Тикет не найден');
+    await telegram.sendMessage(adminChatId, '❌ Тикет не найден');
     return;
   }
 
   db.updateTicketStatus(ticketId, 'closed');
 
   // Уведомляем пользователя
-  await sendMessage(
+  await telegram.sendMessage(
     ticket.user_id,
     '✅ <b>Ваше обращение закрыто</b>\n\n' +
       'Если у вас появятся ещё вопросы — пишите, ответим.',
   );
 
   // Обновляем сообщение админа
-  await editMessage(adminChatId, messageId,
+  await telegram.editMessage(adminChatId, messageId,
     `✅ <b>ТИКЕТ #${ticketId} — ЗАКРЫТ</b>\n` +
     `━━━━━━━━━━━━━━━━\n` +
     `👤 Пользователь: <code>${ticket.user_id}</code>\n` +
@@ -240,7 +232,7 @@ async function handleCloseButton(adminChatId, messageId, ticketId) {
     {}
   );
 
-  await sendMessage(adminChatId, `✅ Тикет #${ticketId} закрыт`);
+  await telegram.sendMessage(adminChatId, `✅ Тикет #${ticketId} закрыт`);
 }
 
 /**
@@ -249,7 +241,7 @@ async function handleCloseButton(adminChatId, messageId, ticketId) {
 async function handleBackButton(adminChatId, messageId, ticketId) {
   const ticket = db.getTicket(ticketId);
   if (!ticket) {
-    await sendMessage(adminChatId, '❌ Тикет не найден');
+    await telegram.sendMessage(adminChatId, '❌ Тикет не найден');
     return;
   }
 
@@ -277,7 +269,7 @@ async function handleBackButton(adminChatId, messageId, ticketId) {
     ]],
   };
 
-  await sendInline(adminChatId, text, keyboard);
+  await telegram.sendInline(adminChatId, text, keyboard);
 }
 
 /**
@@ -286,7 +278,7 @@ async function handleBackButton(adminChatId, messageId, ticketId) {
 async function handleHistoryButton(adminChatId, messageId, ticketId) {
   const ticket = db.getTicket(ticketId);
   if (!ticket) {
-    await sendMessage(adminChatId, '❌ Тикет не найден');
+    await telegram.sendMessage(adminChatId, '❌ Тикет не найден');
     return;
   }
 
@@ -313,7 +305,7 @@ async function handleHistoryButton(adminChatId, messageId, ticketId) {
     ]],
   };
 
-  await sendInline(adminChatId, historyText, keyboard);
+  await telegram.sendInline(adminChatId, historyText, keyboard);
 }
 
 /**
@@ -329,7 +321,7 @@ async function handleAdminReply(adminChatId, text) {
   const ticket = db.getTicket(ticketId);
 
   if (!ticket) {
-    await sendMessage(adminChatId, '❌ Тикет не найден');
+    await telegram.sendMessage(adminChatId, '❌ Тикет не найден');
     adminReplyState.delete(adminChatId.toString());
     return;
   }
@@ -337,7 +329,7 @@ async function handleAdminReply(adminChatId, text) {
   // Проверяем что userId существует
   if (!ticket.user_id) {
     console.error('[Telegram] Ticket has no user_id:', ticket);
-    await sendMessage(adminChatId, `❌ Ошибка: пользователь не найден`);
+    await telegram.sendMessage(adminChatId, `❌ Ошибка: пользователь не найден`);
     adminReplyState.delete(adminChatId.toString());
     return;
   }
@@ -347,7 +339,7 @@ async function handleAdminReply(adminChatId, text) {
 
   // Отправляем пользователю
   try {
-    await sendMessage(
+    await telegram.sendMessage(
       ticket.user_id,
       text,
     );
@@ -357,10 +349,10 @@ async function handleAdminReply(adminChatId, text) {
       db.updateTicketStatus(ticketId, 'open');
     }
 
-    await sendMessage(adminChatId, `✅ Ответ отправлен пользователю`);
+    await telegram.sendMessage(adminChatId, `✅ Ответ отправлен пользователю`);
   } catch (err) {
     console.error('[Telegram] Error sending reply:', err);
-    await sendMessage(adminChatId, `❌ Не удалось отправить ответ`);
+    await telegram.sendMessage(adminChatId, `❌ Не удалось отправить ответ`);
   }
 
   // Очищаем состояние
@@ -371,37 +363,37 @@ async function handleAdminReply(adminChatId, text) {
  * Обработка команд админа
  */
 async function handleAdminCommand(chatId, command) {
-  if (chatId.toString() !== env.telegramAdminChatId.toString()) {
+  if (chatId.toString() !== config.getAdminChatId().toString()) {
     return;
   }
 
   if (command === '/new') {
     const tickets = db.getTicketsByStatus('new');
     if (tickets.length === 0) {
-      await sendMessage(chatId, '✅ Нет новых тикетов');
+      await telegram.sendMessage(chatId, '✅ Нет новых тикетов');
       return;
     }
-    await sendMessage(chatId, `🆕 <b>Новые тикеты:</b>\n\n` + 
+    await telegram.sendMessage(chatId, `🆕 <b>Новые тикеты:</b>\n\n` +
       tickets.map(t => `#${t.id} — Пользователь ${t.userId}`).join('\n'));
   }
 
   if (command === '/active') {
     const tickets = db.getTicketsByStatus('open');
     if (tickets.length === 0) {
-      await sendMessage(chatId, '✅ Нет активных тикетов');
+      await telegram.sendMessage(chatId, '✅ Нет активных тикетов');
       return;
     }
-    await sendMessage(chatId, `🟡 <b>Активные тикеты:</b>\n\n` + 
+    await telegram.sendMessage(chatId, `🟡 <b>Активные тикеты:</b>\n\n` +
       tickets.map(t => `#${t.id} — Пользователь ${t.userId}`).join('\n'));
   }
 
   if (command === '/closed') {
     const tickets = db.getTicketsByStatus('closed');
     if (tickets.length === 0) {
-      await sendMessage(chatId, '✅ Нет закрытых тикетов');
+      await telegram.sendMessage(chatId, '✅ Нет закрытых тикетов');
       return;
     }
-    await sendMessage(chatId, `✅ <b>Закрытые тикеты:</b>\n\n` + 
+    await telegram.sendMessage(chatId, `✅ <b>Закрытые тикеты:</b>\n\n` +
       tickets.map(t => `#${t.id} — Пользователь ${t.userId}`).join('\n'));
   }
 }
@@ -412,20 +404,18 @@ async function handleAdminCommand(chatId, command) {
 async function handleUpdate(update) {
   if (!update) return;
 
-  const adminChatId = env.telegramAdminChatId;
-
   // Callback query (кнопки)
   if (update.callback_query) {
     console.log('[Telegram] Callback:', update.callback_query.data, 'from:', update.callback_query.from.id, 'update_id:', update.update_id);
-    
+
     // Пропускаем уже обработанные
     if (processedUpdates.has(update.update_id)) {
       console.log('[Telegram] SKIP callback - already processed:', update.update_id);
       return;
     }
     processedUpdates.add(update.update_id);
-    cleanSet(processedUpdates, MAX_UPDATES);
-    
+    cleanSet(processedUpdates, config.MAX_PROCESSED_UPDATES);
+
     await handleCallback(update);
     return;
   }
@@ -444,35 +434,30 @@ async function handleUpdate(update) {
     return;
   }
   processedUpdates.add(update.update_id);
-  cleanSet(processedUpdates, MAX_UPDATES);
+  cleanSet(processedUpdates, config.MAX_PROCESSED_UPDATES);
 
-  // Обновляем lastUpdateId
-  if (update.update_id >= lastUpdateId) {
-    lastUpdateId = update.update_id + 1;
-  }
-
-  // Игнорируем сообщения от самого бота (от бота к админу)
+  // Игнорируем сообщения от самого бота
   if (message.from && message.from.is_bot) {
     console.log('[Telegram] SKIP - message from bot');
     return;
   }
 
   // Игнорируем служебные сообщения бота (режим ответа)
-  if (chatId.toString() === adminChatId.toString() && text.includes('✏️ Введите ответ для тикета #')) {
+  if (chatId.toString() === config.getAdminChatId().toString() && text.includes('✏️ Введите ответ для тикета #')) {
     console.log('[Telegram] SKIP - service message');
     return;
   }
 
   // Команды админа
-  if (chatId.toString() === adminChatId.toString() && text.startsWith('/')) {
+  if (chatId.toString() === config.getAdminChatId().toString() && text.startsWith('/')) {
     console.log('[Telegram] Admin command:', text);
     await handleAdminCommand(chatId, text);
     return;
   }
 
   // Ответ админа (режим ответа)
-  if (chatId.toString() === adminChatId.toString()) {
-    console.log('[Telegram] Admin reply, state:', adminReplyState.get(chatId.toString()));
+  if (chatId.toString() === config.getAdminChatId().toString()) {
+    console.log('[Telegram] Admin reply');
     await handleAdminReply(chatId, text);
     return;
   }
@@ -483,69 +468,8 @@ async function handleUpdate(update) {
 }
 
 /**
- * Запуск long-polling
+ * Очистка множества
  */
-async function startPolling() {
-  if (isRunning) {
-    console.log('[Telegram] Polling already running');
-    return;
-  }
-
-  if (!env.telegramBotToken || !env.telegramAdminChatId) {
-    console.log('[Telegram] Not configured, skipping polling');
-    return;
-  }
-
-  isRunning = true;
-  console.log('[Telegram] Starting long-polling...');
-
-  // Инициализация БД
-  db.init();
-
-  // Получаем последнее update_id
-  try {
-    const initialUpdates = await getUpdates(0, 1);
-    if (initialUpdates.length > 0) {
-      lastUpdateId = initialUpdates[initialUpdates.length - 1].update_id + 1;
-      console.log('[Telegram] Starting from update_id:', lastUpdateId);
-    }
-  } catch (err) {
-    // Если конфликт - другой бот уже запущен, останавливаемся
-    if (err.message === 'TELEGRAM_CONFLICT') {
-      console.error('[Telegram] Another bot instance is already running. Stopping.');
-      stopPolling();
-      return;
-    }
-    console.error('[Telegram] Error getting initial updates:', err);
-  }
-
-  // Основной цикл
-  while (isRunning) {
-    try {
-      const updates = await getUpdates(lastUpdateId, 30);
-
-      for (const update of updates) {
-        await handleUpdate(update);
-      }
-    } catch (err) {
-      // Если конфликт (409) - останавливаем polling
-      if (err.message === 'TELEGRAM_CONFLICT') {
-        console.error('[Telegram] Stopping polling due to conflict (another bot instance running)');
-        stopPolling();
-        break;
-      }
-      console.error('[Telegram] Polling error:', err);
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-    }
-  }
-}
-
-function stopPolling() {
-  isRunning = false;
-  console.log('[Telegram] Stopping long-polling...');
-}
-
-// Утилиты
 function cleanSet(set, max) {
   while (set.size > max) {
     const first = set.keys().next().value;
@@ -553,29 +477,15 @@ function cleanSet(set, max) {
   }
 }
 
+/**
+ * Форматирование времени
+ */
 function formatTime(date) {
   return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
-async function editMessage(chatId, messageId, text, reply_markup) {
-  try {
-    await fetch(`https://api.telegram.org/bot${env.telegramBotToken}/editMessageText`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        message_id: messageId,
-        text,
-        parse_mode: 'HTML',
-        reply_markup,
-      }),
-    });
-  } catch (err) {
-    // Игнорируем ошибки редактирования
-  }
-}
-
 module.exports = {
-  startPolling,
-  stopPolling,
+  handleUpdate,
+  handleUserMessage,
+  handleCallback,
 };

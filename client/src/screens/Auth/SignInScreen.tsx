@@ -121,6 +121,12 @@ export const SignInScreen = ({ route, navigation }: Props) => {
         msg = 'В .env укажите EXPO_PUBLIC_API_URL. На устройстве используйте IP ПК (например http://192.168.1.x:3000), не localhost.';
       if (!msg && (e?.name === 'TypeError' || /network|fetch|failed|could not connect/i.test(String(e?.message))))
         msg = 'Не удаётся подключиться к серверу. Запустите бэкенд и в .env приложения укажите EXPO_PUBLIC_API_URL с IP вашего ПК (не localhost).';
+      if (!msg && e?.message?.includes('timeout'))
+        msg = 'Превышено время ожидания ответа от сервера. Проверьте интернет и попробуйте снова.';
+      if (!msg && e?.status === 502)
+        msg = 'Сервер временно недоступн. Попробуйте позже.';
+      if (!msg && e?.status === 503)
+        msg = 'Сервер перегружен. Попробуйте позже.';
       if (!msg) msg = 'Ошибка входа. Попробуйте позже.';
       showToast(msg, 'error');
     } finally {
