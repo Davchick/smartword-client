@@ -24,6 +24,7 @@ import { apiPost, getBaseUrl } from '../../lib/api';
 import { useChat } from '../../hooks/useChat';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
+import { useDebouncedRefetch } from '../../hooks/useDebouncedRefetch';
 import { TypingIndicator } from '../../components/TypingIndicator';
 import { PaywallModal } from '../../components/PaywallModal';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
@@ -65,6 +66,12 @@ const playNotificationSound = () => {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
       osc.start(ctx.currentTime);
       osc.stop(ctx.currentTime + 0.3);
+      // Fallback: закрываем контекст через 500мс, если onended не сработал
+      const cleanupTimer = setTimeout(() => ctx.close(), 500);
+      osc.onended = () => {
+        clearTimeout(cleanupTimer);
+        ctx.close();
+      };
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
   } catch {}
@@ -76,6 +83,8 @@ export const ChatScreen = () => {
   const { profile, refetch: refetchProfile } = useProfile();
   const { groups, refetch: refetchGroups } = useGroups();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+
+  const debouncedRefetchGroups = useDebouncedRefetch(refetchGroups, 500);
 
   const [stage, setStage] = useState<ChatStage>('welcome');
   // selectedGroup/freeMode фиксируются в момент выбора и не меняются до сброса
@@ -102,8 +111,8 @@ export const ChatScreen = () => {
   }, [messages]);
 
   useFocusEffect(useCallback(() => {
-    refetchGroups();
-  }, [refetchGroups]));
+    debouncedRefetchGroups();
+  }, [debouncedRefetchGroups]));
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 120);
@@ -173,17 +182,17 @@ export const ChatScreen = () => {
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
 
-  const renderMessage = ({ item }: { item: ChatMessage }) => {
+  const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
     const isUser = item.role === 'user';
     return (
       <MessageBubble
         item={item}
         isUser={isUser}
         colors={colors}
-      onInsertHint={handleInsertFromHint}
+        onInsertHint={handleInsertFromHint}
       />
     );
-  };
+  }, [colors, handleInsertFromHint]);
 
   // ── Экран выбора (choosing) ──────────────────────────────────────────────
   const renderChoosingScreen = () => (

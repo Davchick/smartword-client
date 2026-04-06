@@ -52,7 +52,47 @@ export const useGroups = () => {
   }, [authUser]);
 
   useEffect(() => {
-    fetchGroups();
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        if (authUser && getBaseUrl()) {
+          const data = await apiGet<WordGroup[]>('/groups');
+          if (!cancelled) {
+            setGroups(data ?? []);
+            setError(null);
+          }
+          return;
+        }
+
+        const [groupsRaw, wordsRaw] = await Promise.all([
+          AsyncStorage.getItem('smartword_guest_groups'),
+          AsyncStorage.getItem('smartword_guest_words'),
+        ]);
+        const guestGroups: WordGroup[] = groupsRaw ? JSON.parse(groupsRaw) : [];
+        const guestWords: { id: string; group_id: string }[] = wordsRaw ? JSON.parse(wordsRaw) : [];
+        const countsByGroup: Record<string, number> = {};
+        for (const w of guestWords) {
+          countsByGroup[w.group_id] = (countsByGroup[w.group_id] ?? 0) + 1;
+        }
+        const withCounts = guestGroups.map((g) => ({
+          ...g,
+          word_count: countsByGroup[g.id] ?? 0,
+        }));
+        if (!cancelled) {
+          setGroups(withCounts);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.warn('[useGroups] fetchGroups error', e);
+          setError('Не удалось загрузить словари');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [fetchGroups]);
 
   const createGroup = async (name: string, language: string): Promise<{ error: string | null }> => {

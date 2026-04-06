@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Modal,
   View,
@@ -10,8 +10,6 @@ import {
 } from 'react-native';
 import { X, Crown, Zap, MessageCircle, BookOpen, Check } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography } from '../theme';
-import { initIAP, purchaseProduct, PRODUCT_IDS } from '../lib/iap';
-import type { ProductId } from '../lib/iap';
 
 interface Props {
   visible: boolean;
@@ -33,30 +31,30 @@ const FEATURES = [
   { icon: Crown, text: 'Приоритет в новых функциях' },
 ];
 
-const PRODUCTS = [
-  { id: PRODUCT_IDS.MONTHLY, label: 'В месяц', price: '299 ₽', badge: null },
-  { id: PRODUCT_IDS.YEARLY, label: 'В год', price: '1 990 ₽', badge: 'Лучшая цена' },
-  { id: PRODUCT_IDS.LIFETIME, label: 'Навсегда', price: '3 990 ₽', badge: null },
-];
-
 export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Props) => {
   const { colors } = useTheme();
-  const [selectedProduct, setSelectedProduct] = useState<ProductId>(PRODUCT_IDS.YEARLY);
+  const [selectedProduct, setSelectedProduct] = useState<string>('yearly');
   const [purchasing, setPurchasing] = useState(false);
 
-  useEffect(() => {
-    if (visible) {
-      initIAP().catch(() => {/* нативный модуль недоступен в Expo Go */});
-    }
-  }, [visible]);
+  // Цены будут приходить с бэкенда ЮКассы — пока захардкожены для MVP
+  const PRODUCTS = [
+    { id: 'monthly', label: 'В месяц', price: '299 ₽', badge: null },
+    { id: 'yearly', label: 'В год', price: '1 990 ₽', badge: 'Лучшая цена' },
+    { id: 'lifetime', label: 'Навсегда', price: '3 990 ₽', badge: null },
+  ];
 
   const handlePurchase = async () => {
     setPurchasing(true);
-    const { error } = await purchaseProduct(selectedProduct);
-    setPurchasing(false);
-    if (!error) {
+    try {
+      // TODO: Интеграция с ЮКассой — здесь будет redirect на оплату
+      // Пока заглушка для демонстрации UI
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       onPurchaseSuccess?.();
       onClose();
+    } catch (err) {
+      console.error('[Paywall] Purchase error:', err);
+    } finally {
+      setPurchasing(false);
     }
   };
 
@@ -126,7 +124,7 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
                         selectedProduct === product.id ? colors.primary : 'rgba(148,163,184,0.5)',
                     },
                   ]}
-                  onPress={() => setSelectedProduct(product.id as ProductId)}
+                  onPress={() => setSelectedProduct(product.id)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.productInfo}>

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions, Platform } from 'react-native';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { View, Text, StyleSheet, Animated, Platform, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import Svg, { Path, G, Defs, LinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import { useTheme, spacing, radii, typography, fonts } from '../theme';
@@ -14,7 +14,6 @@ interface ProgressChartProps {
 }
 
 const CHART_HEIGHT = 160;
-const CHART_WIDTH = Dimensions.get('window').width - spacing.lg * 2;
 const PADDING = 40;
 
 // Turquoise-green gradient
@@ -34,13 +33,15 @@ const DEFAULT_EMPTY_DATA: TrainingDayProgress[] = [
 
 export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = false }) => {
   const { colors } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const chartWidth = useMemo(() => windowWidth - spacing.lg * 2, [windowWidth]);
   const fadeAnim = useRef(new Animated.Value(0));
   const lineAnim = useRef(new Animated.Value(0));
   const [lineProgress, setLineProgress] = useState(0);
 
   const chartData = data.length > 0 ? data : DEFAULT_EMPTY_DATA;
   const maxPoints = Math.max(...chartData.map((d) => d.points), 1);
-  const totalPoints = locked 
+  const totalPoints = locked
     ? DEFAULT_EMPTY_DATA.reduce((sum, d) => sum + d.points, 0)
     : chartData.reduce((sum, d) => sum + d.points, 0);
 
@@ -76,7 +77,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
   const generateCurvePath = (progress: number) => {
     if (chartData.length === 0) return '';
 
-    const chartInnerWidth = CHART_WIDTH - PADDING * 2;
+    const chartInnerWidth = chartWidth - PADDING * 2;
     const chartInnerHeight = CHART_HEIGHT - PADDING * 2;
     const stepX = chartInnerWidth / (chartData.length - 1 || 1);
 
@@ -113,7 +114,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
   // Generate area fill path
   const generateAreaPath = (progress: number) => {
     const curvePath = generateCurvePath(progress);
-    return `${curvePath} L ${CHART_WIDTH - PADDING} ${CHART_HEIGHT - PADDING} L ${PADDING} ${CHART_HEIGHT - PADDING} Z`;
+    return `${curvePath} L ${chartWidth - PADDING} ${CHART_HEIGHT - PADDING} L ${PADDING} ${CHART_HEIGHT - PADDING} Z`;
   };
 
   const curvePath = generateCurvePath(lineProgress);
@@ -129,7 +130,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
 
       {/* Chart */}
       <View style={styles.chartContainer}>
-        <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+        <Svg width={chartWidth} height={CHART_HEIGHT}>
           <Defs>
             <LinearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
               <Stop offset="0" stopColor={GRADIENT_START} stopOpacity="0.4" />
@@ -161,7 +162,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
 
           {/* Data points and labels */}
           {chartData.map((day, i) => {
-            const chartInnerWidth = CHART_WIDTH - PADDING * 2;
+            const chartInnerWidth = chartWidth - PADDING * 2;
             const chartInnerHeight = CHART_HEIGHT - PADDING * 2;
             const stepX = chartInnerWidth / (chartData.length - 1 || 1);
             const x = PADDING + i * stepX;
@@ -212,7 +213,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
           {/* White overlay for locked state to obscure the chart */}
           {locked && (
             <Path
-              d={`M ${PADDING} ${CHART_HEIGHT - PADDING} L ${CHART_WIDTH - PADDING} ${CHART_HEIGHT - PADDING} L ${CHART_WIDTH - PADDING} ${PADDING * 0.5} L ${PADDING} ${PADDING * 0.5} Z`}
+              d={`M ${PADDING} ${CHART_HEIGHT - PADDING} L ${chartWidth - PADDING} ${CHART_HEIGHT - PADDING} L ${chartWidth - PADDING} ${PADDING * 0.5} L ${PADDING} ${PADDING * 0.5} Z`}
               fill="url(#lockGradient)"
             />
           )}

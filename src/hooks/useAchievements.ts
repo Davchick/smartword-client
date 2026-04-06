@@ -63,7 +63,33 @@ export const useAchievements = () => {
   }, [authUser]);
 
   useEffect(() => {
-    fetchAchievements();
+    let cancelled = false;
+    (async () => {
+      if (!authUser || !getBaseUrl()) {
+        if (!cancelled) { setAchievements([]); setSummary(null); setLoading(false); }
+        return;
+      }
+      setLoading(true);
+      try {
+        const [achievementsData, summaryData] = await Promise.all([
+          apiGet<Achievement[]>('/achievements'),
+          apiGet<AchievementsSummary>('/achievements/summary'),
+        ]);
+        if (!cancelled) {
+          setAchievements(achievementsData);
+          setSummary(summaryData);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[useAchievements] Fetch error:', error);
+          setAchievements([]);
+          setSummary(null);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [fetchAchievements]);
 
   return {

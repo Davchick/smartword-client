@@ -18,6 +18,7 @@ import sbpIcon from '../../../assets/icons/SBP.svg';
 import sberPayIcon from '../../../assets/icons/sber-pay-simple.svg';
 import tpayIcon from '../../../assets/icons/t-pay.svg';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
+import { useToast } from '../../components/Toast';
 import { useProfile } from '../../hooks/useProfile';
 import { createSubscriptionPayment, type PlanId, type PaymentMethod } from '../../lib/billing';
 import type { RootStackParamList } from '../../navigation/types';
@@ -38,8 +39,9 @@ const METHODS: { id: PaymentMethod; label: string; note: string }[] = [
 
 export const PaymentScreen = () => {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { profile } = useProfile();
+  const { showToast } = useToast();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('month');
@@ -99,7 +101,7 @@ export const PaymentScreen = () => {
       if (supported) {
         await Linking.openURL(url);
       } else {
-        alert(`Не удалось открыть ссылку: ${url}`);
+        showToast(`Не удалось открыть ссылку: ${url}`, 'info');
       }
     } catch (error) {
       console.error('Error opening legal document:', error);
@@ -201,14 +203,14 @@ export const PaymentScreen = () => {
               {Platform.OS === 'ios' ? (
                 <BlurView 
                   intensity={100} 
-                  tint={colors.text === '#0f172a' ? 'light' : 'dark'} 
+                  tint={isDark ? 'dark' : 'light'}
                   style={styles.blurContainer}
                   experimentalBlurMethod="dimezisBlurView"
                 >
                   <View style={[styles.methodsDropdown, {
-                    backgroundColor: colors.text === '#0f172a'
-                      ? 'rgba(255, 255, 255, 0.75)'
-                      : 'rgba(30, 41, 59, 0.75)',
+                    backgroundColor: isDark
+                      ? 'rgba(30, 41, 59, 0.75)'
+                      : 'rgba(255, 255, 255, 0.75)',
                     borderColor: (colors.border || '#334155') + '60'
                   }]}>
                     {METHODS.map((method) => {

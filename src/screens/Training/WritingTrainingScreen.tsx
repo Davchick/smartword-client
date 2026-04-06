@@ -71,40 +71,64 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const weeklyLimit = 50; // слов в неделю для бесплатных пользователей
   const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
 
+  // Ref для batching записи в AsyncStorage — предотвращает race conditions
+  const pendingSaveRef = useRef<{ limitReached?: boolean; learned?: number } | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Единый эффект для сохранения состояния в AsyncStorage (batched)
+  const scheduleSave = useCallback(() => {
+    pendingSaveRef.current = {
+      limitReached: weeklyLimitReached,
+      learned: wordsLearnedThisWeek,
+    };
+
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      const pending = pendingSaveRef.current;
+      if (!pending) return;
+      pendingSaveRef.current = null;
+
+      try {
+        await Promise.all([
+          AsyncStorage.setItem(WEEKLY_LIMIT_KEY, JSON.stringify(pending.limitReached)),
+          AsyncStorage.setItem(WEEKLY_LEARNED_KEY, JSON.stringify(pending.learned)),
+        ]);
+      } catch (e) {
+        console.warn('[WritingTraining] Failed to save state:', e);
+      }
+    }, 100);
+  }, [weeklyLimitReached, wordsLearnedThisWeek]);
+
+  useEffect(() => {
+    scheduleSave();
+  }, [scheduleSave]);
+
   // Загружаем сохранённые значения из AsyncStorage при монтировании
   useEffect(() => {
+    let mounted = true;
     const loadSavedState = async () => {
       try {
         const [limitReached, learned] = await Promise.all([
           AsyncStorage.getItem(WEEKLY_LIMIT_KEY),
           AsyncStorage.getItem(WEEKLY_LEARNED_KEY),
         ]);
-        if (limitReached !== null) {
-          setWeeklyLimitReached(JSON.parse(limitReached));
-        }
-        if (learned !== null) {
-          setWordsLearnedThisWeek(JSON.parse(learned));
+        if (mounted) {
+          if (limitReached !== null) {
+            setWeeklyLimitReached(JSON.parse(limitReached));
+          }
+          if (learned !== null) {
+            setWordsLearnedThisWeek(JSON.parse(learned));
+          }
         }
       } catch (e) {
         console.warn('[WritingTraining] Failed to load saved state:', e);
       }
     };
     loadSavedState();
+    return () => {
+      mounted = false;
+    };
   }, []);
-
-  // Сохраняем weeklyLimitReached в AsyncStorage при изменении
-  useEffect(() => {
-    AsyncStorage.setItem(WEEKLY_LIMIT_KEY, JSON.stringify(weeklyLimitReached)).catch(e =>
-      console.warn('[WritingTraining] Failed to save weeklyLimitReached:', e)
-    );
-  }, [weeklyLimitReached]);
-
-  // Сохраняем wordsLearnedThisWeek в AsyncStorage при изменении
-  useEffect(() => {
-    AsyncStorage.setItem(WEEKLY_LEARNED_KEY, JSON.stringify(wordsLearnedThisWeek)).catch(e =>
-      console.warn('[WritingTraining] Failed to save wordsLearnedThisWeek:', e)
-    );
-  }, [wordsLearnedThisWeek]);
 
   // Сбрасываем сохранённые значения в начале новой недели (понедельник)
   useEffect(() => {
@@ -119,13 +143,11 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
 
         const savedMonday = await AsyncStorage.getItem('@SmartWord:lastMonday');
         if (savedMonday === null || new Date(savedMonday) < currentMonday) {
-          // Новая неделя — сбрасываем
           await AsyncStorage.setItem('@SmartWord:lastMonday', currentMonday.toISOString());
           await AsyncStorage.setItem(WEEKLY_LIMIT_KEY, 'false');
           await AsyncStorage.setItem(WEEKLY_LEARNED_KEY, '0');
           setWeeklyLimitReached(false);
           setWordsLearnedThisWeek(0);
-          console.log('[WritingTraining] Week reset - new Monday:', currentMonday);
         }
       } catch (e) {
         console.warn('[WritingTraining] Week reset error:', e);
@@ -133,24 +155,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     };
     checkWeekReset();
   }, []);
-
-  // Проверяем лимит при загрузке тренировки
-  useEffect(() => {
-    if (weeklyLimitReached) {
-      return;
-    }
-
-    if (!loading && words.length > 0) {
-      const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
-      if (currentLearned >= weeklyLimit && !profile?.is_premium) {
-        setWeeklyLimitReached(true);
-        setWordsLearnedThisWeek(currentLearned);
-        return;
-      }
-
-      initTraining();
-    }
-  }, [loading, profile, weeklyLimitReached, words.length, wordsLearnedThisWeek, initTraining]);
 
   const feedbackScale = useRef(new Animated.Value(0)).current;
   const feedbackOpacity = useRef(new Animated.Value(0)).current;
@@ -174,9 +178,28 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     progressWidth.setValue(0);
   }, [getTrainingWords, progressWidth]);
 
+  // Проверяем лимит при загрузке тренировки и инициализируем
   useEffect(() => {
-    if (!loading && words.length > 0) initTraining();
-  }, [loading, words, initTraining]);
+    if (weeklyLimitReached || loading || words.length === 0) {
+      return;
+    }
+
+    const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
+    if (currentLearned >= weeklyLimit && !profile?.is_premium) {
+      setWeeklyLimitReached(true);
+      setWordsLearnedThisWeek(currentLearned);
+      return;
+    }
+
+    initTraining();
+  }, [loading, profile, weeklyLimitReached, words.length, wordsLearnedThisWeek, initTraining]);
+
+  // Если trainingWords опустел (например после goToNextWord на последнем слове) — завершаем
+  useEffect(() => {
+    if (!finished && trainingWords.length === 0 && !loading && words.length > 0) {
+      setFinished(true);
+    }
+  }, [trainingWords.length, finished, loading, words.length]);
 
   useEffect(() => {
     if (trainingWords.length === 0) return;
@@ -410,7 +433,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
 
   const currentWord = trainingWords[currentIndex];
   if (!currentWord) {
-    setFinished(true);
     return null;
   }
   const promptText = direction === 'foreign' ? currentWord.translation : currentWord.original;

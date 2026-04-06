@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -31,6 +31,7 @@ import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
 import { useTrainingProgress } from '../../hooks/useTrainingProgress';
 import { useStreak } from '../../hooks/useStreak';
+import { useDebouncedRefetch } from '../../hooks/useDebouncedRefetch';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -54,6 +55,13 @@ export const ProfileScreen = () => {
   const { totalCount: totalWords, refetch: refetchWords } = useWords();
   const { progress: trainingProgress, loading: progressLoading, refetch: refetchProgress } = useTrainingProgress();
   const { streak, refetch: refetchStreak } = useStreak();
+
+  // Debounced refetch — предотвращает избыточные запросы
+  const debouncedRefetch = useDebouncedRefetch(refetch, 500);
+  const debouncedRefetchGroups = useDebouncedRefetch(refetchGroups, 500);
+  const debouncedRefetchWords = useDebouncedRefetch(refetchWords, 500);
+  const debouncedRefetchProgress = useDebouncedRefetch(refetchProgress, 500);
+  const debouncedRefetchStreak = useDebouncedRefetch(refetchStreak, 500);
 
   const [signingOut, setSigningOut] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
@@ -79,15 +87,15 @@ export const ProfileScreen = () => {
     Linking.openURL('https://dalink.to/davch1ck');
   };
 
-  // Обновляем профиль, группы, счётчик слов и прогресс тренировок при возврате на экран профиля
+  // Обновляем профиль, группы, счётчик слов и прогресс тренировок при возврате на экран профиля (с debounce)
   useFocusEffect(
     useCallback(() => {
-      refetch();
-      refetchGroups();
-      refetchWords();
-      refetchProgress();
-      refetchStreak();
-    }, [refetch, refetchGroups, refetchWords, refetchProgress, refetchStreak])
+      debouncedRefetch();
+      debouncedRefetchGroups();
+      debouncedRefetchWords();
+      debouncedRefetchProgress();
+      debouncedRefetchStreak();
+    }, [debouncedRefetch, debouncedRefetchGroups, debouncedRefetchWords, debouncedRefetchProgress, debouncedRefetchStreak])
   );
 
   const handleSupport = () => {
@@ -110,6 +118,17 @@ export const ProfileScreen = () => {
     Alert.alert('Готово', 'Ник сохранён');
   };
 
+  const aiUsed = profile?.ai_messages_used ?? 0;
+  const aiPercent = useMemo(() => Math.min(aiUsed / 10, 1), [aiUsed]);
+  const displayName = useMemo(() => nickname || (profile ? 'Мой профиль' : 'Гостевой режим'), [nickname, profile]);
+  const safeAvatarId = useMemo(() => {
+    if (typeof avatarId !== 'number' || isNaN(avatarId) || avatarId < 0 || avatarId >= AVATAR_CHARS.length) {
+      return 0;
+    }
+    return avatarId;
+  }, [avatarId]);
+  const accentColor = useMemo(() => AVATAR_COLORS[safeAvatarId], [safeAvatarId]);
+
   if (loading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
@@ -117,11 +136,6 @@ export const ProfileScreen = () => {
       </View>
     );
   }
-
-  const aiUsed = profile?.ai_messages_used ?? 0;
-  const aiPercent = Math.min(aiUsed / 10, 1);
-  const displayName = nickname || (profile ? 'Мой профиль' : 'Гостевой режим');
-  const accentColor = AVATAR_COLORS[avatarId];
 
   return (
     <ScrollView
@@ -164,7 +178,7 @@ export const ProfileScreen = () => {
           onPress={() => setAvatarModalVisible(true)}
           activeOpacity={0.85}
         >
-          <Text style={styles.avatarEmoji}>{AVATAR_CHARS[avatarId]}</Text>
+          <Text style={styles.avatarEmoji}>{AVATAR_CHARS[safeAvatarId]}</Text>
           <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
             <Pencil color={colors.background} size={10} />
           </View>

@@ -45,7 +45,26 @@ export const useTrainingProgress = () => {
   }, [authUser, fetchProgress]);
 
   useEffect(() => {
-    fetchProgress();
+    let cancelled = false;
+    (async () => {
+      if (!authUser || !getBaseUrl()) {
+        if (!cancelled) { setProgress([]); setLoading(false); }
+        return;
+      }
+      setLoading(true);
+      try {
+        const data = await apiGet<TrainingDayProgress[]>('/stats/training-progress');
+        if (!cancelled) setProgress(data);
+      } catch (e) {
+        if (!cancelled) {
+          console.warn('[useTrainingProgress] fetchProgress error', e);
+          setProgress([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [fetchProgress]);
 
   return { progress, loading, refetch: fetchProgress, addPoints };

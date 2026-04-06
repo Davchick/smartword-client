@@ -24,6 +24,7 @@ import { AddGroupModal } from '../../components/AddGroupModal';
 import { PaywallModal } from '../../components/PaywallModal';
 import { StatsWidget } from '../../components/StatsWidget';
 import { useStats } from '../../hooks/useStats';
+import { useDebouncedRefetch } from '../../hooks/useDebouncedRefetch';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import type { GroupsScreenProps } from '../../navigation/types';
@@ -39,6 +40,11 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   const { words, refetch: refetchWords } = useWords();
   const { profile } = useProfile();
   const { stats, refetch: refetchStats } = useStats();
+
+  // Debounced refetch — предотвращает избыточные запросы при быстром переключении табов
+  const debouncedRefetchGroups = useDebouncedRefetch(refetchGroups, 500);
+  const debouncedRefetchWords = useDebouncedRefetch(refetchWords, 500);
+  const debouncedRefetchStats = useDebouncedRefetch(refetchStats, 500);
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -144,13 +150,13 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
     setRenameGroup(null);
   };
 
-  // Всегда обновляем группы и статистику при возврате на экран "Словари"
+  // Всегда обновляем группы и статистику при возврате на экран "Словари" (с debounce)
   useFocusEffect(
     useCallback(() => {
-      refetchGroups();
-      refetchStats();
-      refetchWords();
-    }, [refetchGroups, refetchStats, refetchWords])
+      debouncedRefetchGroups();
+      debouncedRefetchStats();
+      debouncedRefetchWords();
+    }, [debouncedRefetchGroups, debouncedRefetchStats, debouncedRefetchWords])
   );
 
   if (loading) {

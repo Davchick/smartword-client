@@ -24,11 +24,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refetch = useCallback(async () => {
+    if (!getBaseUrl()) {
+      console.error('[Auth] refetch skipped: getBaseUrl() is empty');
+      return;
+    }
     try {
       const profile = await apiGet<ApiProfile>('/profile');
       setUserState(profile);
-    } catch {
-      setUserState(null);
+    } catch (err) {
+      // НЕ сбрасываем user при ошибке — временный сбой сети не должен «выкидывать» пользователя.
+      // Предыдущее состояние сохраняется, UI продолжит работать с кэшированными данными.
+      console.error('[Auth] refetch failed, keeping current user state:', err);
     }
   }, []);
 

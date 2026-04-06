@@ -234,7 +234,7 @@ export const ProfileSettingsScreen = () => {
           <TouchableOpacity
             style={[styles.menuRow, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
             onPress={() =>
-              showToast('Уведомления скоро появятся', 'error')
+              showToast('Уведомления скоро появятся', 'info')
             }
             activeOpacity={0.7}
           >

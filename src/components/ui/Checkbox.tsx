@@ -12,7 +12,9 @@ interface CheckboxProps {
 }
 
 export const Checkbox = ({ checked, onPress, label, disabled = false, size = 22 }: CheckboxProps) => {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+
+  const checkmarkColor = isDark ? '#fff' : '#000';
 
   return (
     <TouchableOpacity
@@ -36,7 +38,7 @@ export const Checkbox = ({ checked, onPress, label, disabled = false, size = 22 
       >
         {checked && (
           <Check
-            color={colors.primary === '#000' ? '#000' : '#fff'}
+            color={checkmarkColor}
             size={size * 0.6}
             strokeWidth={3}
           />

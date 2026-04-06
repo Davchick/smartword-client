@@ -48,15 +48,37 @@ export const useProfile = () => {
       setLoading(false);
       return;
     }
-    fetchProfile();
+    let cancelled = false;
+    (async () => {
+      if (!getBaseUrl()) {
+        if (!cancelled) {
+          setProfile({ id: authUser.id, is_premium: authUser.is_premium, ai_messages_used: authUser.ai_messages_used, created_at: authUser.created_at });
+          setLoading(false);
+        }
+        return;
+      }
+      setLoading(true);
+      try {
+        const data = await apiGet<Profile>('/profile');
+        if (!cancelled) setProfile(data);
+      } catch (e) {
+        if (!cancelled) {
+          console.warn('[useProfile] fetchProfile error', e);
+          setProfile({ id: authUser.id, is_premium: authUser.is_premium, ai_messages_used: authUser.ai_messages_used, created_at: authUser.created_at });
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [authUser?.id]);
 
   useEffect(() => {
     AsyncStorage.multiGet([AVATAR_KEY, NICKNAME_KEY]).then((pairs) => {
-      const avatarVal = pairs[0][1];
-      const nicknameVal = pairs[1][1];
-      if (avatarVal !== null) setAvatarIdState(parseInt(avatarVal, 10));
-      if (nicknameVal !== null) setNicknameState(nicknameVal);
+      const avatarVal = pairs[0]?.[1];
+      const nicknameVal = pairs[1]?.[1];
+      if (avatarVal != null) setAvatarIdState(parseInt(avatarVal, 10));
+      if (nicknameVal != null) setNicknameState(nicknameVal as string);
     });
   }, []);
 

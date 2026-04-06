@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -28,8 +28,10 @@ export const AchievementsScreen: React.FC = () => {
     setRefreshing(false);
   };
 
-  const filteredAchievements =
-    filter === 'all' ? achievements : achievements.filter((a) => a.category === filter);
+  const filteredAchievements = useMemo(
+    () => filter === 'all' ? achievements : achievements.filter((a) => a.category === filter),
+    [filter, achievements]
+  );
 
   const categories: { key: CategoryFilter; label: string; icon: string }[] = [
     { key: 'all', label: 'Все', icon: '🏆' },

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer, NavigationContainerRef, DefaultTheme, DarkTheme } from '@react-navigation/native';
@@ -12,6 +12,7 @@ import { AchievementsScreen } from '../screens/Profile/AchievementsScreen';
 import { LegalScreen } from '../screens/Profile/LegalScreen';
 import { PaymentScreen } from '../screens/Billing/PaymentScreen';
 import { useTheme } from '../theme';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -47,21 +48,13 @@ export const RootNavigator = () => {
     }
   }, [authLoading, user]);
 
-  if (authLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
-  }
-
   const initialRoute: keyof RootStackParamList = user
     ? 'Main'
     : hasSeenWelcome
       ? 'Main'
       : 'Welcome';
 
-  const navigationTheme = {
+  const navigationTheme = useMemo(() => ({
     ...(isDark ? DarkTheme : DefaultTheme),
     colors: {
       ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
@@ -71,22 +64,32 @@ export const RootNavigator = () => {
       primary: colors.primary,
       text: colors.text,
     },
-  };
+  }), [isDark, colors.background, colors.card, colors.border, colors.primary, colors.text]);
+
+  if (authLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
 
   return (
-    <NavigationContainer ref={navRef} theme={navigationTheme}>
-      <Stack.Navigator
-        initialRouteName={initialRoute}
-        screenOptions={{ headerShown: false, animation: 'fade' }}
-      >
-        <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        <Stack.Screen name="SignIn" component={SignInScreen} />
-        <Stack.Screen name="Main" component={TabNavigator} />
-        <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
-        <Stack.Screen name="Achievements" component={AchievementsScreen} />
-        <Stack.Screen name="Legal" component={LegalScreen} />
-        <Stack.Screen name="BillingPayment" component={PaymentScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <ErrorBoundary>
+      <NavigationContainer ref={navRef} theme={navigationTheme}>
+        <Stack.Navigator
+          initialRouteName={initialRoute}
+          screenOptions={{ headerShown: false, animation: 'fade' }}
+        >
+          <Stack.Screen name="Welcome" component={WelcomeScreen} />
+          <Stack.Screen name="SignIn" component={SignInScreen} />
+          <Stack.Screen name="Main" component={TabNavigator} />
+          <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+          <Stack.Screen name="Achievements" component={AchievementsScreen} />
+          <Stack.Screen name="Legal" component={LegalScreen} />
+          <Stack.Screen name="BillingPayment" component={PaymentScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </ErrorBoundary>
   );
 };

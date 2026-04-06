@@ -7,23 +7,23 @@ import {
   TouchableOpacity,
   Linking,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, ExternalLink, FileText, Shield, Scale } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
-import { Button } from '../../components/ui/Button';
 
 const LEGAL_DOCS = {
   privacyPolicy: {
     title: 'Политика конфиденциальности',
     description: 'Как мы обрабатываем ваши персональные данные',
     icon: Shield,
-    url: 'https://smart-word.ru/privacy', // TODO: Заменить на актуальный URL
+    url: 'https://smart-word.ru/privacy',
   },
   termsOfService: {
     title: 'Пользовательское соглашение',
     description: 'Публичная оферта на оказание услуг',
     icon: Scale,
-    url: 'https://smart-word.ru/terms', // TODO: Заменить на актуальный URL
+    url: 'https://smart-word.ru/terms',
   },
 };
 
@@ -38,21 +38,24 @@ interface LegalScreenProps {
 
 export const LegalScreen = ({ navigation }: LegalScreenProps) => {
   const insets = useSafeAreaInsets();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
 
   const handleOpenDocument = async (docKey: keyof typeof LEGAL_DOCS) => {
     const doc = LEGAL_DOCS[docKey];
     try {
-      // TODO: Для production - открыть WebView с локальным документом или URL
-      // Для сейчас - показать alert с инструкцией
-      alert(
-        `${doc.title}\n\n` +
-        `Документ находится в разработке.\n\n` +
-        `Для просмотра откройте:\n${doc.url}\n\n` +
-        `Или перейдите в настройки профиля.`
-      );
+      await WebBrowser.openBrowserAsync(doc.url, {
+        enableBarCollapsing: true,
+        toolbarColor: colors.card,
+      });
     } catch (error) {
       console.error('Error opening document:', error);
+      // Fallback: открываем в системном браузере
+      try {
+        const supported = await Linking.canOpenURL(doc.url);
+        if (supported) {
+          await Linking.openURL(doc.url);
+        }
+      } catch {}
     }
   };
 
@@ -61,11 +64,9 @@ export const LegalScreen = ({ navigation }: LegalScreenProps) => {
       const supported = await Linking.canOpenURL(url);
       if (supported) {
         await Linking.openURL(url);
-      } else {
-        alert(`Не удалось открыть ссылку: ${url}`);
       }
-    } catch (error) {
-      console.error('Error opening URL:', error);
+    } catch {
+      // Тихо игнорируем ошибку
     }
   };
 
@@ -133,17 +134,17 @@ export const LegalScreen = ({ navigation }: LegalScreenProps) => {
             
             <View style={styles.infoRow}>
               <Text style={[styles.infoLabel, { color: colors.muted }]}>Разработчик</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>ИП [ФИО]</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]}>ИП Сейитмаммедов Д.Г.</Text>
             </View>
 
             <View style={styles.infoRow}>
               <Text style={[styles.infoLabel, { color: colors.muted }]}>ИНН</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>[ИНН]</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]}>236600208052</Text>
             </View>
 
             <View style={styles.infoRow}>
               <Text style={[styles.infoLabel, { color: colors.muted }]}>ОГРНИП</Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>[ОГРНИП]</Text>
+              <Text style={[styles.infoValue, { color: colors.text }]}>326237500121501</Text>
             </View>
           </View>
         </View>

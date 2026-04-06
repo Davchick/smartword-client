@@ -18,6 +18,11 @@ const Dot = ({ delay }: { delay: number }) => {
       delay,
       withRepeat(withTiming(1, { duration: 400 }), -1, true)
     );
+
+    return () => {
+      // Останавливаем анимацию при размонтировании
+      opacity.value = 0.3;
+    };
   }, [delay, opacity]);
 
   const style = useAnimatedStyle(() => ({ opacity: opacity.value }));

@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -54,40 +54,67 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const [isProcessing, setIsProcessing] = useState(false); // Блокировка спама кнопок
   const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0); // Сколько слов выучили в ЭТОЙ сессии
 
+  // Ref для batching записи в AsyncStorage — предотвращает race conditions
+  const pendingSaveRef = useRef<{ limitReached?: boolean; learned?: number } | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Единый эффект для сохранения состояния в AsyncStorage (batched)
+  const scheduleSave = useCallback(() => {
+    // Собираем.pending изменения
+    pendingSaveRef.current = {
+      limitReached: weeklyLimitReached,
+      learned: wordsLearnedThisWeek,
+    };
+
+    // Debounce: ждём 100ms перед записью, чтобы собрать все изменения
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(async () => {
+      const pending = pendingSaveRef.current;
+      if (!pending) return;
+      pendingSaveRef.current = null;
+
+      try {
+        await Promise.all([
+          AsyncStorage.setItem(WEEKLY_LIMIT_KEY, JSON.stringify(pending.limitReached)),
+          AsyncStorage.setItem(WEEKLY_LEARNED_KEY, JSON.stringify(pending.learned)),
+        ]);
+      } catch (e) {
+        console.warn('[Training] Failed to save state:', e);
+      }
+    }, 100);
+  }, [weeklyLimitReached, wordsLearnedThisWeek]);
+
+  // Запускаем сохранение при изменении любого из значений
+  useEffect(() => {
+    scheduleSave();
+  }, [scheduleSave]);
+
   // Загружаем сохранённые значения из AsyncStorage при монтировании
   useEffect(() => {
+    let mounted = true;
     const loadSavedState = async () => {
       try {
         const [limitReached, learned] = await Promise.all([
           AsyncStorage.getItem(WEEKLY_LIMIT_KEY),
           AsyncStorage.getItem(WEEKLY_LEARNED_KEY),
         ]);
-        if (limitReached !== null) {
-          setWeeklyLimitReached(JSON.parse(limitReached));
-        }
-        if (learned !== null) {
-          setWordsLearnedThisWeek(JSON.parse(learned));
+        if (mounted) {
+          if (limitReached !== null) {
+            setWeeklyLimitReached(JSON.parse(limitReached));
+          }
+          if (learned !== null) {
+            setWordsLearnedThisWeek(JSON.parse(learned));
+          }
         }
       } catch (e) {
         console.warn('[Training] Failed to load saved state:', e);
       }
     };
     loadSavedState();
+    return () => {
+      mounted = false;
+    };
   }, []);
-
-  // Сохраняем weeklyLimitReached в AsyncStorage при изменении
-  useEffect(() => {
-    AsyncStorage.setItem(WEEKLY_LIMIT_KEY, JSON.stringify(weeklyLimitReached)).catch(e =>
-      console.warn('[Training] Failed to save weeklyLimitReached:', e)
-    );
-  }, [weeklyLimitReached]);
-
-  // Сохраняем wordsLearnedThisWeek в AsyncStorage при изменении
-  useEffect(() => {
-    AsyncStorage.setItem(WEEKLY_LEARNED_KEY, JSON.stringify(wordsLearnedThisWeek)).catch(e =>
-      console.warn('[Training] Failed to save wordsLearnedThisWeek:', e)
-    );
-  }, [wordsLearnedThisWeek]);
 
   // Сбрасываем сохранённые значения в начале новой недели (понедельник)
   useEffect(() => {
@@ -108,7 +135,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
           await AsyncStorage.setItem(WEEKLY_LEARNED_KEY, '0');
           setWeeklyLimitReached(false);
           setWordsLearnedThisWeek(0);
-          console.log('[Training] Week reset - new Monday:', currentMonday);
         }
       } catch (e) {
         console.warn('[Training] Week reset error:', e);
@@ -117,48 +143,55 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     checkWeekReset();
   }, []);
 
-  // Проверяем лимит при загрузке тренировки (блокируем следующие сессии)
-  useEffect(() => {
-    console.log('[Training] useEffect check:', {
-      loading,
-      wordsLength: words.length,
-      weeklyLimitReached,
-      profileIsPremium: profile?.is_premium,
-      profileWordsLearned: profile?.words_learned_this_week,
-      wordsLearnedThisWeek,
-      weeklyLimit,
-    });
+  // Ref для предотвращения повторной инициализации при ре-рендере
+  const initializedRef = useRef(false);
 
-    // Если уже заблокировано - не продолжаем
-    if (weeklyLimitReached) {
-      console.log('[Training] Already blocked, skipping');
+  // Инициализация тренировки — вызывается один раз при загрузке слов
+  const initTraining = useCallback(() => {
+    const tw = getTrainingWords();
+    setTrainingWords(tw);
+    setInitialTotal(tw.length);
+    setCurrentIndex(0);
+    setStats({ knew: 0, didntKnow: 0 });
+    setFinished(false);
+    setRound('initial');
+    initialWrongIdsRef.current = new Set();
+    retryTotalRef.current = 0;
+    initializedRef.current = true;
+  }, [getTrainingWords]);
+
+  // Проверяем лимит и инициализируем тренировку при загрузке данных
+  useEffect(() => {
+    if (loading || words.length === 0) {
+      initializedRef.current = false;
       return;
     }
 
-    if (!loading && words.length > 0) {
-      // Используем wordsLearnedThisWeek (сохраняется между рендерами) + profile
-      const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
-      console.log('[Training] Checking limit:', { currentLearned, weeklyLimit, isPremium: profile?.is_premium, wordsLearnedThisWeek });
-
-      if (currentLearned >= weeklyLimit && !profile?.is_premium) {
-        console.log('[Training] 🔒 LIMIT REACHED - blocking session');
-        setWeeklyLimitReached(true);
-        setWordsLearnedThisWeek(currentLearned);
-        return;
-      }
-
-      const tw = getTrainingWords();
-      console.log('[Training] Starting session:', { trainingWords: tw.length });
-      setTrainingWords(tw);
-      setInitialTotal(tw.length);
-      setCurrentIndex(0);
-      setStats({ knew: 0, didntKnow: 0 });
-      setFinished(false);
-      setRound('initial');
-      initialWrongIdsRef.current = new Set();
-      retryTotalRef.current = 0;
+    // Если уже заблокировано — не продолжаем
+    if (weeklyLimitReached) {
+      return;
     }
-  }, [loading, profile, weeklyLimitReached, words.length, wordsLearnedThisWeek]);
+
+    // Проверяем лимит (profile + локальный счётчик)
+    const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
+    if (currentLearned >= weeklyLimit && !profile?.is_premium) {
+      setWeeklyLimitReached(true);
+      setWordsLearnedThisWeek(currentLearned);
+      return;
+    }
+
+    // Инициализируем только если ещё не было (избегаем сброса при ре-рендере)
+    if (!initializedRef.current) {
+      initTraining();
+    }
+  }, [loading, words.length, profile, weeklyLimitReached, wordsLearnedThisWeek, initTraining]);
+
+  // Завершаем тренировку когда retry-опустел
+  useEffect(() => {
+    if (round === 'retry' && trainingWords.length === 0 && !finished && !loading) {
+      setFinished(true);
+    }
+  }, [round, trainingWords.length, finished, loading]);
 
   const formatScore = (value: number) => {
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -170,7 +203,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
     // Блокируем свайпы если достигнут лимит
     if (weeklyLimitReached && !profile?.is_premium) {
-      console.log('[Training] 🚫 Swipe blocked - weekly limit reached');
       return;
     }
 
@@ -200,28 +232,9 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
         if (justLearned && knew) {
           // Обновляем оба счётчика
-          setWordsLearnedInSession((prev) => {
-            const newVal = prev + 1;
-            console.log('[Training] 📚 Word learned in session:', { wordId: currentWord.id, sessionCount: newVal });
-            return newVal;
-          });
-          setWordsLearnedThisWeek((prev) => {
-            const newVal = prev + 1;
-            console.log('[Training] 📚 Word learned this week:', { wordId: currentWord.id, weekCount: newVal });
-            return newVal;
-          });
+          setWordsLearnedInSession((prev) => prev + 1);
+          setWordsLearnedThisWeek((prev) => prev + 1);
         }
-
-        // Логируем прогресс
-        console.log('[Training] 📊 Swipe:', {
-          wordId: currentWord.id,
-          knew,
-          oldCorrectCount: currentWord.correct_count,
-          newCorrectCount: result.newCorrectCount,
-          justLearned,
-          wordsLearnedInSession,
-          result,
-        });
 
         // Начисляем 1 очко за слово, угаданное с первой попытки
         if (knew) {
@@ -249,9 +262,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
           if (prev.length === 0) return prev;
           const head = prev[0]!;
           const tail = prev.slice(1);
-          const nextQueue = knew ? tail : [...tail, head];
-          if (nextQueue.length === 0) setFinished(true);
-          return nextQueue;
+          return knew ? tail : [...tail, head];
         });
         setCurrentIndex(0);
         setIsProcessing(false);
@@ -286,7 +297,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     // Не позволяем перезапустить если лимит достигнут
     const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
     if (currentLearned >= weeklyLimit && !profile?.is_premium) {
-      console.log('[Training] 🚫 Restart blocked - weekly limit reached');
       setWeeklyLimitReached(true);
       return;
     }
@@ -401,20 +411,8 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     const hitLimitThisSession = totalLearnedAfterSession >= weeklyLimit && currentLearned < weeklyLimit;
     const alreadyHitLimitBeforeSession = currentLearned >= weeklyLimit;
 
-    console.log('[Training] Finished check:', {
-      currentLearned,
-      wordsLearnedThisWeek,
-      totalLearnedAfterSession,
-      weeklyLimit,
-      hitLimitThisSession,
-      alreadyHitLimitBeforeSession,
-      isPremium: profile?.is_premium,
-    });
-
     // Если лимит был достигнут ДО этой сессии или в конце сессии — показываем блокировку
     if ((!profile?.is_premium && alreadyHitLimitBeforeSession) || hitLimitThisSession) {
-      console.log('[Training] 🔒 Showing limit screen');
-
       // Обновляем состояние без refetch (чтобы избежать бесконечного цикла ререндеров)
       setWeeklyLimitReached(true);
 

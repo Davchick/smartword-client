@@ -24,7 +24,6 @@ import { useTheme } from './src/theme';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { useColorScheme } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
-import { requestNotificationPermissions } from './src/lib/notifications';
 
 const AppInner = () => {
   const { colors, scheme: resolvedScheme } = useTheme();
@@ -58,9 +57,9 @@ export default function App() {
         webClientId: GOOGLE_WEB_CLIENT_ID,
       });
     }
-    
-    // Инициализация уведомлений
-    requestNotificationPermissions();
+
+    // НЕ запрашиваем уведомления при старте — это плохой UX.
+    // Разрешения запрашиваются при первом действии пользователя (тренировка, профиль).
   }, []);
 
   useEffect(() => {
@@ -69,19 +68,17 @@ export default function App() {
       return;
     }
 
+    // Используем фиксированный тёмный цвет для консистентности со splash screen
+    // Тема внутри приложения управляется через ThemeProvider
     (async () => {
       try {
-        await NavigationBar.setBackgroundColorAsync(
-          scheme === 'light' ? '#F8FAFC' : '#020617'
-        );
-        await NavigationBar.setButtonStyleAsync(
-          scheme === 'light' ? 'dark' : 'light'
-        );
+        await NavigationBar.setBackgroundColorAsync('#020617');
+        await NavigationBar.setButtonStyleAsync('light');
       } catch {
         // игнорируем, если платформа не поддерживает
       }
     })();
-  }, [scheme]);
+  }, []);
   const [fontsLoaded] = useFonts({
     Poppins_600SemiBold,
     Poppins_700Bold,
@@ -93,8 +90,9 @@ export default function App() {
   });
 
   if (!fontsLoaded) {
+    // Используем те же цвета что и в app.json splash (#020617) для плавного перехода
     return (
-      <View style={{ flex: 1, backgroundColor: scheme === 'light' ? '#F8FAFC' : '#020617', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ flex: 1, backgroundColor: '#020617', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color="#38BDF8" size="large" />
       </View>
     );

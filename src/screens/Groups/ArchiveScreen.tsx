@@ -21,6 +21,7 @@ import { useWords } from '../../hooks/useWords';
 import { useGroups } from '../../hooks/useGroups';
 import { SearchFilterBar } from '../../components/SearchFilterBar';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
+import { pluralizeRu } from '../../lib/pluralizeRu';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { GroupsStackParamList } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
@@ -288,7 +289,7 @@ export const ArchiveScreen = ({ navigation }: Props) => {
                   <Text style={[styles.expandBtnText, { color: colors.primary }]}>
                     {isExpanded
                       ? 'Свернуть'
-                      : `Ещё ${section.data.length - 3} слов`}
+                      : `Ещё ${pluralizeRu(section.data.length - 3, ['слово', 'слова', 'слов'])}`}
                   </Text>
                 </TouchableOpacity>
               )}

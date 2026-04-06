@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,6 +14,8 @@ import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
 import { pluralizeRu } from '../../lib/pluralizeRu';
+import { requestNotificationPermissions } from '../../lib/notifications';
+import { useDebouncedRefetch } from '../../hooks/useDebouncedRefetch';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { GroupsStackParamList, MainTabParamList, TrainingStackParamList } from '../../navigation/types';
@@ -28,8 +30,23 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
   const insets = useSafeAreaInsets();
   const { groups, refetch: refetchGroups } = useGroups();
   const { words, refetch: refetchWords } = useWords();
+  const notificationsRequestedRef = useRef(false);
 
-  console.log('[TrainingModes] Render:', { groupsCount: groups.length, wordsCount: words.length, groups: groups.map(g => ({ id: g.id, name: g.name })) });
+  // Debounced refetch
+  const debouncedRefetchGroups = useDebouncedRefetch(refetchGroups, 500);
+  const debouncedRefetchWords = useDebouncedRefetch(refetchWords, 500);
+
+  // Запрашиваем разрешения на уведомления при первом входе в тренировку (не при старте приложения)
+  useFocusEffect(
+    useCallback(() => {
+      if (!notificationsRequestedRef.current) {
+        notificationsRequestedRef.current = true;
+        requestNotificationPermissions();
+      }
+      debouncedRefetchGroups();
+      debouncedRefetchWords();
+    }, [debouncedRefetchGroups, debouncedRefetchWords])
+  );
 
   const activeCountsByGroup = useMemo(() => {
     const map: Record<string, number> = {};
@@ -38,16 +55,13 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
         map[w.group_id] = (map[w.group_id] ?? 0) + 1;
       }
     }
-    console.log('[TrainingModes] activeCountsByGroup:', map, 'words count:', words.length);
     return map;
   }, [words]);
 
   // Auto-select group if only one has words to train
   const groupWithWords = useMemo(() => {
     const groupsWithWords = groups.filter(g => (activeCountsByGroup[g.id] ?? 0) > 0);
-    console.log('[TrainingModes] groupWithWords check:', { groupsCount: groups.length, groupsWithWords: groupsWithWords.length });
     if (groupsWithWords.length === 1) {
-      console.log('[TrainingModes] Auto-selecting group:', groupsWithWords[0]?.id, groupsWithWords[0]?.name);
       return groupsWithWords[0];
     }
     return null;
@@ -75,26 +89,24 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
     return null;
   }, [groupId, groups]);
 
-  // Auto-select group if only one has words to train
+  // Auto-select group если ещё не выбран и есть кандидат
   React.useEffect(() => {
-    if (!selectedGroup && groupFromParams) {
+    if (groupFromParams) {
       setSelectedGroup(groupFromParams);
-    } else if (!selectedGroup && groupWithWords) {
+    } else if (groupWithWords) {
       setSelectedGroup(groupWithWords);
     }
-  }, [selectedGroup, groupFromParams, groupWithWords]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupFromParams, groupWithWords]);
 
   const navigateToTraining = (screen: 'Training' | 'TrainingWrite', gId?: string, gName?: string) => {
     const targetGroupId = gId || activeGroupId;
     const targetGroupName = gName || activeGroupName;
-    console.log('[TrainingModes] navigateToTraining called:', { screen, targetGroupId, targetGroupName, activeGroupId, activeGroupName });
 
     if (!targetGroupId) {
-      console.log('[TrainingModes] No groupId, returning');
       return;
     }
 
-    console.log('[TrainingModes] Navigating to:', screen, { groupId: targetGroupId, groupName: targetGroupName });
     // Переходим на экран тренировки в текущем стеке
     (navigation as any).navigate(screen, { groupId: targetGroupId, groupName: targetGroupName });
   };
@@ -213,7 +225,6 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
   // Tab mode: one group with words → use it; several → use selected. Stack mode: use params.
   const activeGroupId = groupId || (groupWithWords ? groupWithWords.id : selectedGroup?.id);
   const activeGroupName = groupId ? groupName : (groupWithWords ? groupWithWords.name : selectedGroup?.name);
-  console.log('[TrainingModes] activeGroupId:', activeGroupId, 'activeGroupName:', activeGroupName, { groupId, groupWithWordsId: groupWithWords?.id, selectedGroupId: selectedGroup?.id });
   // Кнопка "назад" показывается только когда groupId передан (переход из словаря)
   const showBackButton = !!groupId;
 

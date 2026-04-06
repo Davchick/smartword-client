@@ -116,7 +116,7 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
     throw new Error('EXPO_PUBLIC_API_URL не настроен');
   }
   const url = path.startsWith('http') ? path : `${base}${path.startsWith('/') ? path : `/${path}`}`;
-  console.log('[apiFetch] URL:', url, 'Path:', path);
+  if (__DEV__) console.log('[apiFetch] URL:', url, 'Path:', path);
   const { skipAuth, timeoutMs = API_TIMEOUT_MS, ...fetchInit } = init;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -129,10 +129,10 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
       token = await refreshAccessToken();
     }
     if (token) headers.Authorization = `Bearer ${token}`;
-    console.log('[apiFetch] Token:', token ? 'present' : 'missing');
+    if (__DEV__) console.log('[apiFetch] Token:', token ? 'present' : 'missing');
   }
 
-  console.log('[apiFetch] Fetching...', url);
+  if (__DEV__) console.log('[apiFetch] Fetching...', url);
   
   // Create abort controller with timeout
   const controller = new AbortController();
@@ -141,7 +141,7 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
   try {
     let res = await fetch(url, { ...fetchInit, headers, signal: controller.signal });
     clearTimeout(timeoutId);
-    console.log('[apiFetch] Response:', res.status, res.url);
+    if (__DEV__) console.log('[apiFetch] Response:', res.status, res.url);
     
     if (res.status === 401 && !skipAuth) {
       const newToken = await refreshAccessToken();
@@ -164,7 +164,7 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
     return res;
   } catch (error) {
     clearTimeout(timeoutId);
-    console.error('[apiFetch] Error:', error);
+    if (__DEV__) console.error('[apiFetch] Error:', error);
     // Re-throw with more descriptive message for timeout
     if (error instanceof Error && error.name === 'AbortError') {
       throw new Error(`Превышено время ожидания ответа от сервера (${timeoutMs}мс). Проверьте подключение к интернету.`);

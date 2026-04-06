@@ -50,7 +50,42 @@ export const useWords = (groupId?: string) => {
   }, [groupId, authUser]);
 
   useEffect(() => {
-    fetchWords();
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        if (authUser && getBaseUrl()) {
+          const path = groupId ? `/words?groupId=${encodeURIComponent(groupId)}` : '/words';
+          const data = await apiGet<Word[]>(path);
+          if (!cancelled) {
+            setWords(data ?? []);
+            if (!groupId) {
+              setTotalCount(data?.length ?? 0);
+            } else {
+              const all = await apiGet<Word[]>('/words');
+              if (!cancelled) setTotalCount(all?.length ?? 0);
+            }
+            return;
+          }
+        }
+        const wordsRaw = await AsyncStorage.getItem('smartword_guest_words');
+        const allWords: Word[] = wordsRaw ? JSON.parse(wordsRaw) : [];
+        const filtered = groupId ? allWords.filter((w) => w.group_id === groupId) : allWords;
+        if (!cancelled) {
+          setWords(filtered);
+          setTotalCount(allWords.length);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.warn('[useWords] fetchWords error', e);
+          setWords([]);
+          setTotalCount(0);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [fetchWords]);
 
   const addWord = async (original: string, translation: string, gId: string): Promise<{ error: string | null }> => {
@@ -113,7 +148,7 @@ export const useWords = (groupId?: string) => {
     const delta = knew ? correctDelta : incorrectDelta;
     const newCount = Math.max(0, word.correct_count + delta);
 
-    console.log('[useWords] updateWordProgress:', { wordId, knew, delta, oldCount: word.correct_count, newCount });
+    if (__DEV__) console.log('[useWords] updateWordProgress:', { wordId, knew, delta, oldCount: word.correct_count, newCount });
 
     // Сначала обновляем локальное состояние (оптимистичное обновление)
     setWords((prev) =>
@@ -121,7 +156,7 @@ export const useWords = (groupId?: string) => {
         w.id === wordId ? { ...w, correct_count: newCount, last_reviewed: new Date().toISOString() } : w
       )
     );
-    console.log('[useWords] Local state updated');
+    if (__DEV__) console.log('[useWords] Local state updated');
 
     if (authUser && getBaseUrl()) {
       try {
@@ -140,7 +175,7 @@ export const useWords = (groupId?: string) => {
               w.id === wordId ? { ...w, correct_count: serverCount, last_reviewed: serverLastReviewed || w.last_reviewed } : w
             )
           );
-          console.log('[useWords] Updated from server:', { serverCount, limitReached, wordsLearned });
+          if (__DEV__) console.log('[useWords] Updated from server:', { serverCount, limitReached, wordsLearned });
           return { 
             success: true, 
             newCorrectCount: serverCount,
@@ -152,7 +187,7 @@ export const useWords = (groupId?: string) => {
       } catch (err: unknown) {
         const e = err as { body?: { error?: string; words_learned_this_week?: number } };
         if (e?.body?.error === 'WEEKLY_LIMIT_REACHED') {
-          console.log('[useWords] Weekly limit reached!');
+          if (__DEV__) console.log('[useWords] Weekly limit reached!');
           // Откатываем локальное изменение
           setWords((prev) =>
             prev.map((w) =>

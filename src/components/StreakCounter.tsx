@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { useTheme, spacing, typography, fonts, radii } from '../theme';
+import { pluralizeRu } from '../lib/pluralizeRu';
 
 type Props = {
   streak: number;
@@ -15,7 +16,7 @@ export const StreakCounter: React.FC<Props> = ({
   size = 'medium',
   style,
 }) => {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
 
   const sizes = {
     small: { icon: 20, current: 20, label: 12 },
@@ -51,7 +52,7 @@ export const StreakCounter: React.FC<Props> = ({
             {streak}
           </Text>
           <Text style={[styles.label, { color: colors.textSecondary, fontSize: s.label }]}>
-            {streak === 1 ? 'день' : streak > 1 && streak < 5 ? 'дня' : 'дней'}
+            {pluralizeRu(streak, ['день', 'дня', 'дней'])}
           </Text>
         </View>
       </View>

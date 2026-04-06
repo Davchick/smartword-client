@@ -44,12 +44,17 @@ export const WelcomeScreen = ({ navigation }: Props) => {
     ]).start();
 
     // Плавающая анимация логотипа
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, { toValue: -8, duration: 2200, useNativeDriver: true }),
         Animated.timing(floatAnim, { toValue: 0, duration: 2200, useNativeDriver: true }),
       ])
-    ).start();
+    );
+    loop.start();
+
+    return () => {
+      loop.stop();
+    };
   }, []);
 
   const handleGuest = async () => {

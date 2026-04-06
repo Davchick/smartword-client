@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.smartword.app"
+      "bundleIdentifier": "ru.smartword.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,9 +23,9 @@
         "backgroundColor": "#020617"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.smartword.app",
+      "package": "ru.smartword.app",
       "permissions": [
-        "android.permission.BILLING"
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "intentFilters": [
         {
@@ -53,6 +53,14 @@
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.PLACEHOLDER_REPLACE_WITH_IOS_CLIENT_ID"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#020617",
+          "sounds": []
         }
       ]
     ],

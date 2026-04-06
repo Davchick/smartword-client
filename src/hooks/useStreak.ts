@@ -61,8 +61,35 @@ export const useStreak = () => {
   }, [user]);
 
   useEffect(() => {
-    fetchStreak();
-    fetchHistory();
+    let cancelled = false;
+    (async () => {
+      // fetchStreak
+      if (!user || !getBaseUrl()) {
+        if (!cancelled) { setStreak(null); setHistory([]); setLoading(false); }
+        return;
+      }
+      try {
+        const data = await apiGet<UserStreak>('/streaks');
+        if (!cancelled) setStreak(data);
+      } catch (error) {
+        if (!cancelled && (error as any)?.status !== 401) {
+          console.error('[useStreak] Fetch error:', error);
+        }
+        if (!cancelled) setStreak(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+      // fetchHistory
+      try {
+        const data = await apiGet<StreakHistory[]>('/streaks/history');
+        if (!cancelled) setHistory(data);
+      } catch (error) {
+        if (!cancelled && (error as any)?.status !== 401) {
+          console.error('[useStreak] History fetch error:', error);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
   }, [fetchStreak, fetchHistory]);
 
   return {
