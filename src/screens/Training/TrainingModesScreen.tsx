@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,14 +8,13 @@ import {
   FlatList,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 import { ArrowLeft, Layers, PenLine, Bot, BookOpen, ChevronRight } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import { requestNotificationPermissions } from '../../lib/notifications';
-import { useDebouncedRefetch } from '../../hooks/useDebouncedRefetch';
+import { ARCHIVE_THRESHOLD } from '../../constants';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import type { GroupsStackParamList, MainTabParamList, TrainingStackParamList } from '../../navigation/types';
@@ -23,30 +22,20 @@ import type { WordGroup } from '../../hooks/useGroups';
 
 type Props = NativeStackScreenProps<GroupsStackParamList, 'TrainingModes'> | NativeStackScreenProps<TrainingStackParamList, 'TrainingModes'> | BottomTabScreenProps<MainTabParamList, 'TrainingTab'>;
 
-const ARCHIVE_THRESHOLD = 5;
-
 export const TrainingModesScreen = ({ route, navigation }: Props) => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { groups, refetch: refetchGroups } = useGroups();
-  const { words, refetch: refetchWords } = useWords();
+  const { groups } = useGroups();
+  const { words } = useWords();
   const notificationsRequestedRef = useRef(false);
 
-  // Debounced refetch
-  const debouncedRefetchGroups = useDebouncedRefetch(refetchGroups, 500);
-  const debouncedRefetchWords = useDebouncedRefetch(refetchWords, 500);
-
-  // Запрашиваем разрешения на уведомления при первом входе в тренировку (не при старте приложения)
-  useFocusEffect(
-    useCallback(() => {
-      if (!notificationsRequestedRef.current) {
-        notificationsRequestedRef.current = true;
-        requestNotificationPermissions();
-      }
-      debouncedRefetchGroups();
-      debouncedRefetchWords();
-    }, [debouncedRefetchGroups, debouncedRefetchWords])
-  );
+  // Запрашиваем разрешения на уведомления при первом входе в тренировку
+  React.useEffect(() => {
+    if (!notificationsRequestedRef.current) {
+      notificationsRequestedRef.current = true;
+      requestNotificationPermissions();
+    }
+  }, []);
 
   const activeCountsByGroup = useMemo(() => {
     const map: Record<string, number> = {};
@@ -66,13 +55,6 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
     }
     return null;
   }, [groups, activeCountsByGroup]);
-
-  useFocusEffect(
-    useCallback(() => {
-      refetchGroups();
-      refetchWords();
-    }, [refetchGroups, refetchWords])
-  );
 
   const params = 'params' in route ? route.params : undefined;
   const groupId = params && 'groupId' in params ? params.groupId : undefined;

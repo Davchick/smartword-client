@@ -11,19 +11,17 @@ import {
   Animated,
   ScrollView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Check, X as XIcon, ArrowLeftRight, Lightbulb, RotateCcw, Crown } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
-import { useTrainingProgress } from '../../hooks/useTrainingProgress';
+import { useTrainingSession } from '../../hooks/useTrainingSession';
 import { useProfile } from '../../hooks/useProfile';
+import { useWeeklyLimit } from '../../hooks/useWeeklyLimit';
 import { PaywallModal } from '../../components/PaywallModal';
 import type { TrainingWriteScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
-
-const WEEKLY_LIMIT_KEY = '@SmartWord:weeklyLimitReached';
-const WEEKLY_LEARNED_KEY = '@SmartWord:wordsLearnedThisWeek';
 
 function normalize(str: string): string {
   return str
@@ -50,8 +48,16 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { words, loading, updateWordProgress, getTrainingWords } = useWords(groupId);
-  const { addPoints } = useTrainingProgress();
   const { profile } = useProfile();
+  const { startSession, recordWord, flushSession } = useTrainingSession();
+  const {
+    weeklyLimitReached,
+    wordsLearnedThisWeek,
+    weeklyLimit,
+    incrementAndCheck,
+    checkLimit,
+    resetLocal,
+  } = useWeeklyLimit();
 
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -65,96 +71,8 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const [hintCount, setHintCount] = useState(0);
   const [sessionHints, setSessionHints] = useState(0);
   const [skipped, setSkipped] = useState(false);
-  const [weeklyLimitReached, setWeeklyLimitReached] = useState(false);
-  const [wordsLearnedThisWeek, setWordsLearnedThisWeek] = useState<number>(0);
   const [paywallVisible, setPaywallVisible] = useState(false);
-  const weeklyLimit = 50; // слов в неделю для бесплатных пользователей
   const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
-
-  // Ref для batching записи в AsyncStorage — предотвращает race conditions
-  const pendingSaveRef = useRef<{ limitReached?: boolean; learned?: number } | null>(null);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Единый эффект для сохранения состояния в AsyncStorage (batched)
-  const scheduleSave = useCallback(() => {
-    pendingSaveRef.current = {
-      limitReached: weeklyLimitReached,
-      learned: wordsLearnedThisWeek,
-    };
-
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(async () => {
-      const pending = pendingSaveRef.current;
-      if (!pending) return;
-      pendingSaveRef.current = null;
-
-      try {
-        await Promise.all([
-          AsyncStorage.setItem(WEEKLY_LIMIT_KEY, JSON.stringify(pending.limitReached)),
-          AsyncStorage.setItem(WEEKLY_LEARNED_KEY, JSON.stringify(pending.learned)),
-        ]);
-      } catch (e) {
-        console.warn('[WritingTraining] Failed to save state:', e);
-      }
-    }, 100);
-  }, [weeklyLimitReached, wordsLearnedThisWeek]);
-
-  useEffect(() => {
-    scheduleSave();
-  }, [scheduleSave]);
-
-  // Загружаем сохранённые значения из AsyncStorage при монтировании
-  useEffect(() => {
-    let mounted = true;
-    const loadSavedState = async () => {
-      try {
-        const [limitReached, learned] = await Promise.all([
-          AsyncStorage.getItem(WEEKLY_LIMIT_KEY),
-          AsyncStorage.getItem(WEEKLY_LEARNED_KEY),
-        ]);
-        if (mounted) {
-          if (limitReached !== null) {
-            setWeeklyLimitReached(JSON.parse(limitReached));
-          }
-          if (learned !== null) {
-            setWordsLearnedThisWeek(JSON.parse(learned));
-          }
-        }
-      } catch (e) {
-        console.warn('[WritingTraining] Failed to load saved state:', e);
-      }
-    };
-    loadSavedState();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // Сбрасываем сохранённые значения в начале новой недели (понедельник)
-  useEffect(() => {
-    const checkWeekReset = async () => {
-      try {
-        const now = new Date();
-        const currentMonday = new Date(now);
-        const day = currentMonday.getDay();
-        const diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1);
-        currentMonday.setDate(diff);
-        currentMonday.setHours(0, 0, 0, 0);
-
-        const savedMonday = await AsyncStorage.getItem('@SmartWord:lastMonday');
-        if (savedMonday === null || new Date(savedMonday) < currentMonday) {
-          await AsyncStorage.setItem('@SmartWord:lastMonday', currentMonday.toISOString());
-          await AsyncStorage.setItem(WEEKLY_LIMIT_KEY, 'false');
-          await AsyncStorage.setItem(WEEKLY_LEARNED_KEY, '0');
-          setWeeklyLimitReached(false);
-          setWordsLearnedThisWeek(0);
-        }
-      } catch (e) {
-        console.warn('[WritingTraining] Week reset error:', e);
-      }
-    };
-    checkWeekReset();
-  }, []);
 
   const feedbackScale = useRef(new Animated.Value(0)).current;
   const feedbackOpacity = useRef(new Animated.Value(0)).current;
@@ -176,7 +94,8 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     setSessionHints(0);
     setSkipped(false);
     progressWidth.setValue(0);
-  }, [getTrainingWords, progressWidth]);
+    startSession(groupId, groupName);
+  }, [getTrainingWords, groupId, groupName, startSession, progressWidth]);
 
   // Проверяем лимит при загрузке тренировки и инициализируем
   useEffect(() => {
@@ -184,15 +103,12 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       return;
     }
 
-    const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
-    if (currentLearned >= weeklyLimit && !profile?.is_premium) {
-      setWeeklyLimitReached(true);
-      setWordsLearnedThisWeek(currentLearned);
+    if (checkLimit()) {
       return;
     }
 
     initTraining();
-  }, [loading, profile, weeklyLimitReached, words.length, wordsLearnedThisWeek, initTraining]);
+  }, [loading, words.length, weeklyLimitReached, checkLimit, initTraining]);
 
   // Если trainingWords опустел (например после goToNextWord на последнем слове) — завершаем
   useEffect(() => {
@@ -209,6 +125,15 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       useNativeDriver: false,
     }).start();
   }, [currentIndex, trainingWords.length, progressWidth]);
+
+  // Flush сессии при выходе из тренировки
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        void flushSession();
+      };
+    }, [flushSession])
+  );
 
   const animateFeedback = (correct: boolean) => {
     feedbackScale.setValue(0.5);
@@ -314,23 +239,27 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     );
   }
 
+  // Отслеживаем достижение лимита во время сессии — вынесено в useEffect
+  const [hitLimitThisSession, setHitLimitThisSession] = useState(false);
+
+  useEffect(() => {
+    if (finished && !profile?.is_premium) {
+      setHitLimitThisSession(checkLimit());
+    }
+  }, [finished, profile?.is_premium, checkLimit]);
+
   if (finished) {
     const total = sessionTotal;
     const percent = total > 0 ? Math.round((sessionCorrect / total) * 100) : 0;
-    
-    // Проверяем, достигли ли лимита
-    const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
-    const hitLimitThisSession = currentLearned >= weeklyLimit && (profile?.words_learned_this_week ?? 0) < weeklyLimit;
 
     if (hitLimitThisSession && !profile?.is_premium) {
-      setWeeklyLimitReached(true);
       return (
         <View style={[styles.fill, styles.center, { backgroundColor: colors.background, paddingTop: insets.top }]}>
           <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={styles.resultEmoji}>🔒</Text>
             <Text style={[styles.resultTitle, { color: colors.text }]}>Лимит на этой неделе исчерпан</Text>
             <Text style={[styles.resultSubtitle, { color: colors.muted }]}>
-              Вы выучили {Math.min(currentLearned, weeklyLimit)} из {weeklyLimit} слов
+              Вы выучили {wordsLearnedThisWeek} из {weeklyLimit} слов
             </Text>
 
             <View style={[styles.limitCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
@@ -418,7 +347,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
 
           <TouchableOpacity
             style={[styles.resultCta, { backgroundColor: colors.primary, marginTop: spacing.lg }]}
-            onPress={initTraining}
+            onPress={handleRestart}
             activeOpacity={0.85}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
@@ -439,6 +368,11 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const answerText = direction === 'foreign' ? currentWord.original : currentWord.translation;
   const inputPlaceholder = 'Введите перевод';
   const primaryAnswer = answerText.split(/[/,|]/)[0]?.trim() ?? '';
+
+  const handleRestart = useCallback(() => {
+    resetLocal();
+    initTraining();
+  }, [initTraining, resetLocal]);
 
   const goToNextWord = () => {
     const next = currentIndex + 1;
@@ -468,28 +402,25 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       setSessionTotal((t) => t + 1);
       setSessionCorrect((c) => c + 1);
       animateFeedback(true);
-      void updateWordProgress(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0 });
-      
+
+      // Обновляем локально (optimistic), без сети — данные уйдут при flush
+      updateWordProgress(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0, offline: true }).catch(() => {
+        // Не критично — локальное состояние уже обновлено
+      });
+
       // Проверяем, выучено ли слово (correct_count стал >= 5)
       const wasLearnedBefore = currentWord.correct_count >= 5;
       const isNowLearned = (currentWord.correct_count + 1) >= 5;
       const justLearned = !wasLearnedBefore && isNowLearned;
-      
+
       if (justLearned) {
         setWordsLearnedInSession((prev) => prev + 1);
-        setWordsLearnedThisWeek((prev) => {
-          const newVal = prev + 1;
-          // Проверяем лимит после обновления
-          if (newVal >= weeklyLimit && !profile?.is_premium) {
-            setWeeklyLimitReached(true);
-          }
-          return newVal;
-        });
+        incrementAndCheck(1);
       }
-      
-      // Начисляем очки: 1 за полный ответ, 0.5 за ответ с подсказкой
+
+      // Записываем в сессию (для последующего batch flush)
       const points = hintCount > 0 ? 0.5 : 1;
-      void addPoints(points);
+      recordWord(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0, points });
       setTimeout(() => {
         goToNextWord();
       }, 900);

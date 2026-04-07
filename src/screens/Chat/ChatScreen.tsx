@@ -24,11 +24,12 @@ import { apiPost, getBaseUrl } from '../../lib/api';
 import { useChat } from '../../hooks/useChat';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
-import { useDebouncedRefetch } from '../../hooks/useDebouncedRefetch';
+import { queryClient } from '../../lib/queryClient';
+import { queryKey } from '../../lib/queryKeys';
 import { TypingIndicator } from '../../components/TypingIndicator';
 import { PaywallModal } from '../../components/PaywallModal';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import type { ChatMessage } from '../../hooks/useChat';
@@ -80,11 +81,9 @@ const playNotificationSound = () => {
 export const ChatScreen = () => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { profile, refetch: refetchProfile } = useProfile();
-  const { groups, refetch: refetchGroups } = useGroups();
+  const { profile } = useProfile();
+  const { groups } = useGroups();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-
-  const debouncedRefetchGroups = useDebouncedRefetch(refetchGroups, 500);
 
   const [stage, setStage] = useState<ChatStage>('welcome');
   // selectedGroup/freeMode фиксируются в момент выбора и не меняются до сброса
@@ -109,10 +108,6 @@ export const ChatScreen = () => {
     }
     prevLen.current = messages.length;
   }, [messages]);
-
-  useFocusEffect(useCallback(() => {
-    debouncedRefetchGroups();
-  }, [debouncedRefetchGroups]));
 
   const scrollToBottom = useCallback(() => {
     setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 120);
@@ -460,7 +455,7 @@ export const ChatScreen = () => {
         visible={paywallVisible}
         onClose={() => setPaywallVisible(false)}
         reason="chat"
-        onPurchaseSuccess={refetchProfile}
+        onPurchaseSuccess={() => queryClient.invalidateQueries({ queryKey: queryKey.profile.all })}
       />
     </KeyboardAvoidingView>
   );
@@ -511,10 +506,21 @@ const MessageBubble = ({
   };
 
   const handleCopy = () => {
-    Clipboard.setString(item.content);
-    setCopied(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      if (Platform.OS === 'web') {
+        // Web fallback
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+          navigator.clipboard.writeText(item.content).catch(() => {});
+        }
+      } else {
+        Clipboard.setString(item.content);
+      }
+      setCopied(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API может быть недоступен
+    }
   };
 
   const handleHint = async () => {

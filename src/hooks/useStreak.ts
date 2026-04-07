@@ -1,102 +1,91 @@
-import { useState, useEffect, useCallback } from 'react';
+/**
+ * useStreak — React Query версия.
+ *
+ * - Два отдельных query: текущий streak и история
+ * - useMutation для checkIn
+ * - invalidateStreaks после мутаций
+ */
+
+import { useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { queryKey, invalidateStreaks } from '../lib/queryKeys';
 import { UserStreak, StreakHistory } from '../types/achievements';
 
+async function fetchStreak(authUser: ReturnType<typeof useAuth>['user']): Promise<UserStreak | null> {
+  if (!authUser || !getBaseUrl()) return null;
+  return apiGet<UserStreak>('/streaks');
+}
+
+async function fetchStreakHistory(authUser: ReturnType<typeof useAuth>['user']): Promise<StreakHistory[]> {
+  if (!authUser || !getBaseUrl()) return [];
+  return apiGet<StreakHistory[]>('/streaks/history');
+}
+
 export const useStreak = () => {
-  const { user } = useAuth();
-  const [streak, setStreak] = useState<UserStreak | null>(null);
-  const [history, setHistory] = useState<StreakHistory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { user: authUser } = useAuth();
+  const queryClient = useQueryClient();
 
-  const fetchStreak = useCallback(async () => {
-    if (!user || !getBaseUrl()) {
-      setStreak(null);
-      setHistory([]);
-      setLoading(false);
-      return;
-    }
+  const {
+    data: streak = null,
+    isLoading: loading,
+    refetch: refetchStreak,
+  } = useQuery({
+    queryKey: queryKey.streaks.current(),
+    queryFn: () => fetchStreak(authUser),
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: !!authUser,
+    retry: (failureCount, error) => {
+      // 401 — не retry'им
+      if ((error as any)?.status === 401) return false;
+      return failureCount < 1;
+    },
+  });
 
-    try {
-      const data = await apiGet<UserStreak>('/streaks');
-      setStreak(data);
-    } catch (error) {
-      if ((error as any)?.status !== 401) {
-        console.error('[useStreak] Fetch error:', error);
+  const {
+    data: history = [],
+    refetch: refetchHistory,
+  } = useQuery({
+    queryKey: queryKey.streaks.history(),
+    queryFn: () => fetchStreakHistory(authUser),
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: !!authUser,
+    retry: (failureCount, error) => {
+      if ((error as any)?.status === 401) return false;
+      return failureCount < 1;
+    },
+  });
+
+  const checkInMutation = useMutation({
+    mutationFn: async () => {
+      if (!authUser || !getBaseUrl()) return null;
+      return apiPost<UserStreak>('/streaks/check-in', {});
+    },
+    onSuccess: (result) => {
+      if (result) {
+        queryClient.setQueryData(queryKey.streaks.current(), result);
       }
-      setStreak(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  const fetchHistory = useCallback(async () => {
-    if (!user || !getBaseUrl()) {
-      setHistory([]);
-      return;
-    }
-
-    try {
-      const data = await apiGet<StreakHistory[]>('/streaks/history');
-      setHistory(data);
-    } catch (error) {
-      if ((error as any)?.status !== 401) {
-        console.error('[useStreak] History fetch error:', error);
-      }
-      setHistory([]);
-    }
-  }, [user]);
+    },
+    onSettled: () => {
+      invalidateStreaks(queryClient);
+    },
+  });
 
   const checkIn = useCallback(async () => {
-    if (!user || !getBaseUrl()) return null;
-
-    try {
-      const result = await apiPost<UserStreak>('/streaks/check-in', {});
-      setStreak(result);
-      return result;
-    } catch (error) {
-      console.error('[useStreak] Check-in error:', error);
-      return null;
-    }
-  }, [user]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      // fetchStreak
-      if (!user || !getBaseUrl()) {
-        if (!cancelled) { setStreak(null); setHistory([]); setLoading(false); }
-        return;
-      }
-      try {
-        const data = await apiGet<UserStreak>('/streaks');
-        if (!cancelled) setStreak(data);
-      } catch (error) {
-        if (!cancelled && (error as any)?.status !== 401) {
-          console.error('[useStreak] Fetch error:', error);
-        }
-        if (!cancelled) setStreak(null);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-      // fetchHistory
-      try {
-        const data = await apiGet<StreakHistory[]>('/streaks/history');
-        if (!cancelled) setHistory(data);
-      } catch (error) {
-        if (!cancelled && (error as any)?.status !== 401) {
-          console.error('[useStreak] History fetch error:', error);
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [fetchStreak, fetchHistory]);
+    return checkInMutation.mutateAsync();
+  }, [checkInMutation]);
 
   return {
     streak,
     history,
     loading,
-    refetch: fetchStreak,
+    refetch: () => {
+      refetchStreak();
+      refetchHistory();
+    },
     checkIn,
   };
 };

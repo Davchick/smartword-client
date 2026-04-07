@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 
 /**
  * Возвращает обёртку над refetch с debounce.
@@ -13,6 +13,15 @@ export function useDebouncedRefetch<T extends () => Promise<void> | void>(
 ): T {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFetchingRef = useRef(false);
+
+  // Cleanup timeout при размонтировании
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
 
   return useCallback(((async () => {
     // Если уже идёт запрос — игнорируем

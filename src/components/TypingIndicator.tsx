@@ -6,11 +6,14 @@ import Animated, {
   withRepeat,
   withTiming,
   withDelay,
+  cancelAnimation,
+  useAnimatedRef,
 } from 'react-native-reanimated';
 import { useTheme, spacing, radii } from '../theme';
 
 const Dot = ({ delay }: { delay: number }) => {
   const opacity = useSharedValue(0.3);
+  const animatedRef = useAnimatedRef();
   const { colors } = useTheme();
 
   useEffect(() => {
@@ -20,7 +23,8 @@ const Dot = ({ delay }: { delay: number }) => {
     );
 
     return () => {
-      // Останавливаем анимацию при размонтировании
+      // Корректно отменяем анимацию при размонтировании
+      cancelAnimation(opacity);
       opacity.value = 0.3;
     };
   }, [delay, opacity]);

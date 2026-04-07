@@ -24,6 +24,8 @@ import { useTheme } from './src/theme';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { useColorScheme } from 'react-native';
 import * as NavigationBar from 'expo-navigation-bar';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './src/lib/queryClient';
 
 const AppInner = () => {
   const { colors, scheme: resolvedScheme } = useTheme();
@@ -102,7 +104,9 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <AppInner />
+          <QueryClientProvider client={queryClient}>
+            <AppInner />
+          </QueryClientProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

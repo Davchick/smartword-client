@@ -1,7 +1,16 @@
+/**
+ * useProfile — React Query версия.
+ *
+ * Профиль — серверные данные → React Query.
+ * avatarId/nickname — локальное UI-состояние → AsyncStorage (без изменений).
+ */
+
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { queryKey, invalidateProfile } from '../lib/queryKeys';
 
 export interface Profile {
   id: string;
@@ -17,62 +26,46 @@ export interface Profile {
 const AVATAR_KEY = 'smartword_avatar_id';
 const NICKNAME_KEY = 'smartword_nickname';
 
+// ─── Query function ────────────────────────────────────────────────────
+
+async function fetchProfileQuery(
+  authUser: ReturnType<typeof useAuth>['user']
+): Promise<Profile | null> {
+  if (!authUser || !getBaseUrl()) {
+    return authUser
+      ? {
+          id: authUser.id,
+          is_premium: authUser.is_premium,
+          ai_messages_used: authUser.ai_messages_used,
+          created_at: authUser.created_at,
+        }
+      : null;
+  }
+  return apiGet<Profile>('/profile');
+}
+
+// ─── Hook ──────────────────────────────────────────────────────────────
+
 export const useProfile = () => {
   const { user: authUser } = useAuth();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [avatarId, setAvatarIdState] = useState<number>(0);
   const [nickname, setNicknameState] = useState<string>('');
 
-  const fetchProfile = useCallback(async () => {
-    if (!getBaseUrl() || !authUser) {
-      setProfile(authUser ? { id: authUser.id, is_premium: authUser.is_premium, ai_messages_used: authUser.ai_messages_used, created_at: authUser.created_at } : null);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const data = await apiGet<Profile>('/profile');
-      setProfile(data);
-    } catch (e) {
-      console.warn('[useProfile] fetchProfile error', e);
-      setProfile(authUser ? { id: authUser.id, is_premium: authUser.is_premium, ai_messages_used: authUser.ai_messages_used, created_at: authUser.created_at } : null);
-    } finally {
-      setLoading(false);
-    }
-  }, [authUser]);
+  const {
+    data: serverProfile,
+    isLoading: loading,
+    refetch,
+  } = useQuery({
+    queryKey: queryKey.profile.me(),
+    queryFn: () => fetchProfileQuery(authUser),
+    // Профиль — стабильные данные. Refetch только при фокусе экрана.
+    staleTime: 2 * 60 * 1000, // 2 мин
+    gcTime: 10 * 60 * 1000,
+    enabled: !!authUser,
+  });
 
-  useEffect(() => {
-    if (!authUser) {
-      setProfile(null);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      if (!getBaseUrl()) {
-        if (!cancelled) {
-          setProfile({ id: authUser.id, is_premium: authUser.is_premium, ai_messages_used: authUser.ai_messages_used, created_at: authUser.created_at });
-          setLoading(false);
-        }
-        return;
-      }
-      setLoading(true);
-      try {
-        const data = await apiGet<Profile>('/profile');
-        if (!cancelled) setProfile(data);
-      } catch (e) {
-        if (!cancelled) {
-          console.warn('[useProfile] fetchProfile error', e);
-          setProfile({ id: authUser.id, is_premium: authUser.is_premium, ai_messages_used: authUser.ai_messages_used, created_at: authUser.created_at });
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [authUser?.id]);
-
+  // Загрузка локального UI-состояния
   useEffect(() => {
     AsyncStorage.multiGet([AVATAR_KEY, NICKNAME_KEY]).then((pairs) => {
       const avatarVal = pairs[0]?.[1];
@@ -92,19 +85,27 @@ export const useProfile = () => {
     AsyncStorage.setItem(NICKNAME_KEY, name);
   }, []);
 
-  const profileOrFromAuth: Profile | null = profile ?? (authUser ? {
-    id: authUser.id,
-    is_premium: authUser.is_premium,
-    ai_messages_used: authUser.ai_messages_used,
-    created_at: authUser.created_at,
-    subscription_type: (authUser as any).subscription_type ?? null,
-    subscription_expires_at: (authUser as any).subscription_expires_at ?? null,
-  } : null);
+  // Объединяем серверный профиль с fallback из authUser
+  const profileOrFromAuth: Profile | null =
+    serverProfile ??
+    (authUser
+      ? {
+          id: authUser.id,
+          is_premium: authUser.is_premium,
+          ai_messages_used: authUser.ai_messages_used,
+          created_at: authUser.created_at,
+          subscription_type: (authUser as any).subscription_type ?? null,
+          subscription_expires_at: (authUser as any).subscription_expires_at ?? null,
+        }
+      : null);
 
   return {
     profile: profileOrFromAuth,
     loading,
-    refetch: fetchProfile,
+    refetch: () => {
+      invalidateProfile(queryClient);
+      return refetch();
+    },
     avatarId,
     setAvatarId,
     nickname,

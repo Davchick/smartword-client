@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,11 +23,10 @@ import { useProfile } from '../../hooks/useProfile';
 import { AddWordModal } from '../../components/AddWordModal';
 import { SearchFilterBar } from '../../components/SearchFilterBar';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
+import { ARCHIVE_THRESHOLD } from '../../constants';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import type { GroupDetailScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
-
-const ARCHIVE_THRESHOLD = 5;
 
 const getBadgeColors = (count: number) => {
   // 0.5 и другие дробные значения до 2 считаем низким прогрессом (оранжевый),
@@ -51,6 +51,13 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
   const { profile } = useProfile();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
 
   // Search & sort
   const [searchQuery, setSearchQuery] = useState('');
@@ -187,9 +194,12 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
     const trimTranslation = editTranslation.trim();
     if (!trimOriginal || !trimTranslation) return;
     setEditSaving(true);
-    await updateWord(editWord.id, trimOriginal, trimTranslation);
-    setEditSaving(false);
-    setEditWord(null);
+    try {
+      await updateWord(editWord.id, trimOriginal, trimTranslation);
+      setEditWord(null);
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const sheetTranslateY = actionMenuAnim.interpolate({
@@ -255,6 +265,14 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
           styles.list,
           filteredAndSortedWords.length === 0 && styles.listEmpty,
         ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <BookOpen color={colors.muted} size={56} strokeWidth={1.5} />

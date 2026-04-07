@@ -110,7 +110,7 @@ interface MetricItemProps {
 
 const MetricItem = ({ icon, value, label, colors, valueColor, compact }: MetricItemProps) => (
   <View style={compact ? styles.metricItemCompact : styles.metricItem}>
-    <View style={styles.metricRow}>
+    <View style={compact ? styles.metricRowInner : styles.metricRow}>
       <Text style={[compact ? styles.metricValueCompact : styles.metricValue, { color: valueColor || colors.text }]}>
         {value}
       </Text>
@@ -143,6 +143,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metricRowInner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

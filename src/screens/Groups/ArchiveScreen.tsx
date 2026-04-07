@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Modal,
+  Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -20,7 +23,10 @@ import {
 import { useWords } from '../../hooks/useWords';
 import { useGroups } from '../../hooks/useGroups';
 import { SearchFilterBar } from '../../components/SearchFilterBar';
+import { queryClient } from '../../lib/queryClient';
+import { queryKey } from '../../lib/queryKeys';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
+import { ARCHIVE_THRESHOLD } from '../../constants';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { GroupsStackParamList } from '../../navigation/types';
@@ -28,8 +34,6 @@ import type { Word } from '../../hooks/useWords';
 import type { WordGroup } from '../../hooks/useGroups';
 
 type Props = NativeStackScreenProps<GroupsStackParamList, 'Archive'>;
-
-const ARCHIVE_THRESHOLD = 5;
 
 interface Section {
   groupId: string;
@@ -47,6 +51,16 @@ export const ArchiveScreen = ({ navigation }: Props) => {
   const [sortBy, setSortBy] = useState<'count' | 'name' | 'score'>('count');
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([
+      queryClient.invalidateQueries({ queryKey: queryKey.words.list() }),
+      queryClient.invalidateQueries({ queryKey: queryKey.groups.list() }),
+    ]);
+    setRefreshing(false);
+  }, [queryClient]);
 
   // Все архивированные слова
   const archivedWords = useMemo(
@@ -211,6 +225,14 @@ export const ArchiveScreen = ({ navigation }: Props) => {
         data={sections}
         keyExtractor={(s) => s.groupId}
         contentContainerStyle={styles.list}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
         ListEmptyComponent={
           <View style={styles.noResultsWrap}>
             <Search color={colors.muted} size={36} strokeWidth={1.5} />
@@ -297,6 +319,57 @@ export const ArchiveScreen = ({ navigation }: Props) => {
           );
         }}
       />
+
+      {/* Sort Options Modal */}
+      <Modal
+        visible={sortSheetVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSortSheetVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.sortModalOverlay}
+          activeOpacity={1}
+          onPress={() => setSortSheetVisible(false)}
+        >
+          <TouchableOpacity
+            style={[styles.sortSheet, { backgroundColor: colors.card, borderColor: colors.border }]}
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.sortSheetTitle, { color: colors.text }]}>Сортировка словарей</Text>
+            {([
+              { key: 'count' as const, label: 'По количеству слов' },
+              { key: 'name' as const, label: 'По названию' },
+              { key: 'score' as const, label: 'По среднему счёту' },
+            ]).map((option) => (
+              <TouchableOpacity
+                key={option.key}
+                style={[
+                  styles.sortOption,
+                  sortBy === option.key && { backgroundColor: colors.primaryDim },
+                ]}
+                onPress={() => {
+                  setSortBy(option.key);
+                  setSortSheetVisible(false);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.sortOptionText,
+                    { color: sortBy === option.key ? colors.primary : colors.text },
+                  ]}
+                >
+                  {option.label}
+                </Text>
+                {sortBy === option.key && (
+                  <View style={[styles.sortCheckmark, { backgroundColor: colors.primary }]} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -491,5 +564,43 @@ const styles = StyleSheet.create({
   noResultsText: {
     fontSize: typography.body,
     fontFamily: fonts.regular,
+  },
+  // Sort modal
+  sortModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  sortSheet: {
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.sm,
+  },
+  sortSheetTitle: {
+    fontSize: typography.subtitle,
+    fontFamily: fonts.headingBlack,
+    marginBottom: spacing.sm,
+  },
+  sortOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.sm,
+  },
+  sortOptionText: {
+    fontSize: typography.body,
+    fontFamily: fonts.medium,
+  },
+  sortCheckmark: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
   },
 });

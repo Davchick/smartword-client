@@ -32,20 +32,31 @@ const DEFAULT_EMPTY_DATA: TrainingDayProgress[] = [
 ];
 
 export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = false }) => {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const chartWidth = useMemo(() => windowWidth - spacing.lg * 2, [windowWidth]);
   const fadeAnim = useRef(new Animated.Value(0));
   const lineAnim = useRef(new Animated.Value(0));
   const [lineProgress, setLineProgress] = useState(0);
+  const animatingRef = useRef(false);
 
-  const chartData = data.length > 0 ? data : DEFAULT_EMPTY_DATA;
-  const maxPoints = Math.max(...chartData.map((d) => d.points), 1);
-  const totalPoints = locked
-    ? DEFAULT_EMPTY_DATA.reduce((sum, d) => sum + d.points, 0)
-    : chartData.reduce((sum, d) => sum + d.points, 0);
+  // Стабилизируем данные — не пересоздаём массив каждый рендер
+  const chartData = useMemo(
+    () => data.length > 0 ? data : DEFAULT_EMPTY_DATA,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data.length, JSON.stringify(data)]
+  );
+  const maxPoints = useMemo(() => Math.max(...chartData.map((d) => d.points), 1), [chartData]);
+  const totalPoints = useMemo(() => {
+    const src = locked ? DEFAULT_EMPTY_DATA : chartData;
+    return src.reduce((sum, d) => sum + d.points, 0);
+  }, [locked, chartData]);
 
+  // Запускаем анимацию только один раз при монтировании или смене данных
   useEffect(() => {
+    if (animatingRef.current) return;
+    animatingRef.current = true;
+
     fadeAnim.current.setValue(0);
     lineAnim.current.setValue(0);
     setLineProgress(0);
@@ -66,12 +77,14 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
         delay: 200,
         useNativeDriver: false,
       }),
-    ]).start();
+    ]).start(() => {
+      animatingRef.current = false;
+    });
 
     return () => {
       lineAnim.current.removeListener(listener);
     };
-  }, [chartData]);
+  }, [chartData]); // Перезапуск при смене данных — анимация покажет новый график
 
   // Generate smooth curve path
   const generateCurvePath = (progress: number) => {
@@ -224,7 +237,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
       {locked && (
         <View style={styles.lockOverlay}>
           {supportsBlur ? (
-            <BlurView intensity={100} tint="light" style={styles.blurView} experimentalBlurMethod="dimezisBlurView">
+            <BlurView intensity={100} tint={isDark ? 'dark' : 'light'} style={styles.blurView} experimentalBlurMethod="dimezisBlurView">
               <View style={styles.lockContent}>
                 <View style={styles.lockIconContainer}>
                   <Text style={styles.lockIcon}>🔒</Text>
@@ -236,7 +249,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
               </View>
             </BlurView>
           ) : (
-            <View style={styles.lockContent}>
+            <View style={[styles.lockContent, { backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.92)', borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(15,23,42,0.15)' }]}>
               <View style={styles.lockIconContainer}>
                 <Text style={styles.lockIcon}>🔒</Text>
               </View>

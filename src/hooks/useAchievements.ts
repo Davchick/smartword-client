@@ -1,102 +1,95 @@
-import { useState, useEffect, useCallback } from 'react';
+/**
+ * useAchievements — React Query версия.
+ *
+ * - Два параллельных query: список достижений + summary
+ * - useMutation для checkAchievements
+ * - invalidateAchievements после мутаций
+ */
+
+import { useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { queryKey, invalidateAchievements } from '../lib/queryKeys';
 import { Achievement, AchievementsSummary } from '../types/achievements';
+
+async function fetchAchievements(authUser: ReturnType<typeof useAuth>['user']): Promise<Achievement[]> {
+  if (!authUser || !getBaseUrl()) return [];
+  return apiGet<Achievement[]>('/achievements');
+}
+
+async function fetchAchievementsSummary(authUser: ReturnType<typeof useAuth>['user']): Promise<AchievementsSummary | null> {
+  if (!authUser || !getBaseUrl()) return null;
+  return apiGet<AchievementsSummary>('/achievements/summary');
+}
 
 export const useAchievements = () => {
   const { user: authUser } = useAuth();
-  const [achievements, setAchievements] = useState<Achievement[]>([]);
-  const [summary, setSummary] = useState<AchievementsSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
-  const fetchAchievements = useCallback(async () => {
-    if (!authUser || !getBaseUrl()) {
-      setAchievements([]);
-      setSummary(null);
-      setLoading(false);
-      return;
-    }
+  const {
+    data: achievements = [],
+    isLoading: loading,
+    refetch: refetchAchievements,
+  } = useQuery({
+    queryKey: queryKey.achievements.list(),
+    queryFn: () => fetchAchievements(authUser),
+    staleTime: 2 * 60 * 1000, // 2 мин — достижения меняются редко
+    gcTime: 10 * 60 * 1000,
+    enabled: !!authUser,
+  });
 
-    try {
-      const [achievementsData, summaryData] = await Promise.all([
-        apiGet<Achievement[]>('/achievements'),
-        apiGet<AchievementsSummary>('/achievements/summary'),
-      ]);
-      setAchievements(achievementsData);
-      setSummary(summaryData);
-    } catch (error) {
-      console.error('[useAchievements] Fetch error:', error);
-      setAchievements([]);
-      setSummary(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [authUser]);
+  const {
+    data: summary = null,
+    refetch: refetchSummary,
+  } = useQuery({
+    queryKey: queryKey.achievements.summary(),
+    queryFn: () => fetchAchievementsSummary(authUser),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    enabled: !!authUser,
+  });
 
-  const checkAchievements = useCallback(async (action: string, value: number) => {
-    if (!authUser || !getBaseUrl()) return [];
-
-    try {
-      const result = await apiPost<{ unlocked: Achievement[] }>('/achievements/check', {
-        action,
-        value,
-      });
-      
+  const checkMutation = useMutation({
+    mutationFn: async ({ action, value }: { action: string; value: number }) => {
+      if (!authUser || !getBaseUrl()) return { unlocked: [] };
+      return apiPost<{ unlocked: Achievement[] }>('/achievements/check', { action, value });
+    },
+    onSuccess: (result) => {
       if (result.unlocked && result.unlocked.length > 0) {
-        // Обновляем локальное состояние
-        setAchievements(prev => 
-          prev.map(a => {
-            const unlocked = result.unlocked.find(u => u.id === a.id);
+        // Обновляем локальный кэш — отмечаем разблокированные
+        queryClient.setQueryData(queryKey.achievements.list(), (prev: Achievement[] | undefined) =>
+          prev?.map((a) => {
+            const unlocked = result.unlocked.find((u) => u.id === a.id);
             if (unlocked) {
               return { ...a, unlocked: true, unlockedAt: new Date().toISOString() };
             }
             return a;
-          })
+          }) ?? []
         );
       }
-      
-      return result.unlocked || [];
-    } catch (error) {
-      console.error('[useAchievements] Check error:', error);
-      return [];
-    }
-  }, [authUser]);
+    },
+    onSettled: () => {
+      invalidateAchievements(queryClient);
+    },
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!authUser || !getBaseUrl()) {
-        if (!cancelled) { setAchievements([]); setSummary(null); setLoading(false); }
-        return;
-      }
-      setLoading(true);
-      try {
-        const [achievementsData, summaryData] = await Promise.all([
-          apiGet<Achievement[]>('/achievements'),
-          apiGet<AchievementsSummary>('/achievements/summary'),
-        ]);
-        if (!cancelled) {
-          setAchievements(achievementsData);
-          setSummary(summaryData);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error('[useAchievements] Fetch error:', error);
-          setAchievements([]);
-          setSummary(null);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [fetchAchievements]);
+  const checkAchievements = useCallback(
+    async (action: string, value: number) => {
+      const result = await checkMutation.mutateAsync({ action, value });
+      return result.unlocked || [];
+    },
+    [checkMutation]
+  );
 
   return {
     achievements,
     summary,
     loading,
-    refetch: fetchAchievements,
+    refetch: () => {
+      refetchAchievements();
+      refetchSummary();
+    },
     checkAchievements,
   };
 };

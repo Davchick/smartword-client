@@ -13,9 +13,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 import { Plus, BookOpen, MoreHorizontal, Trash2, Pencil, Archive } from 'lucide-react-native';
 import { useGroups } from '../../hooks/useGroups';
 import { useWords } from '../../hooks/useWords';
@@ -24,30 +24,34 @@ import { AddGroupModal } from '../../components/AddGroupModal';
 import { PaywallModal } from '../../components/PaywallModal';
 import { StatsWidget } from '../../components/StatsWidget';
 import { useStats } from '../../hooks/useStats';
-import { useDebouncedRefetch } from '../../hooks/useDebouncedRefetch';
+import { queryClient } from '../../lib/queryClient';
+import { queryKey } from '../../lib/queryKeys';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
+import { ARCHIVE_THRESHOLD, FREE_GROUPS_LIMIT } from '../../constants';
 import type { GroupsScreenProps } from '../../navigation/types';
 import type { WordGroup } from '../../hooks/useGroups';
-
-const FREE_GROUPS_LIMIT = 3;
-const ARCHIVE_THRESHOLD = 5;
 
 export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { groups, loading, createGroup, deleteGroup, renameGroup, refetch: refetchGroups } = useGroups();
-  const { words, refetch: refetchWords } = useWords();
+  const { groups, loading, createGroup, deleteGroup, renameGroup } = useGroups();
+  const { words } = useWords();
   const { profile } = useProfile();
-  const { stats, refetch: refetchStats } = useStats();
-
-  // Debounced refetch — предотвращает избыточные запросы при быстром переключении табов
-  const debouncedRefetchGroups = useDebouncedRefetch(refetchGroups, 500);
-  const debouncedRefetchWords = useDebouncedRefetch(refetchWords, 500);
-  const debouncedRefetchStats = useDebouncedRefetch(refetchStats, 500);
+  const { stats } = useStats();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([
+      queryClient.invalidateQueries({ queryKey: queryKey.groups.list() }),
+      queryClient.invalidateQueries({ queryKey: queryKey.stats.overview() }),
+    ]);
+    setRefreshing(false);
+  }, []);
 
   // Количество неархивных слов в каждом словаре
   const activeCountsByGroup = useMemo(() => {
@@ -150,15 +154,6 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
     setRenameGroup(null);
   };
 
-  // Всегда обновляем группы и статистику при возврате на экран "Словари" (с debounce)
-  useFocusEffect(
-    useCallback(() => {
-      debouncedRefetchGroups();
-      debouncedRefetchStats();
-      debouncedRefetchWords();
-    }, [debouncedRefetchGroups, debouncedRefetchStats, debouncedRefetchWords])
-  );
-
   if (loading) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
@@ -199,6 +194,14 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
           styles.list,
           groups.length === 0 && styles.listEmpty,
         ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
         ListHeaderComponent={<StatsWidget stats={stats} />}
         ListHeaderComponentStyle={{ marginBottom: 0 }}
         ListEmptyComponent={

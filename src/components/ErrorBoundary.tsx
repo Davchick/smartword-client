@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { useTheme, spacing, radii, typography } from '../theme';
 
 interface Props {
   children: ReactNode;
@@ -10,8 +11,8 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
+class ErrorBoundaryInner extends Component<{ children: ReactNode; colors: Record<string, string> }, State> {
+  constructor(props: { children: ReactNode; colors: Record<string, string> }) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -29,25 +30,26 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   render() {
+    const { colors } = this.props;
     if (this.state.hasError) {
       return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.emoji}>😵</Text>
-            <Text style={styles.title}>Что-то пошло не так</Text>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.title, { color: colors.text }]}>{'Что-то пошло не так'}</Text>
+            <Text style={[styles.subtitle, { color: colors.muted }]}>
               Произошла непредвиденная ошибка. Попробуйте перезапустить приложение.
             </Text>
             {this.state.error && (
-              <View style={styles.errorBlock}>
-                <Text style={styles.errorTitle}>Детали ошибки:</Text>
-                <Text style={styles.errorText} selectable>
+              <View style={[styles.errorBlock, { backgroundColor: colors.card }]}>
+                <Text style={[styles.errorTitle, { color: colors.danger }]}>Детали ошибки:</Text>
+                <Text style={[styles.errorText, { color: colors.textSecondary }]} selectable>
                   {this.state.error.message}
                 </Text>
               </View>
             )}
-            <TouchableOpacity style={styles.resetButton} onPress={this.handleReset} activeOpacity={0.8}>
-              <Text style={styles.resetButtonText}>Попробовать снова</Text>
+            <TouchableOpacity style={[styles.resetButton, { backgroundColor: colors.primary }]} onPress={this.handleReset} activeOpacity={0.8}>
+              <Text style={[styles.resetButtonText, { color: colors.background }]}>{'Попробовать снова'}</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -58,10 +60,15 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 }
 
+// Wrapper component that uses the hook
+export const ErrorBoundary = ({ children }: Props) => {
+  const { colors } = useTheme();
+  return <ErrorBoundaryInner colors={colors}>{children}</ErrorBoundaryInner>;
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#020617',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
@@ -77,18 +84,15 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#F1F5F9',
     textAlign: 'center',
   },
   subtitle: {
     fontSize: 15,
-    color: '#94A3B8',
     textAlign: 'center',
     lineHeight: 22,
   },
   errorBlock: {
     width: '100%',
-    backgroundColor: '#1E293B',
     borderRadius: 12,
     padding: 16,
     marginTop: 8,
@@ -96,23 +100,19 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#F43F5E',
     marginBottom: 8,
   },
   errorText: {
     fontSize: 13,
-    color: '#CBD5E1',
     fontFamily: 'monospace',
   },
   resetButton: {
-    backgroundColor: '#38BDF8',
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 32,
     marginTop: 16,
   },
   resetButtonText: {
-    color: '#020617',
     fontSize: 16,
     fontWeight: '700',
   },

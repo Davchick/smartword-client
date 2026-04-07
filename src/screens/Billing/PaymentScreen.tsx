@@ -467,7 +467,7 @@ export const PaymentScreen = () => {
           >
             <FileText color={colors.primary} size={16} />
             <Text style={[styles.legalLinkText, { color: colors.primary }]}>
-              Пользовательское соглашение
+              Условия использования
             </Text>
             <ExternalLink color={colors.primary} size={14} />
           </TouchableOpacity>

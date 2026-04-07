@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,21 +12,23 @@ import { AchievementCard } from '../../components/AchievementCard';
 import { useAchievements } from '../../hooks/useAchievements';
 import { StreakCounter } from '../../components/StreakCounter';
 import { useStreak } from '../../hooks/useStreak';
+import { queryClient } from '../../lib/queryClient';
+import { queryKey } from '../../lib/queryKeys';
 
 type CategoryFilter = 'all' | 'streak' | 'words' | 'swipe' | 'chat';
 
 export const AchievementsScreen: React.FC = () => {
   const { colors } = useTheme();
-  const { achievements, summary, loading, refetch } = useAchievements();
+  const { achievements, summary, loading } = useAchievements();
   const { streak } = useStreak();
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<CategoryFilter>('all');
 
-  const onRefresh = async () => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refetch();
+    await queryClient.invalidateQueries({ queryKey: queryKey.achievements.all });
     setRefreshing(false);
-  };
+  }, []);
 
   const filteredAchievements = useMemo(
     () => filter === 'all' ? achievements : achievements.filter((a) => a.category === filter),

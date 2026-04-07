@@ -23,7 +23,6 @@ import {
   ChevronRight,
   Check,
   Bell,
-  Shield,
   Info,
   Eye,
   EyeOff,
@@ -242,18 +241,6 @@ export const ProfileSettingsScreen = () => {
               <Bell color={colors.primary} size={17} />
             </View>
             <Text style={[styles.menuText, { color: colors.text }]}>Уведомления</Text>
-            <ChevronRight color={colors.muted} size={18} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.menuRow, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-            onPress={() => navigation.navigate('Legal' as never)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: colors.primaryDim }]}>
-              <Shield color={colors.primary} size={17} />
-            </View>
-            <Text style={[styles.menuText, { color: colors.text }]}>Правовая информация</Text>
             <ChevronRight color={colors.muted} size={18} />
           </TouchableOpacity>
 

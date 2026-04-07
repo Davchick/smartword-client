@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { X, Crown, Zap, MessageCircle, BookOpen, Check } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography } from '../theme';
@@ -46,11 +47,19 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
   const handlePurchase = async () => {
     setPurchasing(true);
     try {
-      // TODO: Интеграция с ЮКассой — здесь будет redirect на оплату
-      // Пока заглушка для демонстрации UI
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      onPurchaseSuccess?.();
-      onClose();
+      // TODO: Интеграция с ЮKassa — здесь будет:
+      // 1. Вызов createSubscriptionPayment(selectedProduct, method) из lib/billing
+      // 2. Получение confirmation_url от ЮKassa
+      // 3. Открытие WebBrowser.openAuthSessionAsync(confirmation_url)
+      // 4. Обработка returnUrl и подтверждение оплаты
+      // 5. Вызов onPurchaseSuccess() при успешной оплате
+      //
+      // Пока оплата не подключена — показываем alert вместо фейкового "успеха"
+      Alert.alert(
+        'Premium скоро будет доступен',
+        'Оплата через ЮKassa находится в разработке. Следите за обновлениями!',
+        [{ text: 'OK', onPress: onClose }]
+      );
     } catch (err) {
       console.error('[Paywall] Purchase error:', err);
     } finally {

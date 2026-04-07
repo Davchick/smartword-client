@@ -10,9 +10,10 @@ import {
   Modal,
   TextInput,
   Linking,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import {
   Crown,
   LogOut,
@@ -27,11 +28,10 @@ import {
 } from 'lucide-react-native';
 import { useAuth } from '../../contexts/AuthContext';
 import { useProfile } from '../../hooks/useProfile';
-import { useGroups } from '../../hooks/useGroups';
-import { useWords } from '../../hooks/useWords';
 import { useTrainingProgress } from '../../hooks/useTrainingProgress';
 import { useStreak } from '../../hooks/useStreak';
-import { useDebouncedRefetch } from '../../hooks/useDebouncedRefetch';
+import { queryClient } from '../../lib/queryClient';
+import { queryKey } from '../../lib/queryKeys';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -51,22 +51,24 @@ export const ProfileScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { signOut } = useAuth();
   const { profile, loading, refetch, avatarId, setAvatarId, nickname, setNickname } = useProfile();
-  const { groups, refetch: refetchGroups } = useGroups();
-  const { totalCount: totalWords, refetch: refetchWords } = useWords();
-  const { progress: trainingProgress, loading: progressLoading, refetch: refetchProgress } = useTrainingProgress();
-  const { streak, refetch: refetchStreak } = useStreak();
-
-  // Debounced refetch — предотвращает избыточные запросы
-  const debouncedRefetch = useDebouncedRefetch(refetch, 500);
-  const debouncedRefetchGroups = useDebouncedRefetch(refetchGroups, 500);
-  const debouncedRefetchWords = useDebouncedRefetch(refetchWords, 500);
-  const debouncedRefetchProgress = useDebouncedRefetch(refetchProgress, 500);
-  const debouncedRefetchStreak = useDebouncedRefetch(refetchStreak, 500);
+  const { progress: trainingProgress, loading: progressLoading } = useTrainingProgress();
+  const { streak } = useStreak();
 
   const [signingOut, setSigningOut] = useState(false);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [editingNick, setEditingNick] = useState(false);
   const [nickDraft, setNickDraft] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([
+      queryClient.invalidateQueries({ queryKey: queryKey.profile.me() }),
+      queryClient.invalidateQueries({ queryKey: queryKey.stats.trainingProgress() }),
+      queryClient.invalidateQueries({ queryKey: queryKey.streaks.current() }),
+    ]);
+    setRefreshing(false);
+  }, []);
 
   const handleSignOut = () => {
     Alert.alert('Выйти из аккаунта?', 'Вы уверены?', [
@@ -86,17 +88,6 @@ export const ProfileScreen = () => {
   const handleDonate = () => {
     Linking.openURL('https://dalink.to/davch1ck');
   };
-
-  // Обновляем профиль, группы, счётчик слов и прогресс тренировок при возврате на экран профиля (с debounce)
-  useFocusEffect(
-    useCallback(() => {
-      debouncedRefetch();
-      debouncedRefetchGroups();
-      debouncedRefetchWords();
-      debouncedRefetchProgress();
-      debouncedRefetchStreak();
-    }, [debouncedRefetch, debouncedRefetchGroups, debouncedRefetchWords, debouncedRefetchProgress, debouncedRefetchStreak])
-  );
 
   const handleSupport = () => {
     Linking.openURL('https://t.me/smartwordd_bot');
@@ -145,6 +136,14 @@ export const ProfileScreen = () => {
         { paddingTop: insets.top + spacing.sm, paddingBottom: insets.bottom + spacing.xl },
       ]}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
     >
       {/* Кнопка настроек */}
       <TouchableOpacity

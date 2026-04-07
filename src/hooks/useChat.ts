@@ -28,15 +28,13 @@ export const useChat = () => {
   const sendMessage = useCallback(async (text: string): Promise<void> => {
     if (!text.trim()) return;
     if (!authUser || !getBaseUrl()) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: 'Необходима авторизация. Войдите в аккаунт.',
-          timestamp: new Date(),
-        },
-      ]);
+      const errorMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Необходима авторизация. Войдите в аккаунт.',
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
       return;
     }
 
@@ -46,13 +44,13 @@ export const useChat = () => {
       content: text.trim(),
       timestamp: new Date(),
     };
-    const apiMessages = [...messagesRef.current, userMessage].map((m) => ({ role: m.role, content: m.content }));
 
-    setMessages((prev) => {
-      const next = [...prev, userMessage];
-      messagesRef.current = next;
-      return next;
-    });
+    // Обновляем ref СИНХРОННО перед использованием — гарантируем консистентность
+    messagesRef.current = [...messagesRef.current, userMessage];
+    const apiMessages = messagesRef.current.map((m) => ({ role: m.role, content: m.content }));
+
+    // State обновляем отдельно — не зависит от ref для render
+    setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
 
     try {
@@ -73,11 +71,9 @@ export const useChat = () => {
         content: responseData?.reply ?? 'Не удалось получить ответ',
         timestamp: new Date(),
       };
-      setMessages((prev) => {
-        const next = [...prev, assistantMessage];
-        messagesRef.current = next;
-        return next;
-      });
+      messagesRef.current = [...messagesRef.current, assistantMessage];
+      setMessages((prev) => [...prev, assistantMessage]);
+
       if (typeof responseData?.messages_used === 'number') {
         setMessagesUsed(responseData.messages_used);
       }
@@ -85,7 +81,7 @@ export const useChat = () => {
       console.error('[useChat] error:', err);
       const e = err as { status?: number; body?: { error?: string } };
       let errorContent = 'Ошибка соединения. Попробуйте позже.';
-      
+
       if (e?.body?.error === 'limit_reached') {
         setLimitReached(true);
         errorContent = 'Лимит сообщений исчерпан.';
@@ -104,20 +100,15 @@ export const useChat = () => {
       } else if (typeof e?.body?.error === 'string') {
         errorContent = e.body.error;
       }
-      
-      setMessages((prev) => {
-        const next = [
-          ...prev,
-          {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant' as const,
-            content: errorContent,
-            timestamp: new Date(),
-          },
-        ];
-        messagesRef.current = next;
-        return next;
-      });
+
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: errorContent,
+        timestamp: new Date(),
+      };
+      messagesRef.current = [...messagesRef.current, errorMessage];
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
     }

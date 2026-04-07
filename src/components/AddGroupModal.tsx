@@ -22,14 +22,22 @@ export const AddGroupModal = ({ visible, onClose, onSubmit }: Props) => {
   const { colors } = useTheme();
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
     setLoading(true);
-    await onSubmit(name.trim(), '');
-    setName('');
-    setLoading(false);
-    onClose();
+    setError(null);
+    try {
+      await onSubmit(name.trim(), '');
+      setName('');
+      onClose();
+    } catch (err: unknown) {
+      const e = err as { body?: { error?: string } };
+      setError(e?.body?.error ?? 'Не удалось создать словарь');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClose = () => {
@@ -56,11 +64,13 @@ export const AddGroupModal = ({ visible, onClose, onSubmit }: Props) => {
             placeholder="Название"
             placeholderTextColor={colors.muted}
             value={name}
-            onChangeText={setName}
+            onChangeText={(text) => { setName(text); setError(null); }}
             autoFocus
             returnKeyType="done"
             onSubmitEditing={handleSubmit}
           />
+
+          {error && <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>}
 
           <TouchableOpacity
             style={[styles.button, { backgroundColor: colors.primary }, (!name.trim() || loading) && styles.buttonDisabled]}
@@ -104,6 +114,11 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     fontSize: typography.body,
     marginBottom: spacing.md,
+  },
+  errorText: {
+    fontSize: typography.small,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
   },
   button: {
     borderRadius: radii.md,

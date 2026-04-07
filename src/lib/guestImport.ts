@@ -33,16 +33,26 @@ export const importGuestDataIfNeeded = async (userId: string): Promise<void> => 
   const migratedKey = `smartword_guest_migrated_user_${userId}`;
 
   try {
-    const [migrated, groupsRaw, wordsRaw] = await Promise.all([
-      AsyncStorage.getItem(migratedKey),
-      // Try encrypted storage first, fallback to AsyncStorage for migration
-      getEncryptedItem<GuestGroup[]>(GUEST_GROUPS_KEY)
-        .then(enc => enc ? JSON.stringify(enc) : null)
-        .catch(() => null) || AsyncStorage.getItem('smartword_guest_groups'),
-      getEncryptedItem<GuestWord[]>(GUEST_WORDS_KEY)
-        .then(enc => enc ? JSON.stringify(enc) : null)
-        .catch(() => null) || AsyncStorage.getItem('smartword_guest_words'),
-    ]);
+    // Read from encrypted storage first, fallback to plain AsyncStorage
+    let groupsRaw: string | null = null;
+    let wordsRaw: string | null = null;
+
+    try {
+      const encGroups = await getEncryptedItem<GuestGroup[]>(GUEST_GROUPS_KEY);
+      groupsRaw = encGroups ? JSON.stringify(encGroups) : null;
+    } catch {
+      // Encrypted storage unavailable, fall back to plain AsyncStorage
+      groupsRaw = await AsyncStorage.getItem('smartword_guest_groups');
+    }
+
+    try {
+      const encWords = await getEncryptedItem<GuestWord[]>(GUEST_WORDS_KEY);
+      wordsRaw = encWords ? JSON.stringify(encWords) : null;
+    } catch {
+      wordsRaw = await AsyncStorage.getItem('smartword_guest_words');
+    }
+
+    const migrated = await AsyncStorage.getItem(migratedKey);
 
     if (migrated === '1') return;
 

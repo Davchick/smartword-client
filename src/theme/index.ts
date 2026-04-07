@@ -6,6 +6,7 @@ const dark = {
   background: '#020617',
   card: '#0F172A',
   elevated: '#1E293B',
+  surface: '#1E293B',
   border: '#334155',
   primary: '#38BDF8',
   primaryDim: '#0C4A6E',
@@ -21,6 +22,7 @@ const light = {
   background: '#F8FAFC',
   card: '#FFFFFF',
   elevated: '#FFFFFF',
+  surface: '#F1F5F9',
   border: '#E2E8F0',
   primary: '#0EA5E9',
   primaryDim: '#E0F2FE',
@@ -48,6 +50,7 @@ export const spacing = {
   md: 16,
   lg: 24,
   xl: 32,
+  xxl: 48,
 };
 
 // --- Радиусы ---
@@ -55,6 +58,7 @@ export const radii = {
   sm: 8,
   md: 14,
   lg: 24,
+  xl: 32,
   full: 999,
 };
 
@@ -65,6 +69,7 @@ export const typography = {
   body: 16,
   small: 13,
   xs: 11,
+  xsmall: 10,
 };
 
 // --- Семейства шрифтов ---

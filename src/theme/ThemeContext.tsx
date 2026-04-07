@@ -30,9 +30,13 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     });
   }, []);
 
-  const setThemeMode = useCallback((mode: ThemeMode) => {
+  const setThemeMode = useCallback(async (mode: ThemeMode) => {
     setThemeModeState(mode);
-    AsyncStorage.setItem(STORAGE_KEY, mode);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY, mode);
+    } catch (err) {
+      console.warn('[ThemeContext] Failed to save theme preference:', err);
+    }
   }, []);
 
   const resolvedScheme: 'dark' | 'light' =

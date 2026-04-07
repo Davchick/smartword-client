@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -13,16 +13,13 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { useTheme, spacing, radii, typography } from '../theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.12;
-
 interface Props {
   word: { original: string; translation: string };
   onSwipeRight: () => void;
   onSwipeLeft: () => void;
   isTop: boolean;
-  stackIndex: number; // 0 = top, 1 = middle, 2 = bottom
-  disabled?: boolean; // Блокировка свайпов
+  stackIndex: number;
+  disabled?: boolean;
 }
 
 const triggerHapticMedium = () => {
@@ -35,6 +32,8 @@ const triggerHapticLight = () => {
 
 export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, disabled = false }: Props) => {
   const { colors } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
+  const SWIPE_THRESHOLD = windowWidth * 0.12;
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const hapticTriggered = useSharedValue(false);
@@ -43,9 +42,12 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
   const flipRotation = useSharedValue(0);
   const isFlipped = useSharedValue(false);
 
+  // Shared value для windowWidth — используется в worklet
+  const swRef = useSharedValue(windowWidth);
+
   // Важно: при циклическом переиспользовании карточек (когда слов мало)
   // одна и та же карточка может снова стать верхней без размонтирования.
-  // Тогда нужно сбросить анимационные значения, иначе жесты могут “умирать”.
+  // Тогда нужно сбросить анимационные значения, иначе жесты могут "умирать".
   useEffect(() => {
     if (!isTop) return;
     translateX.value = 0;
@@ -55,11 +57,13 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
     isFlipped.value = false;
   }, [isTop, word.original, word.translation, flipRotation, hapticTriggered, isFlipped, translateX, translateY]);
 
+  // Обновляем swRef при изменении windowWidth
+  useEffect(() => { swRef.value = windowWidth; }, [windowWidth]);
+
   const tapGesture = Gesture.Tap()
     .enabled(isTop && !disabled)
     .onEnd(() => {
       if (!isFlipped.value) {
-        // Flip to show translation
         flipRotation.value = withTiming(180, { duration: 350 });
         isFlipped.value = true;
         runOnJS(triggerHapticLight)();
@@ -82,19 +86,18 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
     })
     .onEnd((event) => {
       if (disabled) {
-        // Reset position if disabled
         translateX.value = withSpring(0, { damping: 15 });
         translateY.value = withSpring(0, { damping: 15 });
         return;
       }
       if (event.translationX > SWIPE_THRESHOLD) {
-        translateX.value = withSpring(SCREEN_WIDTH * 1.5, {
+        translateX.value = withSpring(windowWidth * 1.5, {
           velocity: event.velocityX,
           damping: 20,
         });
         runOnJS(onSwipeRight)();
       } else if (event.translationX < -SWIPE_THRESHOLD) {
-        translateX.value = withSpring(-SCREEN_WIDTH * 1.5, {
+        translateX.value = withSpring(-windowWidth * 1.5, {
           velocity: event.velocityX,
           damping: 20,
         });
@@ -114,7 +117,7 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
   const animatedStyle = useAnimatedStyle(() => {
     const rotate = interpolate(
       translateX.value,
-      [-SCREEN_WIDTH / 2, 0, SCREEN_WIDTH / 2],
+      [-swRef.value / 2, 0, swRef.value / 2],
       [-15, 0, 15],
       Extrapolation.CLAMP
     );
@@ -201,7 +204,8 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
 const styles = StyleSheet.create({
   card: {
     position: 'absolute',
-    width: SCREEN_WIDTH - spacing.lg * 2,
+    width: '100%',
+    maxWidth: 500,
     borderRadius: radii.lg,
     padding: spacing.xl,
     borderWidth: 1,

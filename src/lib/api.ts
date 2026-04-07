@@ -117,7 +117,7 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
   }
   const url = path.startsWith('http') ? path : `${base}${path.startsWith('/') ? path : `/${path}`}`;
   if (__DEV__) console.log('[apiFetch] URL:', url, 'Path:', path);
-  const { skipAuth, timeoutMs = API_TIMEOUT_MS, ...fetchInit } = init;
+  const { skipAuth, timeoutMs = API_TIMEOUT_MS, signal: externalSignal, ...fetchInit } = init;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((fetchInit.headers as Record<string, string>) || {}),
@@ -133,16 +133,34 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
   }
 
   if (__DEV__) console.log('[apiFetch] Fetching...', url);
-  
-  // Create abort controller with timeout
+
+  // Create abort controller with timeout — объединяем с внешним signal
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
+
+  // Если передан внешний signal — слушаем его для отмены
+  let externalAbortListener: (() => void) | null = null;
+  if (externalSignal) {
+    externalAbortListener = () => controller.abort();
+    if (externalSignal.aborted) {
+      clearTimeout(timeoutId);
+      throw new Error('Запрос был отменён');
+    }
+    externalSignal.addEventListener('abort', externalAbortListener, { once: true });
+  }
+
+  const cleanup = () => {
+    clearTimeout(timeoutId);
+    if (externalAbortListener && externalSignal) {
+      externalSignal.removeEventListener('abort', externalAbortListener);
+    }
+  };
+
   try {
     let res = await fetch(url, { ...fetchInit, headers, signal: controller.signal });
-    clearTimeout(timeoutId);
+    cleanup();
     if (__DEV__) console.log('[apiFetch] Response:', res.status, res.url);
-    
+
     if (res.status === 401 && !skipAuth) {
       const newToken = await refreshAccessToken();
       if (newToken) {
@@ -163,7 +181,6 @@ export async function apiFetch(path: string, init: ApiRequestInit = {}): Promise
     }
     return res;
   } catch (error) {
-    clearTimeout(timeoutId);
     if (__DEV__) console.error('[apiFetch] Error:', error);
     // Re-throw with more descriptive message for timeout
     if (error instanceof Error && error.name === 'AbortError') {
@@ -181,12 +198,20 @@ export async function apiGet<T = unknown>(path: string, init?: ApiRequestInit): 
     try {
       body = JSON.parse(text);
     } catch {
-      //
+      // Тело не является JSON — оставляем как текст
     }
     throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, body });
   }
   if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    // Сервер вернул не-JSON ответ (например, HTML error page от nginx 502)
+    throw Object.assign(new Error(`Сервер вернул некорректный ответ (HTTP ${res.status})`), {
+      status: res.status,
+      body: text,
+    });
+  }
 }
 
 export async function apiPost<T = unknown>(path: string, body?: unknown, init?: ApiRequestInit): Promise<T> {
@@ -201,12 +226,19 @@ export async function apiPost<T = unknown>(path: string, body?: unknown, init?: 
     try {
       parsed = JSON.parse(text);
     } catch {
-      //
+      // Тело не является JSON — оставляем как текст
     }
     throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, body: parsed });
   }
   if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw Object.assign(new Error(`Сервер вернул некорректный ответ (HTTP ${res.status})`), {
+      status: res.status,
+      body: text,
+    });
+  }
 }
 
 export async function apiPatch<T = unknown>(path: string, body?: unknown): Promise<T> {
@@ -220,12 +252,19 @@ export async function apiPatch<T = unknown>(path: string, body?: unknown): Promi
     try {
       parsed = JSON.parse(text);
     } catch {
-      //
+      // Тело не является JSON — оставляем как текст
     }
     throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status, body: parsed });
   }
   if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw Object.assign(new Error(`Сервер вернул некорректный ответ (HTTP ${res.status})`), {
+      status: res.status,
+      body: text,
+    });
+  }
 }
 
 export async function apiDelete(path: string): Promise<void> {

@@ -7,14 +7,15 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, RotateCcw, Dumbbell, Crown } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { SwipeCard } from '../../components/SwipeCard';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { useProfile } from '../../hooks/useProfile';
-import { useTrainingProgress } from '../../hooks/useTrainingProgress';
+import { useTrainingSession } from '../../hooks/useTrainingSession';
+import { useWeeklyLimit } from '../../hooks/useWeeklyLimit';
 import { PaywallModal } from '../../components/PaywallModal';
 import type { TrainingScreenProps, TabTrainingScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
@@ -25,9 +26,6 @@ const CARDS_VISIBLE = 3;
 
 type Round = 'initial' | 'retry';
 
-const WEEKLY_LIMIT_KEY = '@SmartWord:weeklyLimitReached';
-const WEEKLY_LEARNED_KEY = '@SmartWord:wordsLearnedThisWeek';
-
 export const TrainingScreen = ({ route, navigation }: Props) => {
   const { colors } = useTheme();
   const params = 'params' in route ? route.params : undefined;
@@ -37,7 +35,16 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
   const { words, loading, updateWordProgress, getTrainingWords, refetch: refetchWords } = useWords(groupId);
   const { profile, refetch: refetchProfile } = useProfile();
-  const { addPoints } = useTrainingProgress();
+  const { sessionActive, sessionPoints: _sessionPoints, startSession, recordWord, flushSession } = useTrainingSession();
+  const {
+    weeklyLimitReached,
+    wordsLearnedThisWeek,
+    weeklyLimit,
+    incrementAndCheck,
+    checkLimit,
+    resetLocal,
+  } = useWeeklyLimit();
+
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [stats, setStats] = useState({ knew: 0, didntKnow: 0 });
@@ -48,100 +55,9 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const initialWrongIdsRef = useRef<Set<string>>(new Set());
   const retryTotalRef = useRef(0);
   const canGoBack = navigation.canGoBack();
-  const [weeklyLimitReached, setWeeklyLimitReached] = useState(false);
-  const [wordsLearnedThisWeek, setWordsLearnedThisWeek] = useState<number>(0);
-  const weeklyLimit = 50; // слов в неделю для бесплатных пользователей
-  const [isProcessing, setIsProcessing] = useState(false); // Блокировка спама кнопок
-  const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0); // Сколько слов выучили в ЭТОЙ сессии
-
-  // Ref для batching записи в AsyncStorage — предотвращает race conditions
-  const pendingSaveRef = useRef<{ limitReached?: boolean; learned?: number } | null>(null);
-  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Единый эффект для сохранения состояния в AsyncStorage (batched)
-  const scheduleSave = useCallback(() => {
-    // Собираем.pending изменения
-    pendingSaveRef.current = {
-      limitReached: weeklyLimitReached,
-      learned: wordsLearnedThisWeek,
-    };
-
-    // Debounce: ждём 100ms перед записью, чтобы собрать все изменения
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(async () => {
-      const pending = pendingSaveRef.current;
-      if (!pending) return;
-      pendingSaveRef.current = null;
-
-      try {
-        await Promise.all([
-          AsyncStorage.setItem(WEEKLY_LIMIT_KEY, JSON.stringify(pending.limitReached)),
-          AsyncStorage.setItem(WEEKLY_LEARNED_KEY, JSON.stringify(pending.learned)),
-        ]);
-      } catch (e) {
-        console.warn('[Training] Failed to save state:', e);
-      }
-    }, 100);
-  }, [weeklyLimitReached, wordsLearnedThisWeek]);
-
-  // Запускаем сохранение при изменении любого из значений
-  useEffect(() => {
-    scheduleSave();
-  }, [scheduleSave]);
-
-  // Загружаем сохранённые значения из AsyncStorage при монтировании
-  useEffect(() => {
-    let mounted = true;
-    const loadSavedState = async () => {
-      try {
-        const [limitReached, learned] = await Promise.all([
-          AsyncStorage.getItem(WEEKLY_LIMIT_KEY),
-          AsyncStorage.getItem(WEEKLY_LEARNED_KEY),
-        ]);
-        if (mounted) {
-          if (limitReached !== null) {
-            setWeeklyLimitReached(JSON.parse(limitReached));
-          }
-          if (learned !== null) {
-            setWordsLearnedThisWeek(JSON.parse(learned));
-          }
-        }
-      } catch (e) {
-        console.warn('[Training] Failed to load saved state:', e);
-      }
-    };
-    loadSavedState();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // Сбрасываем сохранённые значения в начале новой недели (понедельник)
-  useEffect(() => {
-    const checkWeekReset = async () => {
-      try {
-        const now = new Date();
-        const currentMonday = new Date(now);
-        const day = currentMonday.getDay();
-        const diff = currentMonday.getDate() - day + (day === 0 ? -6 : 1);
-        currentMonday.setDate(diff);
-        currentMonday.setHours(0, 0, 0, 0);
-
-        const savedMonday = await AsyncStorage.getItem('@SmartWord:lastMonday');
-        if (savedMonday === null || new Date(savedMonday) < currentMonday) {
-          // Новая неделя — сбрасываем
-          await AsyncStorage.setItem('@SmartWord:lastMonday', currentMonday.toISOString());
-          await AsyncStorage.setItem(WEEKLY_LIMIT_KEY, 'false');
-          await AsyncStorage.setItem(WEEKLY_LEARNED_KEY, '0');
-          setWeeklyLimitReached(false);
-          setWordsLearnedThisWeek(0);
-        }
-      } catch (e) {
-        console.warn('[Training] Week reset error:', e);
-      }
-    };
-    checkWeekReset();
-  }, []);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
+  const processingRef = useRef(false); // Ref-дубль для мгновенной проверки в race condition
 
   // Ref для предотвращения повторной инициализации при ре-рендере
   const initializedRef = useRef(false);
@@ -158,7 +74,8 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     initialWrongIdsRef.current = new Set();
     retryTotalRef.current = 0;
     initializedRef.current = true;
-  }, [getTrainingWords]);
+    startSession(groupId, groupName);
+  }, [getTrainingWords, groupId, groupName, startSession]);
 
   // Проверяем лимит и инициализируем тренировку при загрузке данных
   useEffect(() => {
@@ -167,24 +84,19 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       return;
     }
 
-    // Если уже заблокировано — не продолжаем
     if (weeklyLimitReached) {
       return;
     }
 
-    // Проверяем лимит (profile + локальный счётчик)
-    const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
-    if (currentLearned >= weeklyLimit && !profile?.is_premium) {
-      setWeeklyLimitReached(true);
-      setWordsLearnedThisWeek(currentLearned);
+    // Проверяем лимит через единый хук
+    if (checkLimit()) {
       return;
     }
 
-    // Инициализируем только если ещё не было (избегаем сброса при ре-рендере)
     if (!initializedRef.current) {
       initTraining();
     }
-  }, [loading, words.length, profile, weeklyLimitReached, wordsLearnedThisWeek, initTraining]);
+  }, [loading, words.length, weeklyLimitReached, checkLimit, initTraining]);
 
   // Завершаем тренировку когда retry-опустел
   useEffect(() => {
@@ -193,53 +105,55 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     }
   }, [round, trainingWords.length, finished, loading]);
 
+  // Flush сессии при выходе из тренировки
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        void flushSession();
+        // Сбрасываем isProcessing при размонтировании — предотвращает
+        // зависание состояния если свайп/нажатие произошло во время unmount
+        setIsProcessing(false);
+        processingRef.current = false;
+      };
+    }, [flushSession])
+  );
+
   const formatScore = (value: number) => {
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
   };
 
   const handleSwipe = async (knew: boolean) => {
-    // Игнорируем нажатия если уже обрабатываем предыдущее
-    if (isProcessing) return;
-
-    // Блокируем свайпы если достигнут лимит
-    if (weeklyLimitReached && !profile?.is_premium) {
-      return;
-    }
+    if (isProcessing || processingRef.current) return;
+    if (weeklyLimitReached && !profile?.is_premium) return;
 
     const currentWord = trainingWords[currentIndex];
     if (!currentWord) return;
 
     setIsProcessing(true);
+    processingRef.current = true;
 
     try {
       if (round === 'retry') {
         if (knew) {
-          await updateWordProgress(currentWord.id, true, { correctDelta: 0.5 });
-          // Начисляем 0.5 очков за слово, угаданное со второй попытки
-          await addPoints(0.5);
+          await updateWordProgress(currentWord.id, true, { correctDelta: 0.5, offline: true });
+          recordWord(currentWord.id, knew, { correctDelta: 0.5, incorrectDelta: 0, points: 0.5 });
         } else {
-          // На повторении ошибок не "штрафуем" прогрессом за повторный промах —
-          // просто отправляем слово в конец очереди.
-          await updateWordProgress(currentWord.id, false, { incorrectDelta: 0 });
+          await updateWordProgress(currentWord.id, false, { incorrectDelta: 0, offline: true });
+          recordWord(currentWord.id, knew, { correctDelta: 0, incorrectDelta: 0, points: 0 });
         }
       } else {
-        const result = await updateWordProgress(currentWord.id, knew);
+        await updateWordProgress(currentWord.id, knew, { offline: true });
 
-        // Считаем сколько слов выучили в этой сессии (correct_count стал >= 5)
         const wasLearnedBefore = currentWord.correct_count >= 5;
         const isNowLearned = knew && (currentWord.correct_count + 1) >= 5;
         const justLearned = !wasLearnedBefore && isNowLearned;
 
         if (justLearned && knew) {
-          // Обновляем оба счётчика
           setWordsLearnedInSession((prev) => prev + 1);
-          setWordsLearnedThisWeek((prev) => prev + 1);
+          incrementAndCheck(1);
         }
 
-        // Начисляем 1 очко за слово, угаданное с первой попытки
-        if (knew) {
-          await addPoints(1);
-        }
+        recordWord(currentWord.id, knew, { points: knew ? 1 : 0 });
       }
 
       if (round === 'initial') {
@@ -249,15 +163,12 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         }));
         if (!knew) initialWrongIdsRef.current.add(currentWord.id);
       } else {
-        // Во втором круге "не знаю" не штрафуем в отчёте,
-        // а за "знаю" после ошибки в первом круге даём 0.5.
         if (knew) {
           setStats((prev) => ({ ...prev, knew: prev.knew + 0.5 }));
         }
       }
 
       if (round === 'retry') {
-        // Очередь повторения: вправо = убрать слово, влево = в конец.
         setTrainingWords((prev) => {
           if (prev.length === 0) return prev;
           const head = prev[0]!;
@@ -269,7 +180,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         return;
       }
 
-      // Первый круг — линейно идём по списку, и в конце запускаем повтор ошибок.
       if (currentIndex + 1 >= trainingWords.length) {
         if (initialWrongIdsRef.current.size > 0) {
           const retryWords = trainingWords.filter((w) => initialWrongIdsRef.current.has(w.id));
@@ -289,17 +199,15 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     } catch (err) {
       console.error('[Training] handleSwipe error:', err);
     }
-    
+
     setIsProcessing(false);
+    processingRef.current = false;
   };
 
-  const handleRestart = () => {
-    // Не позволяем перезапустить если лимит достигнут
-    const currentLearned = (profile?.words_learned_this_week ?? 0) + wordsLearnedThisWeek;
-    if (currentLearned >= weeklyLimit && !profile?.is_premium) {
-      setWeeklyLimitReached(true);
-      return;
-    }
+  const handleRestart = async () => {
+    if (checkLimit()) return;
+
+    await flushSession();
 
     const tw = getTrainingWords();
     setTrainingWords(tw);
@@ -310,9 +218,12 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     setRound('initial');
     initialWrongIdsRef.current = new Set();
     retryTotalRef.current = 0;
-    setWordsLearnedInSession(0); // Сбрасываем счётчик сессии
+    setWordsLearnedInSession(0);
+    resetLocal();
+    startSession(groupId, groupName);
   };
 
+  // ─── Render: Loading ───
   if (loading) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
@@ -321,6 +232,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     );
   }
 
+  // ─── Render: No words ───
   if (words.length === 0) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
@@ -338,6 +250,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     );
   }
 
+  // ─── Render: Weekly limit reached ───
   if (weeklyLimitReached && !profile?.is_premium) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
@@ -380,9 +293,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
           <TouchableOpacity
             style={styles.backToGroupButton}
-            onPress={() => {
-              navigation.goBack();
-            }}
+            onPress={() => navigation.goBack()}
           >
             <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
           </TouchableOpacity>
@@ -397,32 +308,32 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     );
   }
 
+  // Отслеживаем достижение лимита во время сессии — вынесено в useEffect
+  // чтобы избежать side-effect в render-методе (checkLimit вызывает setState)
+  const [hitLimitThisSession, setHitLimitThisSession] = useState(false);
+
+  useEffect(() => {
+    if (finished && !profile?.is_premium) {
+      setHitLimitThisSession(checkLimit());
+    }
+  }, [finished, profile?.is_premium, checkLimit]);
+
+  // ─── Render: Finished ───
   if (finished) {
     const total = initialTotal;
     const percent = total > 0 ? Math.round((stats.knew / total) * 100) : 0;
 
-    // Проверяем, остались ли слова для тренировки
     const remainingWords = getTrainingWords();
     const allWordsArchived = remainingWords.length === 0;
 
-    // Проверяем, достигли ли лимита на этой неделе (мягкий лимит - блокируем только СЛЕДУЮЩИЕ сессии)
-    const currentLearned = profile?.words_learned_this_week ?? 0;
-    const totalLearnedAfterSession = currentLearned + wordsLearnedThisWeek;
-    const hitLimitThisSession = totalLearnedAfterSession >= weeklyLimit && currentLearned < weeklyLimit;
-    const alreadyHitLimitBeforeSession = currentLearned >= weeklyLimit;
-
-    // Если лимит был достигнут ДО этой сессии или в конце сессии — показываем блокировку
-    if ((!profile?.is_premium && alreadyHitLimitBeforeSession) || hitLimitThisSession) {
-      // Обновляем состояние без refetch (чтобы избежать бесконечного цикла ререндеров)
-      setWeeklyLimitReached(true);
-
+    if (hitLimitThisSession && !profile?.is_premium) {
       return (
         <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
           <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={styles.resultEmoji}>🔒</Text>
             <Text style={[styles.resultTitle, { color: colors.text }]}>Лимит на этой неделе исчерпан</Text>
             <Text style={[styles.resultSubtitle, { color: colors.muted }]}>
-              Вы выучили {Math.min(totalLearnedAfterSession, weeklyLimit)} из {weeklyLimit} слов
+              Вы выучили {wordsLearnedThisWeek} из {weeklyLimit} слов
             </Text>
 
             <View style={[styles.limitCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
@@ -457,9 +368,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
             <TouchableOpacity
               style={styles.backToGroupButton}
-              onPress={() => {
-                navigation.goBack();
-              }}
+              onPress={() => navigation.goBack()}
             >
               <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
             </TouchableOpacity>
@@ -503,7 +412,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
           )}
 
           {allWordsArchived ? (
-            // Все слова выучены — показываем сообщение и кнопку "Назад к словарю"
             <View style={[styles.successCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
               <Text style={[styles.successTitle, { color: colors.success }]}>
                 🎉 Отличная работа!
@@ -516,7 +424,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
               </Text>
             </View>
           ) : weeklyLimitReached && !profile?.is_premium ? (
-            // Лимит достигнут — показываем сообщение
             <View style={[styles.successCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
               <Text style={[styles.successTitle, { color: colors.muted }]}>
                 🔒 Лимит на этой неделе исчерпан
@@ -526,7 +433,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
               </Text>
             </View>
           ) : (
-            // Есть слова для тренировки — показываем кнопку "Ещё раз"
             <TouchableOpacity
               style={[
                 styles.restartButton,
@@ -578,9 +484,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
           <TouchableOpacity
             style={styles.backToGroupButton}
-            onPress={() => {
-              navigation.goBack();
-            }}
+            onPress={() => navigation.goBack()}
           >
             <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
           </TouchableOpacity>
@@ -595,6 +499,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     );
   }
 
+  // ─── Render: Active training ───
   const visibleCards = trainingWords.slice(currentIndex, currentIndex + CARDS_VISIBLE);
   const progress =
     trainingWords.length > 0
@@ -611,7 +516,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
             <ArrowLeft color={colors.text} size={24} />
           </TouchableOpacity>
         )}
-        {/* Название строго по центру экрана */}
         <View style={styles.headerTitlesAbsolute} pointerEvents="none">
           <Text style={[styles.headerTitle, { color: colors.text }]}>{groupName}</Text>
           <Text style={[styles.headerSubtitle, { color: colors.muted }]}>
@@ -620,18 +524,15 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
               : `${currentIndex + 1} / ${trainingWords.length}`}
           </Text>
         </View>
-        {/* Счётчики по краям */}
         <Text style={[styles.counterLeft, { color: colors.danger }]}>{stats.didntKnow}</Text>
         <View style={styles.headerSpacer} />
         <Text style={[styles.counterRight, { color: colors.success }]}>{formatScore(stats.knew)}</Text>
       </View>
 
-      {/* Прогресс-бар */}
       <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
         <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: colors.primary }]} />
       </View>
 
-      {/* Стек карточек */}
       <View style={styles.cardsContainer}>
         {[...visibleCards].reverse().map((word, reversedIndex) => {
           const stackIndex = visibleCards.length - 1 - reversedIndex;
@@ -649,7 +550,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         })}
       </View>
 
-      {/* Кнопки-подсказки */}
       <View style={[styles.buttonsRow, { paddingBottom: insets.bottom + spacing.lg }]}>
         <TouchableOpacity
           style={[
@@ -702,9 +602,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     gap: spacing.sm,
-  },
-  headerNoBack: {
-    justifyContent: 'center',
   },
   backButton: {
     padding: spacing.xs,

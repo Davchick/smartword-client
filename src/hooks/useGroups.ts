@@ -1,7 +1,18 @@
-import { useState, useEffect, useCallback } from 'react';
+/**
+ * useGroups — React Query версия.
+ *
+ * - useQuery для загрузки групп
+ * - useMutation для create/delete/rename — с optimistic updates
+ * - invalidateQueries автоматически обновляет все экраны
+ * - Guest mode через AsyncStorage
+ */
+
+import { useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { queryKey, invalidateGroups } from '../lib/queryKeys';
 
 export interface WordGroup {
   id: string;
@@ -11,160 +22,227 @@ export interface WordGroup {
   word_count: number;
 }
 
+// ─── Guest mode helpers ────────────────────────────────────────────────
+
+async function getGuestData(): Promise<{
+  groups: WordGroup[];
+  words: { id: string; group_id: string }[];
+}> {
+  const [groupsRaw, wordsRaw] = await Promise.all([
+    AsyncStorage.getItem('smartword_guest_groups'),
+    AsyncStorage.getItem('smartword_guest_words'),
+  ]);
+  const groups: WordGroup[] = groupsRaw ? JSON.parse(groupsRaw) : [];
+  const words: { id: string; group_id: string }[] = wordsRaw ? JSON.parse(wordsRaw) : [];
+  return { groups, words };
+}
+
+function generateGuestId(): string {
+  return `guest_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function computeWordCounts(groups: WordGroup[], words: { group_id: string }[]): WordGroup[] {
+  const counts: Record<string, number> = {};
+  for (const w of words) {
+    counts[w.group_id] = (counts[w.group_id] ?? 0) + 1;
+  }
+  return groups.map((g) => ({ ...g, word_count: counts[g.id] ?? 0 }));
+}
+
+// ─── Query function ────────────────────────────────────────────────────
+
+async function fetchGroupsQuery(authUser: ReturnType<typeof useAuth>['user']): Promise<WordGroup[]> {
+  if (authUser && getBaseUrl()) {
+    return apiGet<WordGroup[]>('/groups');
+  }
+
+  // Guest mode — считаем word_count из guest слов
+  const { groups, words } = await getGuestData();
+  return computeWordCounts(groups, words);
+}
+
+// ─── Hook ──────────────────────────────────────────────────────────────
+
 export const useGroups = () => {
   const { user: authUser } = useAuth();
-  const [groups, setGroups] = useState<WordGroup[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchGroups = useCallback(async () => {
-    setLoading(true);
-    try {
+  const {
+    data: groups = [],
+    isLoading: loading,
+    error,
+    refetch,
+  } = useQuery({
+    queryKey: queryKey.groups.list(),
+    queryFn: () => fetchGroupsQuery(authUser),
+    staleTime: 60 * 1000, // 1 мин — группы меняются реже чем слова
+    gcTime: 5 * 60 * 1000,
+  });
+
+  // ─── Mutations ─────────────────────────────────────────────────────
+
+  const createGroupMutation = useMutation({
+    mutationFn: async ({ name, language }: { name: string; language: string }) => {
       if (authUser && getBaseUrl()) {
-        const data = await apiGet<WordGroup[]>('/groups');
-        setGroups(data ?? []);
-        setError(null);
-        return;
+        return apiPost<WordGroup>('/groups', { name, language });
       }
+      // Guest mode
+      const { groups: existing } = await getGuestData();
+      const newGroup: WordGroup = {
+        id: generateGuestId(),
+        name,
+        language,
+        created_at: new Date().toISOString(),
+        word_count: 0,
+      };
+      await AsyncStorage.setItem(
+        'smartword_guest_groups',
+        JSON.stringify([...existing, newGroup])
+      );
+      return newGroup;
+    },
+    onMutate: async ({ name, language }) => {
+      const qKey = queryKey.groups.list();
+      await queryClient.cancelQueries({ queryKey: qKey });
+      const previous = queryClient.getQueryData<WordGroup[]>(qKey);
 
-      const [groupsRaw, wordsRaw] = await Promise.all([
-        AsyncStorage.getItem('smartword_guest_groups'),
-        AsyncStorage.getItem('smartword_guest_words'),
+      const optimisticGroup: WordGroup = {
+        id: generateGuestId(),
+        name,
+        language,
+        created_at: new Date().toISOString(),
+        word_count: 0,
+      };
+
+      queryClient.setQueryData(qKey, (old: WordGroup[] | undefined) => [
+        ...(old ?? []),
+        optimisticGroup,
       ]);
-      const guestGroups: WordGroup[] = groupsRaw ? JSON.parse(groupsRaw) : [];
-      const guestWords: { id: string; group_id: string }[] = wordsRaw ? JSON.parse(wordsRaw) : [];
-      const countsByGroup: Record<string, number> = {};
-      for (const w of guestWords) {
-        countsByGroup[w.group_id] = (countsByGroup[w.group_id] ?? 0) + 1;
+
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(queryKey.groups.list(), ctx.previous);
       }
-      const withCounts = guestGroups.map((g) => ({
-        ...g,
-        word_count: countsByGroup[g.id] ?? 0,
-      }));
-      setGroups(withCounts);
-      setError(null);
-    } catch (e) {
-      console.warn('[useGroups] fetchGroups error', e);
-      setError('Не удалось загрузить словари');
-    } finally {
-      setLoading(false);
-    }
-  }, [authUser]);
+    },
+    onSettled: () => {
+      invalidateGroups(queryClient);
+    },
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        if (authUser && getBaseUrl()) {
-          const data = await apiGet<WordGroup[]>('/groups');
-          if (!cancelled) {
-            setGroups(data ?? []);
-            setError(null);
-          }
-          return;
-        }
-
-        const [groupsRaw, wordsRaw] = await Promise.all([
-          AsyncStorage.getItem('smartword_guest_groups'),
-          AsyncStorage.getItem('smartword_guest_words'),
-        ]);
-        const guestGroups: WordGroup[] = groupsRaw ? JSON.parse(groupsRaw) : [];
-        const guestWords: { id: string; group_id: string }[] = wordsRaw ? JSON.parse(wordsRaw) : [];
-        const countsByGroup: Record<string, number> = {};
-        for (const w of guestWords) {
-          countsByGroup[w.group_id] = (countsByGroup[w.group_id] ?? 0) + 1;
-        }
-        const withCounts = guestGroups.map((g) => ({
-          ...g,
-          word_count: countsByGroup[g.id] ?? 0,
-        }));
-        if (!cancelled) {
-          setGroups(withCounts);
-          setError(null);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          console.warn('[useGroups] fetchGroups error', e);
-          setError('Не удалось загрузить словари');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (groupId: string) => {
+      if (authUser && getBaseUrl()) {
+        return apiDelete(`/groups/${groupId}`);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [fetchGroups]);
+      // Guest mode
+      const { groups: existingGroups, words: existingWords } = await getGuestData();
+      await Promise.all([
+        AsyncStorage.setItem(
+          'smartword_guest_groups',
+          JSON.stringify(existingGroups.filter((g) => g.id !== groupId))
+        ),
+        AsyncStorage.setItem(
+          'smartword_guest_words',
+          JSON.stringify(existingWords.filter((w) => w.group_id !== groupId))
+        ),
+      ]);
+    },
+    onMutate: async (groupId) => {
+      const qKey = queryKey.groups.list();
+      await queryClient.cancelQueries({ queryKey: qKey });
+      const previous = queryClient.getQueryData<WordGroup[]>(qKey);
 
-  const createGroup = async (name: string, language: string): Promise<{ error: string | null }> => {
-    if (authUser && getBaseUrl()) {
+      queryClient.setQueryData(qKey, (old: WordGroup[] | undefined) =>
+        old?.filter((g) => g.id !== groupId) ?? []
+      );
+
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(queryKey.groups.list(), ctx.previous);
+      }
+    },
+    onSettled: () => {
+      invalidateGroups(queryClient);
+    },
+  });
+
+  const renameGroupMutation = useMutation({
+    mutationFn: async ({
+      groupId,
+      name,
+      language,
+    }: {
+      groupId: string;
+      name: string;
+      language: string;
+    }) => {
+      if (authUser && getBaseUrl()) {
+        return apiPatch<WordGroup>(`/groups/${groupId}`, { name, language });
+      }
+      // Guest mode
+      const { groups: existing } = await getGuestData();
+      const updated = existing.map((g) =>
+        g.id === groupId ? { ...g, name, language } : g
+      );
+      await AsyncStorage.setItem('smartword_guest_groups', JSON.stringify(updated));
+      return updated.find((g) => g.id === groupId);
+    },
+    onMutate: async ({ groupId, name, language }) => {
+      const qKey = queryKey.groups.list();
+      await queryClient.cancelQueries({ queryKey: qKey });
+      const previous = queryClient.getQueryData<WordGroup[]>(qKey);
+
+      queryClient.setQueryData(qKey, (old: WordGroup[] | undefined) =>
+        old?.map((g) => (g.id === groupId ? { ...g, name, language } : g)) ?? []
+      );
+
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(queryKey.groups.list(), ctx.previous);
+      }
+    },
+    onSettled: () => {
+      invalidateGroups(queryClient);
+    },
+  });
+
+  return {
+    groups,
+    loading,
+    error: error ? 'Не удалось загрузить словари' : null,
+    createGroup: async (name: string, language: string) => {
       try {
-        await apiPost<WordGroup>('/groups', { name, language });
-        await fetchGroups();
+        await createGroupMutation.mutateAsync({ name, language });
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
         return { error: e?.body?.error ?? 'Не удалось создать словарь' };
       }
-    }
-    const groupsRaw = await AsyncStorage.getItem('smartword_guest_groups');
-    const existing: WordGroup[] = groupsRaw ? JSON.parse(groupsRaw) : [];
-    const newGroup: WordGroup = {
-      id: `guest_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-      name,
-      language,
-      created_at: new Date().toISOString(),
-      word_count: 0,
-    };
-    await AsyncStorage.setItem('smartword_guest_groups', JSON.stringify([...existing, newGroup]));
-    setGroups((prev) => [...prev, newGroup]);
-    return { error: null };
-  };
-
-  const deleteGroup = async (groupId: string): Promise<{ error: string | null }> => {
-    if (authUser && getBaseUrl()) {
+    },
+    deleteGroup: async (groupId: string) => {
       try {
-        await apiDelete(`/groups/${groupId}`);
-        await fetchGroups();
+        await deleteGroupMutation.mutateAsync(groupId);
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
         return { error: e?.body?.error ?? 'Не удалось удалить словарь' };
       }
-    }
-    const [groupsRaw, wordsRaw] = await Promise.all([
-      AsyncStorage.getItem('smartword_guest_groups'),
-      AsyncStorage.getItem('smartword_guest_words'),
-    ]);
-    const existingGroups: WordGroup[] = groupsRaw ? JSON.parse(groupsRaw) : [];
-    const existingWords: { id: string; group_id: string }[] = wordsRaw ? JSON.parse(wordsRaw) : [];
-    const newGroups = existingGroups.filter((g) => g.id !== groupId);
-    const newWords = existingWords.filter((w) => w.group_id !== groupId);
-    await Promise.all([
-      AsyncStorage.setItem('smartword_guest_groups', JSON.stringify(newGroups)),
-      AsyncStorage.setItem('smartword_guest_words', JSON.stringify(newWords)),
-    ]);
-    setGroups(newGroups);
-    return { error: null };
-  };
-
-  const renameGroup = async (groupId: string, name: string, language: string): Promise<{ error: string | null }> => {
-    if (authUser && getBaseUrl()) {
+    },
+    renameGroup: async (groupId: string, name: string, language: string) => {
       try {
-        await apiPatch<WordGroup>(`/groups/${groupId}`, { name, language });
-        setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, name, language } : g)));
+        await renameGroupMutation.mutateAsync({ groupId, name, language });
         return { error: null };
       } catch (err: unknown) {
         const e = err as { body?: { error?: string } };
         return { error: e?.body?.error ?? 'Не удалось обновить словарь' };
       }
-    }
-    const groupsRaw = await AsyncStorage.getItem('smartword_guest_groups');
-    const existing: WordGroup[] = groupsRaw ? JSON.parse(groupsRaw) : [];
-    const updated = existing.map((g) => (g.id === groupId ? { ...g, name, language } : g));
-    await AsyncStorage.setItem('smartword_guest_groups', JSON.stringify(updated));
-    setGroups((prev) => prev.map((g) => (g.id === groupId ? { ...g, name, language } : g)));
-    return { error: null };
+    },
+    refetch: () => refetch(),
   };
-
-  return { groups, loading, error, createGroup, deleteGroup, renameGroup, refetch: fetchGroups };
 };

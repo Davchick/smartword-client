@@ -10,9 +10,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Animated,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, Eye, EyeOff, Mail, Lock, ExternalLink } from 'lucide-react-native';
+import { ArrowLeft, Eye, EyeOff, Mail, Lock } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiPost, setTokens, getBaseUrl } from '../../lib/api';
@@ -21,7 +22,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
 import { useTheme, fonts, spacing, typography, radii } from '../../theme';
 import { Button } from '../../components/ui/Button';
-import { Checkbox } from '../../components/ui/Checkbox';
 import { importGuestDataIfNeeded } from '../../lib/guestImport';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -61,13 +61,24 @@ export const SignInScreen = ({ route, navigation }: Props) => {
   // Анимации
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(40)).current;
+  const animatingRef = useRef(false);
+  const emailInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
+    animatingRef.current = true;
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }),
-    ]).start();
-  }, []);
+    ]).start(() => {
+      animatingRef.current = false;
+    });
+    return () => {
+      // Останавливаем анимацию при размонтировании, чтобы избежать обновления unmounted компонента
+      fadeAnim.stopAnimation();
+      slideAnim.stopAnimation();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAuth = async () => {
     if (!email.trim() || !password.trim()) {
@@ -356,6 +367,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                 <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Mail color={colors.muted} size={17} />
                   <TextInput
+                    ref={emailInputRef}
                     style={[styles.input, { color: colors.text }]}
                     placeholder="Email"
                     placeholderTextColor={colors.muted}
@@ -365,14 +377,16 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                     autoCapitalize="none"
                     autoCorrect={false}
                     returnKeyType="next"
+                    onSubmitEditing={() => passwordInputRef.current?.focus()}
                   />
                 </View>
 
                 <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <Lock color={colors.muted} size={17} />
                   <TextInput
+                    ref={passwordInputRef}
                     style={[styles.input, styles.inputFlex, { color: colors.text }]}
-                    placeholder="Пароль (минимум 6 символов)"
+                    placeholder="Пароль"
                     placeholderTextColor={colors.muted}
                     value={password}
                     onChangeText={setPassword}
@@ -472,33 +486,46 @@ export const SignInScreen = ({ route, navigation }: Props) => {
 
                 {isSignUp && (
                   <View style={styles.agreementBlock}>
-                    {/* Ссылка на документы — видна ВСЕГДА (требование 2025-2026) */}
-                    <View style={[styles.policyLinkBlock, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <Text style={[styles.policyLinkLabel, { color: colors.muted }]}>
-                        📋 Перед регистрацией ознакомьтесь:
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => navigation.navigate('Legal')}
-                        activeOpacity={0.7}
-                        style={styles.policyLinkButton}
-                      >
-                        <Text style={[styles.policyLinkText, { color: colors.primary }]}>
-                          Политика конфиденциальности и Пользовательское соглашение
-                        </Text>
-                        <ExternalLink color={colors.primary} size={14} style={styles.policyLinkIcon} />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Чекбокс согласия — НЕ отмечен по умолчанию (требование 2025-2026) */}
-                    <Checkbox
-                      checked={agreementChecked}
+                    {/* Чекбокс согласия с кликабельными ссылками — НЕ отмечен по умолчанию (требование 2025-2026) */}
+                    <TouchableOpacity
+                      style={styles.agreementRow}
                       onPress={() => setAgreementChecked(!agreementChecked)}
-                      label="Я принимаю условия Политики конфиденциальности и Пользовательского соглашения"
-                    />
-                    
-                    <Text style={[styles.agreementHint, { color: colors.muted }]}>
-                      ⚠️ Вы должны явно подтвердить согласие (152-ФЗ, ст. 9)
-                    </Text>
+                      activeOpacity={0.7}
+                    >
+                      <View
+                        style={[
+                          styles.checkboxSquare,
+                          {
+                            backgroundColor: agreementChecked ? colors.primary : colors.card,
+                            borderColor: agreementChecked ? colors.primary : colors.border,
+                          },
+                        ]}
+                      >
+                        {agreementChecked && <Text style={styles.checkmark}>✓</Text>}
+                      </View>
+                      <Text style={[styles.agreementText, { color: colors.text }]}>
+                        Я принимаю условия{' '}
+                        <Text
+                          style={[styles.linkText, { color: colors.primary }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Linking.openURL('https://smart-word.ru/privacy');
+                          }}
+                        >
+                          Политики конфиденциальности
+                        </Text>
+                        {' '}и{' '}
+                        <Text
+                          style={[styles.linkText, { color: colors.primary }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Linking.openURL('https://smart-word.ru/terms');
+                          }}
+                        >
+                          Условий использования
+                        </Text>
+                      </Text>
+                    </TouchableOpacity>
                   </View>
                 )}
 
@@ -622,10 +649,30 @@ const styles = StyleSheet.create({
   toggleBtn: { alignItems: 'center', paddingVertical: spacing.sm },
   toggleText: { fontSize: typography.small, fontFamily: fonts.regular },
   agreementBlock: { gap: spacing.sm, marginTop: spacing.xs, paddingHorizontal: spacing.xs },
-  policyLinkBlock: { borderRadius: radii.md, padding: spacing.md, borderWidth: 1, gap: spacing.xs },
-  policyLinkLabel: { fontSize: typography.xs, fontFamily: fonts.regular },
-  policyLinkButton: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  policyLinkText: { fontSize: typography.small, fontFamily: fonts.medium, flex: 1 },
-  policyLinkIcon: { marginLeft: spacing.xs },
-  agreementHint: { fontSize: typography.xs, fontFamily: fonts.regular, marginTop: spacing.xs, fontStyle: 'italic' },
+  agreementRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  checkboxSquare: {
+    width: 22,
+    height: 22,
+    borderRadius: radii.sm,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  checkmark: {
+    fontSize: 14,
+    color: '#000',
+    fontWeight: 'bold',
+    lineHeight: 14,
+  },
+  agreementText: {
+    flex: 1,
+    fontSize: typography.small,
+    fontFamily: fonts.regular,
+    lineHeight: typography.small * 1.4,
+  },
+  linkText: {
+    fontFamily: fonts.bold,
+    textDecorationLine: 'underline',
+  },
 });
