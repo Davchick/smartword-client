@@ -13,8 +13,10 @@
 export const queryKey = {
   words: {
     all: ['words'] as const,
-    list: (groupId?: string) =>
-      groupId ? (['words', { groupId }] as const) : (['words'] as const),
+    list: (groupId?: string, fieldsKey?: string) =>
+      groupId || fieldsKey
+        ? (['words', { groupId: groupId ?? null, fields: fieldsKey ?? null }] as const)
+        : (['words'] as const),
     detail: (id: string) => ['words', id] as const,
   },
   groups: {
@@ -46,21 +48,30 @@ export const queryKey = {
 /**
  * Инвалидация связанных ключей после мутаций.
  *
- * useWordMutations.invalidateAll(queryClient) — инвалидирует слова + группы + статистику
+ * Принцип: инвалидировать только то, что реально изменилось.
+ * Избегаем каскадной инвалидации — каждый мутация вызывает
+ * ровно один refetch, а не 2-3 параллельных.
+ *
+ * stats и groups инвалидируются отдельно, когда действительно нужно.
  */
 export function invalidateWords(queryClient: import('@tanstack/react-query').QueryClient) {
-  return Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKey.words.all }),
-    queryClient.invalidateQueries({ queryKey: queryKey.groups.all }),
-    queryClient.invalidateQueries({ queryKey: queryKey.stats.all }),
-  ]);
+  // Инвалидируем все word-запросы (включая с fields= параметром)
+  return queryClient.invalidateQueries({ queryKey: queryKey.words.all });
+}
+
+/**
+ * Инвалидация конкретного слова (detail key) — минимальный refetch.
+ * Используется после updateProgress, чтобы не рефетчить весь список.
+ */
+export function invalidateWordDetail(
+  queryClient: import('@tanstack/react-query').QueryClient,
+  wordId: string
+) {
+  return queryClient.invalidateQueries({ queryKey: queryKey.words.detail(wordId) });
 }
 
 export function invalidateGroups(queryClient: import('@tanstack/react-query').QueryClient) {
-  return Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKey.groups.all }),
-    queryClient.invalidateQueries({ queryKey: queryKey.stats.all }),
-  ]);
+  return queryClient.invalidateQueries({ queryKey: queryKey.groups.all });
 }
 
 export function invalidateProfile(queryClient: import('@tanstack/react-query').QueryClient) {
@@ -68,17 +79,11 @@ export function invalidateProfile(queryClient: import('@tanstack/react-query').Q
 }
 
 export function invalidateStats(queryClient: import('@tanstack/react-query').QueryClient) {
-  return Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKey.stats.all }),
-    queryClient.invalidateQueries({ queryKey: queryKey.profile.all }),
-  ]);
+  return queryClient.invalidateQueries({ queryKey: queryKey.stats.all });
 }
 
 export function invalidateStreaks(queryClient: import('@tanstack/react-query').QueryClient) {
-  return Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKey.streaks.all }),
-    queryClient.invalidateQueries({ queryKey: queryKey.stats.all }),
-  ]);
+  return queryClient.invalidateQueries({ queryKey: queryKey.streaks.all });
 }
 
 export function invalidateAchievements(queryClient: import('@tanstack/react-query').QueryClient) {

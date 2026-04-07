@@ -47,7 +47,12 @@ export const useChat = () => {
 
     // Обновляем ref СИНХРОННО перед использованием — гарантируем консистентность
     messagesRef.current = [...messagesRef.current, userMessage];
-    const apiMessages = messagesRef.current.map((m) => ({ role: m.role, content: m.content }));
+
+    // Отправляем только последние 20 сообщений — AI достаточно контекста,
+    // а экономим трафик и время обработки при длинных чатах
+    const MAX_CONTEXT_MESSAGES = 20;
+    const contextMessages = messagesRef.current.slice(-MAX_CONTEXT_MESSAGES);
+    const apiMessages = contextMessages.map((m) => ({ role: m.role, content: m.content }));
 
     // State обновляем отдельно — не зависит от ref для render
     setMessages((prev) => [...prev, userMessage]);

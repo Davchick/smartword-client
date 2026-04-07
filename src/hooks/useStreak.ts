@@ -1,7 +1,7 @@
 /**
  * useStreak — React Query версия.
  *
- * - Два отдельных query: текущий streak и история
+ * - Один query для streak + history (через /streaks/summary) — экономия 1 запроса
  * - useMutation для checkIn
  * - invalidateStreaks после мутаций
  */
@@ -13,14 +13,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { queryKey, invalidateStreaks } from '../lib/queryKeys';
 import { UserStreak, StreakHistory } from '../types/achievements';
 
-async function fetchStreak(authUser: ReturnType<typeof useAuth>['user']): Promise<UserStreak | null> {
-  if (!authUser || !getBaseUrl()) return null;
-  return apiGet<UserStreak>('/streaks');
+interface StreakSummary {
+  streak: UserStreak;
+  history: StreakHistory[];
 }
 
-async function fetchStreakHistory(authUser: ReturnType<typeof useAuth>['user']): Promise<StreakHistory[]> {
-  if (!authUser || !getBaseUrl()) return [];
-  return apiGet<StreakHistory[]>('/streaks/history');
+async function fetchStreakSummary(authUser: ReturnType<typeof useAuth>['user']): Promise<StreakSummary | null> {
+  if (!authUser || !getBaseUrl()) return null;
+  return apiGet<StreakSummary>('/streaks/summary');
 }
 
 export const useStreak = () => {
@@ -28,12 +28,12 @@ export const useStreak = () => {
   const queryClient = useQueryClient();
 
   const {
-    data: streak = null,
+    data: summary = null,
     isLoading: loading,
-    refetch: refetchStreak,
+    refetch,
   } = useQuery({
-    queryKey: queryKey.streaks.current(),
-    queryFn: () => fetchStreak(authUser),
+    queryKey: queryKey.streaks.current(), // переиспользуем тот же ключ
+    queryFn: () => fetchStreakSummary(authUser),
     staleTime: 60 * 1000,
     gcTime: 5 * 60 * 1000,
     enabled: !!authUser,
@@ -44,20 +44,8 @@ export const useStreak = () => {
     },
   });
 
-  const {
-    data: history = [],
-    refetch: refetchHistory,
-  } = useQuery({
-    queryKey: queryKey.streaks.history(),
-    queryFn: () => fetchStreakHistory(authUser),
-    staleTime: 60 * 1000,
-    gcTime: 5 * 60 * 1000,
-    enabled: !!authUser,
-    retry: (failureCount, error) => {
-      if ((error as any)?.status === 401) return false;
-      return failureCount < 1;
-    },
-  });
+  const streak = summary?.streak ?? null;
+  const history = summary?.history ?? [];
 
   const checkInMutation = useMutation({
     mutationFn: async () => {
@@ -66,7 +54,11 @@ export const useStreak = () => {
     },
     onSuccess: (result) => {
       if (result) {
-        queryClient.setQueryData(queryKey.streaks.current(), result);
+        // Обновляем локальный кэш
+        queryClient.setQueryData(queryKey.streaks.current(), (prev: StreakSummary | null) => {
+          if (!prev) return prev;
+          return { ...prev, streak: result };
+        });
       }
     },
     onSettled: () => {
@@ -82,10 +74,7 @@ export const useStreak = () => {
     streak,
     history,
     loading,
-    refetch: () => {
-      refetchStreak();
-      refetchHistory();
-    },
+    refetch: () => refetch(),
     checkIn,
   };
 };

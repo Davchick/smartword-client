@@ -36,7 +36,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { groups, loading, createGroup, deleteGroup, renameGroup } = useGroups();
-  const { words } = useWords();
+  const { words } = useWords(undefined, { fields: ['group_id', 'correct_count'] });
   const { profile } = useProfile();
   const { stats } = useStats();
 
@@ -46,10 +46,9 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.allSettled([
-      queryClient.invalidateQueries({ queryKey: queryKey.groups.list() }),
-      queryClient.invalidateQueries({ queryKey: queryKey.stats.overview() }),
-    ]);
+    // Инвалидируем только groups — stats обновится по staleTime (60s)
+    // Избегаем лишнего запроса при каждом pull-to-refresh
+    await queryClient.invalidateQueries({ queryKey: queryKey.groups.list() });
     setRefreshing(false);
   }, []);
 

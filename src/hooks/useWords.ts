@@ -34,6 +34,13 @@ interface WordsResponse {
   totalCount: number;
 }
 
+interface UseWordsOptions {
+  /** Запрашивать только указанные поля. Экономит трафик. */
+  fields?: string[];
+  /** Максимальное число слов (по умолчанию 200, максимум 500). */
+  limit?: number;
+}
+
 // ─── Guest mode helpers ────────────────────────────────────────────────
 
 async function getGuestWords(): Promise<Word[]> {
@@ -53,15 +60,18 @@ function generateGuestId(): string {
 
 async function fetchWordsQuery(
   authUser: ReturnType<typeof useAuth>['user'],
-  groupId?: string
+  groupId?: string,
+  options?: UseWordsOptions
 ): Promise<WordsResponse> {
   if (authUser && getBaseUrl()) {
-    const path = groupId
-      ? `/words?groupId=${encodeURIComponent(groupId)}`
-      : '/words';
+    const params = new URLSearchParams();
+    if (groupId) params.set('groupId', groupId);
+    if (options?.fields) params.set('fields', options.fields.join(','));
+    if (options?.limit) params.set('limit', String(options.limit));
+    const path = params.toString() ? `/words?${params.toString()}` : '/words';
     const data = await apiGet<WordsResponse | Word[]>(path);
     if (Array.isArray(data)) {
-      return { words: data, totalCount: data.length };
+      return { words: data as unknown as Word[], totalCount: data.length };
     }
     return { words: data?.words ?? [], totalCount: data?.totalCount ?? data?.words?.length ?? 0 };
   }
@@ -74,7 +84,7 @@ async function fetchWordsQuery(
 
 // ─── Hook ──────────────────────────────────────────────────────────────
 
-export const useWords = (groupId?: string) => {
+export const useWords = (groupId?: string, options?: UseWordsOptions) => {
   const { user: authUser } = useAuth();
   const queryClient = useQueryClient();
 
@@ -90,8 +100,8 @@ export const useWords = (groupId?: string) => {
     isLoading: loading,
     refetch,
   } = useQuery({
-    queryKey: queryKey.words.list(groupId),
-    queryFn: () => fetchWordsQuery(authUser, groupId),
+    queryKey: queryKey.words.list(groupId, options?.fields?.join(',')),
+    queryFn: () => fetchWordsQuery(authUser, groupId, options),
     // Слова — часто меняющиеся данные. Refetch при фокусе экрана — ок.
     staleTime: 30 * 1000, // 30 сек — не refetch'им слишком часто
     gcTime: 5 * 60 * 1000, // 5 мин

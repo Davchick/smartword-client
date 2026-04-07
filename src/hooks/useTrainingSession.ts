@@ -132,8 +132,23 @@ export const useTrainingSession = () => {
   );
 
   /**
+   * Сохранить pending сессию в AsyncStorage (crash protection).
+   * Вызывать при каждом recordWord (debounced).
+   */
+  const _savePendingSession = useCallback(async (session: TrainingSessionData) => {
+    try {
+      await AsyncStorage.setItem(PENDING_SESSION_KEY, JSON.stringify(session));
+    } catch {
+      // Не критично — данные уже в памяти
+    }
+  }, []);
+
+  /**
    * Отправить накопленные данные на сервер.
    * Вызывать при выходе из тренировки (cleanup / AppState background).
+   *
+   * Оптимизировано: batch update — один запрос вместо N.
+   * Все обновления слов + training progress отправляются одним POST /words/progress/batch.
    */
   const flushSession = useCallback(async (): Promise<FlushResult> => {
     const session = sessionRef.current;
@@ -156,38 +171,35 @@ export const useTrainingSession = () => {
     let failed = 0;
 
     if (isAuthorized) {
-      // Отправляем каждое обновление слова последовательно с retry
-      for (let i = 0; i < session.updates.length; i++) {
-        const update = session.updates[i]!;
-        const { error } = await postWithRetry(
-          `/words/${update.wordId}/progress`,
-          { knew: update.knew, correctDelta: update.correctDelta, incorrectDelta: update.incorrectDelta },
-          3
-        );
+      // BATCH: один запрос на все обновления слов + training progress
+      const { data, error } = await postWithRetry<{
+        updated?: number;
+        just_learned?: number;
+        words_learned_this_week?: number;
+        limit_reached?: boolean;
+      }>(
+        '/words/progress/batch',
+        {
+          updates: session.updates.map(u => ({
+            wordId: u.wordId,
+            knew: u.knew,
+            correctDelta: u.correctDelta,
+            incorrectDelta: u.incorrectDelta,
+          })),
+          totalPoints: session.totalPoints,
+        },
+        3,
+      );
 
-        if (error) {
-          failed++;
-          // Если сервер заблокировал — сохраняем оставшиеся и выходим
-          if (error === 'SERVER_RATE_LIMITED') {
-            session.updates = session.updates.slice(i);
-            session.totalPoints = session.updates.reduce((s, u) => s + u.points, 0);
-            await _savePendingSession(session);
-            flushingRef.current = false;
-            return { success: false, sent, failed: failed + (session.updates.length), willRetry: true };
-          }
-        } else {
-          sent++;
-        }
-      }
-
-      // Отправляем очки (ОДИН запрос, не N)
-      if (session.totalPoints > 0) {
-        await postWithRetry('/stats/training-progress', { points: session.totalPoints }, 2);
+      if (error) {
+        // Ошибка — сохраняем в pending для retry при reconnect
+        await _savePendingSession(session);
+        failed = session.updates.length;
+      } else {
+        sent = data?.updated ?? session.updates.length;
       }
     } else {
-      // Гостевой режим — очки не отправляем, обновления только локально.
-      // Данные уже сохранены через optimistic update в useWords.
-      // Просто помечаем сессию завершённой.
+      // Гостевой режим — данные уже сохранены через optimistic update в useWords.
     }
 
     // Очищаем сессию
@@ -206,19 +218,7 @@ export const useTrainingSession = () => {
       failed,
       willRetry: failed > 0,
     };
-  }, [authUser]);
-
-  /**
-   * Сохранить pending сессию в AsyncStorage (crash protection).
-   * Вызывать при каждом recordWord (debounced).
-   */
-  const _savePendingSession = useCallback(async (session: TrainingSessionData) => {
-    try {
-      await AsyncStorage.setItem(PENDING_SESSION_KEY, JSON.stringify(session));
-    } catch {
-      // Не критично — данные уже в памяти
-    }
-  }, []);
+  }, [authUser, _savePendingSession]);
 
   // ── Crash protection: debounce-сохранение pending в AsyncStorage ──
 

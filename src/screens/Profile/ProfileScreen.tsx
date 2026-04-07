@@ -62,11 +62,8 @@ export const ProfileScreen = () => {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.allSettled([
-      queryClient.invalidateQueries({ queryKey: queryKey.profile.me() }),
-      queryClient.invalidateQueries({ queryKey: queryKey.stats.trainingProgress() }),
-      queryClient.invalidateQueries({ queryKey: queryKey.streaks.current() }),
-    ]);
+    // Инвалидируем только profile — stats и streaks обновятся по staleTime
+    await queryClient.invalidateQueries({ queryKey: queryKey.profile.me() });
     setRefreshing(false);
   }, []);
 

@@ -45,7 +45,7 @@ interface Section {
 export const ArchiveScreen = ({ navigation }: Props) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { words, loading } = useWords();
+  const { words, loading } = useWords(undefined, { limit: 500 });
   const { groups } = useGroups();
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'count' | 'name' | 'score'>('count');
@@ -55,10 +55,8 @@ export const ArchiveScreen = ({ navigation }: Props) => {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.allSettled([
-      queryClient.invalidateQueries({ queryKey: queryKey.words.list() }),
-      queryClient.invalidateQueries({ queryKey: queryKey.groups.list() }),
-    ]);
+    // Инвалидируем только words — groups уже в кэше с staleTime=60s
+    await queryClient.invalidateQueries({ queryKey: queryKey.words.list() });
     setRefreshing(false);
   }, [queryClient]);
 

@@ -26,7 +26,7 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const { groups } = useGroups();
-  const { words } = useWords();
+  const { words } = useWords(undefined, { fields: ['group_id', 'correct_count'] });
   const notificationsRequestedRef = useRef(false);
 
   // Запрашиваем разрешения на уведомления при первом входе в тренировку
