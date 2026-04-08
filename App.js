@@ -19,6 +19,7 @@ import {
 } from '@expo-google-fonts/montserrat';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { ToastProvider } from './src/components/Toast';
+import { OfflineBanner } from './src/components/OfflineBanner';
 import { ThemeProvider } from './src/theme/ThemeContext';
 import { useTheme } from './src/theme';
 import { AuthProvider } from './src/contexts/AuthContext';
@@ -28,11 +29,26 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './src/lib/queryClient';
 
 const AppInner = () => {
-  const { colors, scheme: resolvedScheme } = useTheme();
+  const { colors, scheme: resolvedTheme } = useTheme();
+
+  // Android Navigation Bar — цвет привязан к теме приложения
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const isLight = resolvedTheme === 'light';
+    (async () => {
+      try {
+        await NavigationBar.setBackgroundColorAsync(colors.background);
+        await NavigationBar.setButtonStyleAsync(isLight ? 'dark' : 'light');
+      } catch {
+        // игнорируем, если платформа не поддерживает
+      }
+    })();
+  }, [colors.background, resolvedTheme]);
 
   return (
     <>
-      <StatusBar style={resolvedScheme === 'light' ? 'dark' : 'light'} />
+      <StatusBar style={resolvedTheme === 'light' ? 'dark' : 'light'} />
       <View
         style={{
           flex: 1,
@@ -41,6 +57,7 @@ const AppInner = () => {
       >
         <AuthProvider>
           <ToastProvider>
+            <OfflineBanner />
             <RootNavigator />
           </ToastProvider>
         </AuthProvider>
@@ -64,23 +81,6 @@ export default function App() {
     // Разрешения запрашиваются при первом действии пользователя (тренировка, профиль).
   }, []);
 
-  useEffect(() => {
-    // Настраиваем цвет системной навигационной панели Android под тему приложения
-    if (Platform.OS !== 'android') {
-      return;
-    }
-
-    // Используем фиксированный тёмный цвет для консистентности со splash screen
-    // Тема внутри приложения управляется через ThemeProvider
-    (async () => {
-      try {
-        await NavigationBar.setBackgroundColorAsync('#020617');
-        await NavigationBar.setButtonStyleAsync('light');
-      } catch {
-        // игнорируем, если платформа не поддерживает
-      }
-    })();
-  }, []);
   const [fontsLoaded] = useFonts({
     Poppins_600SemiBold,
     Poppins_700Bold,

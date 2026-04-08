@@ -20,15 +20,15 @@ const PADDING = 40;
 const GRADIENT_START = '#06D6A0';
 const GRADIENT_END = '#04916A';
 
-// Default empty data for 7 days - attractive curve to tempt users
-const DEFAULT_EMPTY_DATA: TrainingDayProgress[] = [
-  { date: '', dayLabel: 'Пн', points: 12, isToday: false },
-  { date: '', dayLabel: 'Вт', points: 28, isToday: false },
-  { date: '', dayLabel: 'Ср', points: 15, isToday: false },
-  { date: '', dayLabel: 'Чт', points: 42, isToday: false },
-  { date: '', dayLabel: 'Пт', points: 35, isToday: false },
-  { date: '', dayLabel: 'Сб', points: 58, isToday: false },
-  { date: '', dayLabel: 'Вс', points: 47, isToday: true },
+// Пустые данные для графика — нулевые значения, только дни недели
+const EMPTY_CHART_DATA: TrainingDayProgress[] = [
+  { date: '', dayLabel: 'Пн', points: 0, isToday: false },
+  { date: '', dayLabel: 'Вт', points: 0, isToday: false },
+  { date: '', dayLabel: 'Ср', points: 0, isToday: false },
+  { date: '', dayLabel: 'Чт', points: 0, isToday: false },
+  { date: '', dayLabel: 'Пт', points: 0, isToday: false },
+  { date: '', dayLabel: 'Сб', points: 0, isToday: false },
+  { date: '', dayLabel: 'Вс', points: 0, isToday: true },
 ];
 
 export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = false }) => {
@@ -42,15 +42,15 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
 
   // Стабилизируем данные — не пересоздаём массив каждый рендер
   const chartData = useMemo(
-    () => data.length > 0 ? data : DEFAULT_EMPTY_DATA,
+    () => data.length > 0 ? data : EMPTY_CHART_DATA,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.length, JSON.stringify(data)]
   );
+  const isEmpty = data.length === 0 || data.every((d) => d.points === 0);
   const maxPoints = useMemo(() => Math.max(...chartData.map((d) => d.points), 1), [chartData]);
   const totalPoints = useMemo(() => {
-    const src = locked ? DEFAULT_EMPTY_DATA : chartData;
-    return src.reduce((sum, d) => sum + d.points, 0);
-  }, [locked, chartData]);
+    return chartData.reduce((sum, d) => sum + d.points, 0);
+  }, [chartData]);
 
   // Запускаем анимацию только один раз при монтировании или смене данных
   useEffect(() => {
@@ -138,7 +138,11 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Прогресс за 7 дней</Text>
-        <Text style={[styles.totalValue, { color: colors.primary }]}>{totalPoints}</Text>
+        {isEmpty && !locked ? (
+          <Text style={[styles.emptyHint, { color: colors.muted }]}>Начните тренироваться</Text>
+        ) : (
+          <Text style={[styles.totalValue, { color: colors.primary }]}>{totalPoints}</Text>
+        )}
       </View>
 
       {/* Chart */}
@@ -285,6 +289,10 @@ const styles = StyleSheet.create({
   totalValue: {
     fontSize: typography.subtitle,
     fontFamily: fonts.bold,
+  },
+  emptyHint: {
+    fontSize: typography.small,
+    fontFamily: fonts.regular,
   },
   chartContainer: {
     alignItems: 'center',

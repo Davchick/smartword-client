@@ -33,18 +33,6 @@ export type GroupsStackParamList = {
     language: string;
   };
   Archive: undefined;
-  TrainingModes: {
-    groupId?: string;
-    groupName?: string;
-  };
-  Training: {
-    groupId?: string;
-    groupName?: string;
-  };
-  TrainingWrite: {
-    groupId?: string;
-    groupName?: string;
-  };
 };
 
 // --- Training Stack (внутри таба Тренировка) ---
@@ -69,34 +57,22 @@ export type GroupsScreenProps = CompositeScreenProps<
   BottomTabScreenProps<MainTabParamList>
 >;
 
-export type GroupDetailScreenProps = NativeStackScreenProps<
-  GroupsStackParamList,
-  'GroupDetail'
+export type GroupDetailScreenProps = CompositeScreenProps<
+  NativeStackScreenProps<GroupsStackParamList, 'GroupDetail'>,
+  BottomTabScreenProps<MainTabParamList>
 >;
 
 export type TrainingScreenProps = NativeStackScreenProps<
-  GroupsStackParamList,
-  'Training'
-> | NativeStackScreenProps<
   TrainingStackParamList,
   'Training'
 >;
 
 export type TrainingModesScreenProps = NativeStackScreenProps<
-  GroupsStackParamList,
-  'TrainingModes'
-> | NativeStackScreenProps<
   TrainingStackParamList,
   'TrainingModes'
 >;
 
 export type TrainingWriteScreenProps = NativeStackScreenProps<
-  GroupsStackParamList,
-  'TrainingWrite'
-> | NativeStackScreenProps<
   TrainingStackParamList,
   'TrainingWrite'
 >;
-
-// Когда TrainingModesScreen открывается напрямую из таба (без groupId)
-export type TabTrainingScreenProps = BottomTabScreenProps<MainTabParamList, 'TrainingTab'>;

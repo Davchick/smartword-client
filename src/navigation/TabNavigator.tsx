@@ -1,7 +1,9 @@
 import React from 'react';
+import { Platform, Pressable } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BookOpen, Dumbbell, MessageCircle, User } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { useTheme, fonts } from '../theme';
 import type { MainTabParamList, GroupsStackParamList, TrainingStackParamList } from './types';
 
@@ -11,7 +13,6 @@ import { ArchiveScreen } from '../screens/Groups/ArchiveScreen';
 import { TrainingModesScreen } from '../screens/Training/TrainingModesScreen';
 import { TrainingScreen } from '../screens/Training/TrainingScreen';
 import { WritingTrainingScreen } from '../screens/Training/WritingTrainingScreen';
-// TrainingScreen используется внутри GroupsStack
 import { ChatScreen } from '../screens/Chat/ChatScreen';
 import { ProfileScreen } from '../screens/Profile/ProfileScreen';
 
@@ -19,17 +20,32 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const GroupsStack = createNativeStackNavigator<GroupsStackParamList>();
 const TrainingStack = createNativeStackNavigator<TrainingStackParamList>();
 
+// Haptic-обёртка для таб-кнопок
+const HapticTab: React.FC<any> = (props) => {
+  const { onPress, ...rest } = props;
+  return (
+    <Pressable
+      {...rest}
+      onPress={(e) => {
+        if (Platform.OS !== 'web') {
+          Haptics.selectionAsync().catch(() => {});
+        }
+        onPress?.(e);
+      }}
+    />
+  );
+};
+
+// GroupsStack — только словари и архив. Тренировки — через TrainingTab.
 const GroupsNavigator = () => (
   <GroupsStack.Navigator screenOptions={{ headerShown: false }}>
     <GroupsStack.Screen name="Groups" component={GroupsScreen} />
     <GroupsStack.Screen name="GroupDetail" component={GroupDetailScreen} />
     <GroupsStack.Screen name="Archive" component={ArchiveScreen} />
-    <GroupsStack.Screen name="TrainingModes" component={TrainingModesScreen} />
-    <GroupsStack.Screen name="Training" component={TrainingScreen} />
-    <GroupsStack.Screen name="TrainingWrite" component={WritingTrainingScreen} />
   </GroupsStack.Navigator>
 );
 
+// TrainingStack — единственный источник training-экранов
 const TrainingNavigator = () => (
   <TrainingStack.Navigator screenOptions={{ headerShown: false }}>
     <TrainingStack.Screen name="TrainingModes" component={TrainingModesScreen} />
@@ -67,6 +83,7 @@ export const TabNavigator = () => {
         options={{
           tabBarLabel: 'Словари',
           tabBarIcon: ({ color, size }) => <BookOpen color={color} size={size} />,
+          tabBarButton: HapticTab as any,
         }}
       />
       <Tab.Screen
@@ -75,6 +92,7 @@ export const TabNavigator = () => {
         options={{
           tabBarLabel: 'Тренировка',
           tabBarIcon: ({ color, size }) => <Dumbbell color={color} size={size} />,
+          tabBarButton: HapticTab as any,
         }}
       />
       <Tab.Screen
@@ -83,6 +101,7 @@ export const TabNavigator = () => {
         options={{
           tabBarLabel: 'AI-чат',
           tabBarIcon: ({ color, size }) => <MessageCircle color={color} size={size} />,
+          tabBarButton: HapticTab as any,
         }}
       />
       <Tab.Screen
@@ -91,6 +110,7 @@ export const TabNavigator = () => {
         options={{
           tabBarLabel: 'Профиль',
           tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
+          tabBarButton: HapticTab as any,
         }}
       />
     </Tab.Navigator>

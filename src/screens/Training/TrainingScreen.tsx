@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -17,10 +16,13 @@ import { useProfile } from '../../hooks/useProfile';
 import { useTrainingSession } from '../../hooks/useTrainingSession';
 import { useWeeklyLimit } from '../../hooks/useWeeklyLimit';
 import { PaywallModal } from '../../components/PaywallModal';
-import type { TrainingScreenProps, TabTrainingScreenProps } from '../../navigation/types';
+import { useToast } from '../../components/Toast';
+import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
+import { ARCHIVE_THRESHOLD } from '../../constants';
+import type { TrainingScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
 
-type Props = TrainingScreenProps | TabTrainingScreenProps;
+type Props = TrainingScreenProps;
 
 const CARDS_VISIBLE = 3;
 
@@ -32,6 +34,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const groupId = params && 'groupId' in params ? params.groupId : undefined;
   const groupName = params && 'groupName' in params ? params.groupName : 'Все слова';
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
 
   const { words, loading, updateWordProgress, getTrainingWords, refetch: refetchWords } = useWords(groupId);
   const { profile, refetch: refetchProfile } = useProfile();
@@ -144,8 +147,8 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       } else {
         await updateWordProgress(currentWord.id, knew, { offline: true });
 
-        const wasLearnedBefore = currentWord.correct_count >= 5;
-        const isNowLearned = knew && (currentWord.correct_count + 1) >= 5;
+        const wasLearnedBefore = currentWord.correct_count >= ARCHIVE_THRESHOLD;
+        const isNowLearned = knew && (currentWord.correct_count + 1) >= ARCHIVE_THRESHOLD;
         const justLearned = !wasLearnedBefore && isNowLearned;
 
         if (justLearned && knew) {
@@ -197,7 +200,12 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         setCurrentIndex((prev) => prev + 1);
       }
     } catch (err) {
+      // Ошибка — НЕ переходим к следующему слову, показываем toast
       console.error('[Training] handleSwipe error:', err);
+      setIsProcessing(false);
+      processingRef.current = false;
+      showToast('Не удалось сохранить прогресс. Попробуйте ещё раз.', 'error', 3000);
+      return; // НЕ переходим к следующему слову
     }
 
     setIsProcessing(false);
@@ -225,11 +233,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
   // ─── Render: Loading ───
   if (loading) {
-    return (
-      <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
+    return <SkeletonScreen type="training" showHeader={false} />;
   }
 
   // ─── Render: No words ───

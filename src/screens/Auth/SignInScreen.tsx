@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Animated,
   Linking,
+  Keyboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Eye, EyeOff, Mail, Lock } from 'lucide-react-native';
@@ -21,9 +22,9 @@ import { GoogleSignin, googleSignInAvailable } from '../../lib/googleSignIn';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
 import { useTheme, fonts, spacing, typography, radii } from '../../theme';
-import { Button } from '../../components/ui/Button';
 import { importGuestDataIfNeeded } from '../../lib/guestImport';
 import type { RootStackParamList } from '../../navigation/types';
+import { SvgXml } from 'react-native-svg';
 
 /** Ник по умолчанию: часть email до @ (makar@gmail.com → makar) */
 const nicknameFromEmail = (email: string) => {
@@ -33,14 +34,25 @@ const nicknameFromEmail = (email: string) => {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
-// SVG-подобный Google логотип через символы (без внешних зависимостей)
+// Google логотип с фирменными цветами (SVG)
 const GoogleIcon = ({ size = 18 }: { size?: number }) => (
-  <Text style={{ fontSize: size, lineHeight: size + 2 }}>G</Text>
+  <SvgXml
+    width={size}
+    height={size}
+    viewBox="0 0 48 48"
+    xml={`
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59a14.5 14.5 0 0 1 0-9.18l-7.98-6.19a24.01 24.01 0 0 0 0 21.56l7.98-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      <path fill="none" d="M0 0h48v48H0z"/>
+    `}
+  />
 );
 
 export const SignInScreen = ({ route, navigation }: Props) => {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { showToast } = useToast();
   const { setUser } = useAuth();
   const fromProfile = route.params?.fromProfile ?? false;
@@ -56,11 +68,12 @@ export const SignInScreen = ({ route, navigation }: Props) => {
   const [resendLoading, setResendLoading] = useState(false);
   const [emailNotVerifiedShown, setEmailNotVerifiedShown] = useState(false);
   const [agreementChecked, setAgreementChecked] = useState(false);
-  const [showLegalLinks, setShowLegalLinks] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
+  const [passwordFocused, setPasswordFocused] = useState(false);
 
   // Анимации
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(40)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
   const animatingRef = useRef(false);
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
@@ -68,19 +81,19 @@ export const SignInScreen = ({ route, navigation }: Props) => {
   useEffect(() => {
     animatingRef.current = true;
     Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 100, friction: 14 }),
     ]).start(() => {
       animatingRef.current = false;
     });
     return () => {
-      // Останавливаем анимацию при размонтировании, чтобы избежать обновления unmounted компонента
       fadeAnim.stopAnimation();
       slideAnim.stopAnimation();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleAuth = async () => {
+    Keyboard.dismiss();
     if (!email.trim() || !password.trim()) {
       showToast('Введите email и пароль', 'error');
       return;
@@ -124,7 +137,6 @@ export const SignInScreen = ({ route, navigation }: Props) => {
         if (!existing?.trim()) {
           await AsyncStorage.setItem('smartword_nickname', nicknameFromEmail(data.user.email));
         }
-        // После первого входа в новый аккаунт пробуем импортировать гостевые данные (словари, слова, архив)
         await importGuestDataIfNeeded(data.user.id);
         showToast('Добро пожаловать!', 'success');
       }
@@ -159,20 +171,19 @@ export const SignInScreen = ({ route, navigation }: Props) => {
     }
     setForgotLoading(true);
     try {
-      // Таймаут 10 секунд для защиты от зависания
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
-      const data = await apiPost<{ message?: string }>('/auth/forgot-password', { email: email.trim() }, { 
+
+      const data = await apiPost<{ message?: string }>('/auth/forgot-password', { email: email.trim() }, {
         skipAuth: true,
-        signal: controller.signal 
+        signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
       showToast(data?.message || 'Письмо отправлено. Проверьте почту.', 'success');
       setShowForgotPassword(false);
     } catch (err: unknown) {
-      const e = err as { body?: { error?: string }; message?: string };
+      const e = err as { body?: { error?: string }; message?: string; name?: string };
       if (e?.name === 'AbortError' || e?.message?.includes('abort')) {
         showToast('Превышено время ожидания. Проверьте интернет и попробуйте снова.', 'error');
       } else {
@@ -190,20 +201,19 @@ export const SignInScreen = ({ route, navigation }: Props) => {
     }
     setResendLoading(true);
     try {
-      // Таймаут 10 секунд для защиты от зависания
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
-      await apiPost<{ message?: string }>('/auth/resend-verification', { email: email.trim() }, { 
+
+      await apiPost<{ message?: string }>('/auth/resend-verification', { email: email.trim() }, {
         skipAuth: true,
-        signal: controller.signal 
+        signal: controller.signal
       });
-      
+
       clearTimeout(timeoutId);
       showToast('Письмо отправлено повторно. Проверьте почту.', 'success');
       setEmailNotVerifiedShown(false);
     } catch (err: unknown) {
-      const e = err as { body?: { error?: string }; message?: string };
+      const e = err as { body?: { error?: string }; message?: string; name?: string };
       if (e?.name === 'AbortError' || e?.message?.includes('abort')) {
         showToast('Превышено время ожидания. Проверьте интернет и попробуйте снова.', 'error');
       } else {
@@ -291,81 +301,60 @@ export const SignInScreen = ({ route, navigation }: Props) => {
     }
   };
 
+  const inputBorder = useCallback((focused: boolean) => ({
+    borderBottomWidth: focused ? 2 : 1,
+    borderBottomColor: focused ? colors.primary : isDark ? 'rgba(148,163,184,0.3)' : 'rgba(148,163,184,0.4)',
+  }), [colors.primary, isDark]);
+
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: 'transparent' }]}
+      style={[styles.container, { backgroundColor: colors.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={insets.top}
     >
       {fromProfile && (
         <TouchableOpacity
-          style={[styles.backBtn, { top: insets.top + spacing.sm, backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[styles.backBtn, { backgroundColor: isDark ? 'rgba(30,41,59,0.8)' : 'rgba(255,255,255,0.8)' }]}
           onPress={() => navigation.goBack()}
-          activeOpacity={0.7}
+          activeOpacity={0.6}
         >
-          <ArrowLeft color={colors.text} size={20} />
+          <ArrowLeft color={colors.text} size={20} strokeWidth={2} />
         </TouchableOpacity>
       )}
 
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + (fromProfile ? 72 : spacing.xl * 2), paddingBottom: insets.bottom + spacing.xl },
+          { paddingTop: insets.top + (fromProfile ? 60 : 80), paddingBottom: insets.bottom + 40 },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
         <Animated.View
           style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
         >
-          <View style={[styles.authCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-            {/* Лого */}
-            <View style={styles.logoBlock}>
-              <View style={[styles.logoBox, { backgroundColor: colors.primary }]}>
-                <Text style={styles.logoText}>SW</Text>
-              </View>
-              <Text style={[styles.appName, { color: colors.text }]}>SmartWord</Text>
-              <Text style={[styles.tagline, { color: colors.muted }]}>
-                {isSignUp ? 'Создайте аккаунт' : 'Войдите в аккаунт'}
-              </Text>
-            </View>
+          {/* Заголовок */}
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: colors.text }]}>
+              {showForgotPassword ? 'Сброс пароля' : isSignUp ? 'Создать аккаунт' : 'Вход'}
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.muted }]}>
+              {showForgotPassword 
+                ? 'Отправим ссылку для восстановления' 
+                : isSignUp 
+                  ? 'Начните изучение языков' 
+                  : 'Введите данные для входа'}
+            </Text>
+          </View>
 
-            {/* Google OAuth кнопка — только в dev/build, не в Expo Go */}
-            {googleSignInAvailable && !showForgotPassword && (
-              <>
-                <TouchableOpacity
-                  style={[styles.googleBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
-                  onPress={handleGoogleSignIn}
-                  disabled={googleLoading}
-                  activeOpacity={0.8}
-                >
-                  {googleLoading ? (
-                    <ActivityIndicator color={colors.text} size="small" />
-                  ) : (
-                    <>
-                      <View style={[styles.googleIconWrap, { backgroundColor: '#fff' }]}>
-                        <Text style={styles.googleG}>G</Text>
-                      </View>
-                      <Text style={[styles.googleBtnText, { color: colors.text }]}>
-                        Продолжить через Google
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                {!showForgotPassword && (
-                  <View style={styles.dividerRow}>
-                    <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-                    <Text style={[styles.dividerText, { color: colors.muted }]}>или</Text>
-                    <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-                  </View>
-                )}
-              </>
-            )}
-
-            {/* Форма */}
+          {/* Форма */}
+          <View style={styles.form}>
             {!showForgotPassword ? (
-              <View style={styles.form}>
-                <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Mail color={colors.muted} size={17} />
+              <>
+                {/* Email */}
+                <View style={[styles.inputContainer, { borderBottomWidth: inputBorder(emailFocused).borderBottomWidth, borderBottomColor: inputBorder(emailFocused).borderBottomColor }]}>
+                  <Mail color={emailFocused ? colors.primary : colors.muted} size={18} strokeWidth={1.8} style={styles.inputIcon} />
                   <TextInput
                     ref={emailInputRef}
                     style={[styles.input, { color: colors.text }]}
@@ -377,116 +366,96 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                     autoCapitalize="none"
                     autoCorrect={false}
                     returnKeyType="next"
+                    onFocus={() => setEmailFocused(true)}
+                    onBlur={() => setEmailFocused(false)}
                     onSubmitEditing={() => passwordInputRef.current?.focus()}
                   />
                 </View>
 
-                <View style={[styles.inputWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Lock color={colors.muted} size={17} />
+                {/* Password */}
+                <View style={[styles.inputContainer, { borderBottomWidth: inputBorder(passwordFocused).borderBottomWidth, borderBottomColor: inputBorder(passwordFocused).borderBottomColor }]}>
+                  <Lock color={passwordFocused ? colors.primary : colors.muted} size={18} strokeWidth={1.8} style={styles.inputIcon} />
                   <TextInput
                     ref={passwordInputRef}
-                    style={[styles.input, styles.inputFlex, { color: colors.text }]}
+                    style={[styles.input, { color: colors.text }]}
                     placeholder="Пароль"
                     placeholderTextColor={colors.muted}
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry={!showPassword}
                     returnKeyType="done"
+                    onFocus={() => setPasswordFocused(true)}
+                    onBlur={() => setPasswordFocused(false)}
                     onSubmitEditing={handleAuth}
                   />
                   <TouchableOpacity
                     onPress={() => setShowPassword((v) => !v)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    activeOpacity={0.7}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    activeOpacity={0.6}
                   >
                     {showPassword
-                      ? <EyeOff color={colors.muted} size={17} />
-                      : <Eye color={colors.muted} size={17} />
+                      ? <EyeOff color={colors.muted} size={18} strokeWidth={1.8} />
+                      : <Eye color={colors.muted} size={18} strokeWidth={1.8} />
                     }
                   </TouchableOpacity>
                 </View>
 
+                {/* Forgot password link */}
                 {!isSignUp && (
                   <TouchableOpacity
                     style={styles.forgotLink}
                     onPress={() => setShowForgotPassword(true)}
-                    activeOpacity={0.7}
+                    activeOpacity={0.6}
                   >
                     <Text style={[styles.forgotLinkText, { color: colors.primary }]}>Забыли пароль?</Text>
                   </TouchableOpacity>
                 )}
-              </View>
-            ) : (
-              <View style={styles.form}>
-                <View style={[styles.forgotBlock, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Text style={[styles.forgotTitle, { color: colors.text }]}>Восстановление пароля</Text>
-                  <Text style={[styles.forgotHint, { color: colors.muted }]}>Введите email — отправим ссылку для сброса пароля.</Text>
-                  <View style={[styles.inputWrap, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                    <Mail color={colors.muted} size={17} />
-                    <TextInput
-                      style={[styles.input, { color: colors.text }]}
-                      placeholder="Email"
-                      placeholderTextColor={colors.muted}
-                      value={email}
-                      onChangeText={setEmail}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      editable={!forgotLoading}
-                    />
-                  </View>
-                  <View style={styles.forgotRow}>
-                    <TouchableOpacity
-                      style={[styles.forgotBackBtn, { borderColor: colors.border }]}
-                      onPress={() => setShowForgotPassword(false)}
-                      disabled={forgotLoading}
-                    >
-                      <Text style={[styles.forgotBackText, { color: colors.text }]}>Назад</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.submitBtn,
-                        {
-                          backgroundColor: colors.primary,
-                          shadowColor: colors.primary,
-                          shadowOffset: { width: 0, height: 8 },
-                          shadowOpacity: 0.5,
-                          shadowRadius: 16,
-                          elevation: 8,
-                          flex: 1,
-                        },
-                        forgotLoading && { opacity: 0.65 },
-                      ]}
-                      onPress={handleForgotPassword}
-                      disabled={forgotLoading}
-                    >
-                      {forgotLoading ? <ActivityIndicator color="#000" size="small" /> : <Text style={styles.submitBtnText}>Отправить ссылку</Text>}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-                <TouchableOpacity style={styles.toggleBtn} onPress={() => { setIsSignUp((v) => !v); setShowForgotPassword(false); setEmailNotVerifiedShown(false); }}>
-                  <Text style={[styles.toggleText, { color: colors.muted }]}>
-                    {isSignUp ? 'Уже есть аккаунт? ' : 'Нет аккаунта? '}
-                    <Text style={{ color: colors.primary, fontFamily: fonts.bold }}>
-                      {isSignUp ? 'Войти' : 'Зарегистрироваться'}
-                    </Text>
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
 
-            {!showForgotPassword && (
-              <>
-                <Button
-                  title={isSignUp ? 'Создать аккаунт' : 'Войти'}
+                {/* Submit button */}
+                <TouchableOpacity
+                  style={[
+                    styles.submitBtn,
+                    { backgroundColor: colors.primary, opacity: loading ? 0.7 : 1 }
+                  ]}
                   onPress={handleAuth}
-                  loading={loading}
-                  variant="primary"
-                  style={styles.submitBtn}
-                />
+                  disabled={loading}
+                  activeOpacity={0.8}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={isDark ? '#020617' : '#FFFFFF'} size="small" />
+                  ) : (
+                    <Text style={styles.submitBtnText}>
+                      {isSignUp ? 'Создать аккаунт' : 'Войти'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
 
+                {/* Google button */}
+                {googleSignInAvailable && (
+                  <TouchableOpacity
+                    style={[styles.googleBtn, { borderColor: isDark ? 'rgba(148,163,184,0.3)' : 'rgba(148,163,184,0.4)' }]}
+                    onPress={handleGoogleSignIn}
+                    disabled={googleLoading}
+                    activeOpacity={0.7}
+                  >
+                    {googleLoading ? (
+                      <ActivityIndicator color={colors.text} size="small" />
+                    ) : (
+                      <>
+                        <View style={styles.googleIconWrap}>
+                          <GoogleIcon size={18} />
+                        </View>
+                        <Text style={[styles.googleBtnText, { color: colors.text }]}>
+                          Продолжить через Google
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+
+                {/* Agreement checkbox */}
                 {isSignUp && (
                   <View style={styles.agreementBlock}>
-                    {/* Чекбокс согласия с кликабельными ссылками — НЕ отмечен по умолчанию (требование 2025-2026) */}
                     <TouchableOpacity
                       style={styles.agreementRow}
                       onPress={() => setAgreementChecked(!agreementChecked)}
@@ -496,15 +465,15 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                         style={[
                           styles.checkboxSquare,
                           {
-                            backgroundColor: agreementChecked ? colors.primary : colors.card,
-                            borderColor: agreementChecked ? colors.primary : colors.border,
+                            backgroundColor: agreementChecked ? colors.primary : 'transparent',
+                            borderColor: agreementChecked ? colors.primary : isDark ? 'rgba(148,163,184,0.3)' : 'rgba(148,163,184,0.4)',
                           },
                         ]}
                       >
                         {agreementChecked && <Text style={styles.checkmark}>✓</Text>}
                       </View>
                       <Text style={[styles.agreementText, { color: colors.text }]}>
-                        Я принимаю условия{' '}
+                        Принимаю{' '}
                         <Text
                           style={[styles.linkText, { color: colors.primary }]}
                           onPress={(e) => {
@@ -512,7 +481,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                             Linking.openURL('https://smart-word.ru/privacy');
                           }}
                         >
-                          Политики конфиденциальности
+                          политику конфиденциальности
                         </Text>
                         {' '}и{' '}
                         <Text
@@ -522,13 +491,14 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                             Linking.openURL('https://smart-word.ru/terms');
                           }}
                         >
-                          Условий использования
+                          условия использования
                         </Text>
                       </Text>
                     </TouchableOpacity>
                   </View>
                 )}
 
+                {/* Resend verification */}
                 {emailNotVerifiedShown && (
                   <TouchableOpacity
                     style={styles.resendBtn}
@@ -544,14 +514,63 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                   </TouchableOpacity>
                 )}
 
-                <TouchableOpacity style={styles.toggleBtn} onPress={() => { setIsSignUp((v) => !v); setShowForgotPassword(false); setEmailNotVerifiedShown(false); }}>
+                {/* Toggle sign in/up */}
+                <TouchableOpacity 
+                  style={styles.toggleBtn} 
+                  onPress={() => { setIsSignUp((v) => !v); setShowForgotPassword(false); setEmailNotVerifiedShown(false); }}
+                  activeOpacity={0.6}
+                >
                   <Text style={[styles.toggleText, { color: colors.muted }]}>
                     {isSignUp ? 'Уже есть аккаунт? ' : 'Нет аккаунта? '}
-                    <Text style={{ color: colors.primary, fontFamily: fonts.bold }}>
+                    <Text style={[styles.toggleLinkText, { color: colors.primary }]}>
                       {isSignUp ? 'Войти' : 'Зарегистрироваться'}
                     </Text>
                   </Text>
                 </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {/* Forgot password form */}
+                <View style={[styles.inputContainer, { borderBottomWidth: inputBorder(emailFocused).borderBottomWidth, borderBottomColor: inputBorder(emailFocused).borderBottomColor }]}>
+                  <Mail color={emailFocused ? colors.primary : colors.muted} size={18} strokeWidth={1.8} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, { color: colors.text }]}
+                    placeholder="Email"
+                    placeholderTextColor={colors.muted}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!forgotLoading}
+                    onFocus={() => setEmailFocused(true)}
+                    onBlur={() => setEmailFocused(false)}
+                    onSubmitEditing={handleForgotPassword}
+                  />
+                </View>
+
+                <View style={styles.forgotActions}>
+                  <TouchableOpacity
+                    style={[styles.forgotSubmitBtn, { backgroundColor: colors.primary, opacity: forgotLoading ? 0.7 : 1 }]}
+                    onPress={handleForgotPassword}
+                    disabled={forgotLoading}
+                    activeOpacity={0.8}
+                  >
+                    {forgotLoading ? (
+                      <ActivityIndicator color={isDark ? '#020617' : '#FFFFFF'} size="small" />
+                    ) : (
+                      <Text style={styles.forgotSubmitText}>Отправить ссылку</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.forgotBackBtn, { backgroundColor: isDark ? 'rgba(30,41,59,0.6)' : 'rgba(241,245,249,0.8)', borderColor: isDark ? 'rgba(148,163,184,0.2)' : 'rgba(148,163,184,0.3)' }]}
+                    onPress={() => setShowForgotPassword(false)}
+                    disabled={forgotLoading}
+                    activeOpacity={0.6}
+                  >
+                    <Text style={[styles.forgotBackText, { color: colors.text }]}>Назад ко входу</Text>
+                  </TouchableOpacity>
+                </View>
               </>
             )}
           </View>
@@ -565,114 +584,182 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   backBtn: {
     position: 'absolute',
+    top: spacing.md,
     left: spacing.md,
     zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: radii.sm,
-    borderWidth: 1,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scroll: { flexGrow: 1, paddingHorizontal: spacing.lg },
-  content: { flex: 1, justifyContent: 'center', gap: spacing.lg },
-  authCard: { padding: spacing.lg, borderRadius: radii.lg },
-  logoBlock: { alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-  logoBox: {
-    width: 72,
-    height: 72,
-    borderRadius: radii.md,
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.lg },
+  content: { justifyContent: 'center' },
+  
+  // Header
+  header: { alignItems: 'center', marginBottom: spacing.xl },
+  title: {
+    fontSize: 28,
+    fontFamily: fonts.headingBold,
+    letterSpacing: -0.5,
+    marginBottom: spacing.xs,
+  },
+  subtitle: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    textAlign: 'center',
+  },
+
+  // Form
+  form: { gap: spacing.md },
+  
+  // Inputs - Apple стиль: только нижняя граница, компактные
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+  },
+  inputIcon: {
+    marginRight: spacing.sm,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    height: 36,
+  },
+  inputFocused: {},
+  inputFlex: { flex: 1 },
+
+  // Links
+  forgotLink: {
+    alignSelf: 'flex-end',
+    marginTop: -spacing.xs,
+  },
+  forgotLinkText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+  },
+
+  // Buttons
+  submitBtn: {
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 14,
+    paddingVertical: spacing.md,
+    marginTop: spacing.sm,
   },
-  logoText: { fontSize: 26, fontFamily: fonts.headingBlack, color: '#000' },
-  appName: { fontSize: typography.title, fontFamily: fonts.headingBlack },
-  tagline: { fontSize: typography.body, fontFamily: fonts.regular },
+  submitBtnText: {
+    fontSize: 16,
+    fontFamily: fonts.bold,
+    color: '#FFFFFF',
+  },
+
+  // Google button
   googleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    borderRadius: radii.md,
+    borderRadius: 14,
     borderWidth: 1,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md - 2,
   },
   googleIconWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  googleG: {
-    fontSize: 14,
-    fontFamily: fonts.headingBold,
-    color: '#4285F4',
-  },
   googleBtnText: {
-    fontSize: typography.body,
+    fontSize: 15,
     fontFamily: fonts.medium,
   },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  dividerLine: { flex: 1, height: 1 },
-  dividerText: { fontSize: typography.small },
-  form: { gap: spacing.sm },
-  inputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  input: { flex: 1, fontSize: typography.body, fontFamily: fonts.regular },
-  inputFlex: { flex: 1 },
-  submitBtn: {
-    borderRadius: radii.md,
-    paddingVertical: spacing.md + 2,
-    alignItems: 'center',
+
+  // Agreement
+  agreementBlock: {
     marginTop: spacing.xs,
   },
-  submitBtnText: { fontSize: typography.body, fontFamily: fonts.bold, color: '#000' },
-  forgotLink: { alignSelf: 'flex-end', marginTop: -spacing.xs, marginBottom: spacing.xs },
-  forgotLinkText: { fontSize: typography.small, fontFamily: fonts.medium },
-  forgotBlock: { padding: spacing.md, borderRadius: radii.md, borderWidth: 1, gap: spacing.sm, marginBottom: spacing.sm },
-  forgotTitle: { fontSize: typography.body, fontFamily: fonts.bold },
-  forgotHint: { fontSize: typography.small },
-  forgotRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
-  forgotBackBtn: { paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radii.md, borderWidth: 1, justifyContent: 'center' },
-  forgotBackText: { fontSize: typography.body, fontFamily: fonts.medium },
-  resendBtn: { alignItems: 'center', paddingVertical: spacing.sm },
-  resendText: { fontSize: typography.small, fontFamily: fonts.medium },
-  toggleBtn: { alignItems: 'center', paddingVertical: spacing.sm },
-  toggleText: { fontSize: typography.small, fontFamily: fonts.regular },
-  agreementBlock: { gap: spacing.sm, marginTop: spacing.xs, paddingHorizontal: spacing.xs },
-  agreementRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  agreementRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
   checkboxSquare: {
-    width: 22,
-    height: 22,
-    borderRadius: radii.sm,
-    borderWidth: 2,
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+    marginTop: 2,
   },
   checkmark: {
-    fontSize: 14,
-    color: '#000',
+    fontSize: 12,
+    color: '#FFFFFF',
     fontWeight: 'bold',
-    lineHeight: 14,
+    lineHeight: 12,
   },
   agreementText: {
     flex: 1,
-    fontSize: typography.small,
+    fontSize: 13,
     fontFamily: fonts.regular,
-    lineHeight: typography.small * 1.4,
+    lineHeight: 18,
   },
   linkText: {
     fontFamily: fonts.bold,
-    textDecorationLine: 'underline',
+  },
+
+  // Resend
+  resendBtn: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  resendText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+  },
+
+  // Toggle
+  toggleBtn: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  toggleText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+  },
+  toggleLinkText: {
+    fontFamily: fonts.bold,
+  },
+
+  // Forgot password
+  forgotActions: {
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  forgotBackBtn: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  forgotBackText: {
+    fontSize: 15,
+    fontFamily: fonts.medium,
+  },
+  forgotSubmitBtn: {
+    borderRadius: 14,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  forgotSubmitText: {
+    fontSize: 16,
+    fontFamily: fonts.bold,
+    color: '#FFFFFF',
   },
 });

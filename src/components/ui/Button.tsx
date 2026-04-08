@@ -12,6 +12,8 @@ type Props = {
   variant?: ButtonVariant;
   style?: ViewStyle | ViewStyle[];
   leftIcon?: React.ReactNode;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 };
 
 export const Button: React.FC<Props> = ({
@@ -22,6 +24,8 @@ export const Button: React.FC<Props> = ({
   variant = 'primary',
   style,
   leftIcon,
+  accessibilityLabel,
+  accessibilityHint,
 }) => {
   const { colors } = useTheme();
   const isDisabled = disabled || loading;
@@ -37,6 +41,10 @@ export const Button: React.FC<Props> = ({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
+      accessibilityLabel={accessibilityLabel || title}
+      accessibilityHint={accessibilityHint || (loading ? 'Загрузка...' : undefined)}
       style={({ pressed }) => [
         styles.base,
         baseStyle,

@@ -11,12 +11,12 @@
  */
 
 import { useCallback, useRef } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { queryKey, invalidateWords } from '../lib/queryKeys';
 import { ARCHIVE_THRESHOLD } from '../constants';
+import { getGuestWords, setGuestWords } from '../lib/guestStorage';
 
 export interface Word {
   id: string;
@@ -43,13 +43,9 @@ interface UseWordsOptions {
 
 // ─── Guest mode helpers ────────────────────────────────────────────────
 
-async function getGuestWords(): Promise<Word[]> {
-  const raw = await AsyncStorage.getItem('smartword_guest_words');
-  return raw ? JSON.parse(raw) : [];
-}
-
-async function setGuestWords(words: Word[]): Promise<void> {
-  await AsyncStorage.setItem('smartword_guest_words', JSON.stringify(words));
+async function fetchGuestWords(): Promise<Word[]> {
+  const words = await getGuestWords<Word[]>();
+  return words ?? [];
 }
 
 function generateGuestId(): string {
@@ -77,7 +73,7 @@ async function fetchWordsQuery(
   }
 
   // Guest mode
-  const allWords = await getGuestWords();
+  const allWords = await fetchGuestWords();
   const filtered = groupId ? allWords.filter((w) => w.group_id === groupId) : allWords;
   return { words: filtered, totalCount: allWords.length };
 }
@@ -146,7 +142,7 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
         return apiPost<Word>('/words', { original, translation, group_id: gId });
       }
       // Guest mode
-      const existing = await getGuestWords();
+      const existing = await getGuestWords<Word[]>() ?? [];
       const newWord: Word = {
         id: generateGuestId(),
         group_id: gId,
@@ -203,7 +199,7 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
         return apiDelete(`/words/${wordId}`);
       }
       // Guest mode
-      const existing = await getGuestWords();
+      const existing = await getGuestWords<Word[]>() ?? [];
       await setGuestWords(existing.filter((w) => w.id !== wordId));
     },
     onMutate: async (wordId) => {
@@ -247,7 +243,7 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
         return apiPatch<Word>(`/words/${wordId}`, { original, translation });
       }
       // Guest mode
-      const existing = await getGuestWords();
+      const existing = await getGuestWords<Word[]>() ?? [];
       const updated = existing.map((w) =>
         w.id === wordId ? { ...w, original, translation } : w
       );
@@ -287,7 +283,7 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
       }
 
       // Guest mode — обновляем AsyncStorage
-      const existing = await getGuestWords();
+      const existing = await getGuestWords<Word[]>() ?? [];
       const word = existing.find((w) => w.id === wordId);
       if (!word) return { guestNoWord: true };
 

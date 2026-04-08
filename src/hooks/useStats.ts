@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiGet, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { queryKey } from '../lib/queryKeys';
+import { ARCHIVE_THRESHOLD } from '../constants';
 
 export interface DayActivity {
   date: string;
@@ -40,7 +41,7 @@ async function computeGuestStats(): Promise<Stats> {
     ? JSON.parse(wordsRaw)
     : [];
   const totalWords = allWords.length;
-  const learnedWords = allWords.filter((w) => w.correct_count >= 5).length;
+  const learnedWords = allWords.filter((w) => w.correct_count >= ARCHIVE_THRESHOLD).length;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);

@@ -43,6 +43,9 @@ export const queryKey = {
     list: () => ['achievements', 'list'] as const,
     summary: () => ['achievements', 'summary'] as const,
   },
+  archivedWords: {
+    all: ['archivedWords'] as const,
+  },
 } as const;
 
 /**

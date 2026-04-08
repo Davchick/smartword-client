@@ -7,7 +7,6 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
   Animated,
   ScrollView,
 } from 'react-native';
@@ -20,6 +19,8 @@ import { useTrainingSession } from '../../hooks/useTrainingSession';
 import { useProfile } from '../../hooks/useProfile';
 import { useWeeklyLimit } from '../../hooks/useWeeklyLimit';
 import { PaywallModal } from '../../components/PaywallModal';
+import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
+import { ARCHIVE_THRESHOLD } from '../../constants';
 import type { TrainingWriteScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
 
@@ -79,6 +80,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const shakeX = useRef(new Animated.Value(0)).current;
   const progressWidth = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
 
   const initTraining = useCallback(() => {
     const tw = getTrainingWords();
@@ -135,6 +137,31 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     }, [flushSession])
   );
 
+  // Cleanup: отменяем все pending таймеры при unmount
+  useEffect(() => {
+    return () => {
+      for (const timer of timersRef.current) {
+        clearTimeout(timer);
+      }
+      timersRef.current.clear();
+    };
+  }, []);
+
+  // Безопасный setTimeout — автоматически трекает и очищает при unmount
+  const safeTimeout = useCallback((fn: () => void, ms: number): ReturnType<typeof setTimeout> => {
+    const timer = setTimeout(() => {
+      timersRef.current.delete(timer);
+      fn();
+    }, ms);
+    timersRef.current.add(timer);
+    return timer;
+  }, []);
+
+  const handleRestart = useCallback(() => {
+    resetLocal();
+    initTraining();
+  }, [initTraining, resetLocal]);
+
   const animateFeedback = (correct: boolean) => {
     feedbackScale.setValue(0.5);
     feedbackOpacity.setValue(0);
@@ -155,11 +182,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   };
 
   if (loading) {
-    return (
-      <View style={[styles.fill, styles.center, { backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
+    return <SkeletonScreen type="training" showHeader={false} />;
   }
 
   if (words.length === 0 || trainingWords.length === 0) {
@@ -369,11 +392,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const inputPlaceholder = 'Введите перевод';
   const primaryAnswer = answerText.split(/[/,|]/)[0]?.trim() ?? '';
 
-  const handleRestart = useCallback(() => {
-    resetLocal();
-    initTraining();
-  }, [initTraining, resetLocal]);
-
   const goToNextWord = () => {
     const next = currentIndex + 1;
     if (next >= trainingWords.length) {
@@ -388,7 +406,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     feedbackOpacity.setValue(0);
     feedbackScale.setValue(0);
     setSkipped(false);
-    setTimeout(() => inputRef.current?.focus(), 80);
+    safeTimeout(() => inputRef.current?.focus(), 80);
   };
 
   const handleInputChange = (text: string) => {
@@ -408,9 +426,9 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
         // Не критично — локальное состояние уже обновлено
       });
 
-      // Проверяем, выучено ли слово (correct_count стал >= 5)
-      const wasLearnedBefore = currentWord.correct_count >= 5;
-      const isNowLearned = (currentWord.correct_count + 1) >= 5;
+      // Проверяем, выучено ли слово (correct_count стал >= ARCHIVE_THRESHOLD)
+      const wasLearnedBefore = currentWord.correct_count >= ARCHIVE_THRESHOLD;
+      const isNowLearned = (currentWord.correct_count + 1) >= ARCHIVE_THRESHOLD;
       const justLearned = !wasLearnedBefore && isNowLearned;
 
       if (justLearned) {
@@ -421,7 +439,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       // Записываем в сессию (для последующего batch flush)
       const points = hintCount > 0 ? 0.5 : 1;
       recordWord(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0, points });
-      setTimeout(() => {
+      safeTimeout(() => {
         goToNextWord();
       }, 900);
     }
@@ -447,7 +465,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       setIsCorrect(false);
       setSessionTotal((t) => t + 1);
       animateFeedback(false);
-      setTimeout(() => {
+      safeTimeout(() => {
         goToNextWord();
       }, 1300);
     }
@@ -460,7 +478,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     setIsCorrect(false);
     setSessionTotal((t) => t + 1);
     animateFeedback(false);
-    setTimeout(() => {
+    safeTimeout(() => {
       goToNextWord();
     }, 1600);
   };

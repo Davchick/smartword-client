@@ -6,9 +6,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Modal,
-  Dimensions,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -20,18 +19,18 @@ import {
   Layers,
   Search,
 } from 'lucide-react-native';
-import { useWords } from '../../hooks/useWords';
+import { useArchivedWords } from '../../hooks/useArchivedWords';
 import { useGroups } from '../../hooks/useGroups';
 import { SearchFilterBar } from '../../components/SearchFilterBar';
-import { queryClient } from '../../lib/queryClient';
-import { queryKey } from '../../lib/queryKeys';
+import { BottomSheet } from '../../components/ui/BottomSheet';
+import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
+import { useDebounceValue } from '../../hooks/useDebounceValue';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
-import { ARCHIVE_THRESHOLD } from '../../constants';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { GroupsStackParamList } from '../../navigation/types';
-import type { Word } from '../../hooks/useWords';
 import type { WordGroup } from '../../hooks/useGroups';
+import type { ArchivedWord } from '../../hooks/useArchivedWords';
 
 type Props = NativeStackScreenProps<GroupsStackParamList, 'Archive'>;
 
@@ -39,32 +38,28 @@ interface Section {
   groupId: string;
   groupName: string;
   language: string;
-  data: Word[];
+  data: ArchivedWord[];
 }
 
 export const ArchiveScreen = ({ navigation }: Props) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const { words, loading } = useWords(undefined, { limit: 500 });
+  const [queryText, setQueryText] = useState('');
+  const debouncedQuery = useDebounceValue(queryText, 350);
+  const { words, totalCount, loading, refreshing, hasNext, loadMore, loadMoreLoading, refetch, query } = useArchivedWords(debouncedQuery.trim() || undefined);
   const { groups } = useGroups();
-  const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'count' | 'name' | 'score'>('count');
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    // Инвалидируем только words — groups уже в кэше с staleTime=60s
-    await queryClient.invalidateQueries({ queryKey: queryKey.words.list() });
-    setRefreshing(false);
-  }, [queryClient]);
+    await refetch();
+    setLastUpdated(new Date());
+  }, [refetch]);
 
-  // Все архивированные слова
-  const archivedWords = useMemo(
-    () => words.filter((w) => w.correct_count >= ARCHIVE_THRESHOLD),
-    [words]
-  );
+  // Слова приходят уже отфильтрованными по search query с сервера
+  const archivedWordsList = words;
 
   // Словарь id→group для быстрого доступа
   const groupMap = useMemo(() => {
@@ -73,24 +68,10 @@ export const ArchiveScreen = ({ navigation }: Props) => {
     return m;
   }, [groups]);
 
-  // Фильтруем по запросу
-  const filtered = useMemo(() => {
-    let list = archivedWords;
-    const q = query.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (w) =>
-          w.original.toLowerCase().includes(q) ||
-          w.translation.toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [archivedWords, query]);
-
   // Группируем по словарям и сортируем
   const sections: Section[] = useMemo(() => {
-    const map: Record<string, Word[]> = {};
-    for (const w of filtered) {
+    const map: Record<string, ArchivedWord[]> = {};
+    for (const w of archivedWordsList) {
       if (!map[w.group_id]) map[w.group_id] = [];
       map[w.group_id]!.push(w);
     }
@@ -113,7 +94,7 @@ export const ArchiveScreen = ({ navigation }: Props) => {
       });
     }
     return secs;
-  }, [filtered, groupMap, sortBy]);
+  }, [archivedWordsList, groupMap, sortBy]);
 
   const toggleGroup = (id: string) => {
     setExpandedGroups((prev) => {
@@ -125,19 +106,43 @@ export const ArchiveScreen = ({ navigation }: Props) => {
   };
 
   // Статистика
-  const totalArchived = archivedWords.length;
+  const totalArchived = totalCount;
   const totalGroups = sections.length;
   const avgScore =
-    archivedWords.length > 0
+    archivedWordsList.length > 0
       ? Math.round(
-          archivedWords.reduce((s, w) => s + w.correct_count, 0) / archivedWords.length
+          archivedWordsList.reduce((s, w) => s + w.correct_count, 0) / archivedWordsList.length
         )
       : 0;
 
   if (loading) {
+    return <SkeletonScreen type="list" count={3} showHeader showStats />;
+  }
+
+  if (query.isError) {
     return (
-      <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <ArrowLeft color={colors.text} size={24} />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Архив</Text>
+          </View>
+        </View>
+        <View style={styles.emptyWrap}>
+          <Text style={[styles.emptyTitle, { color: colors.danger }]}>Ошибка загрузки</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
+            Не удалось загрузить архивные слова. Проверьте подключение к интернету.
+          </Text>
+          <TouchableOpacity
+            style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+            onPress={() => refetch()}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.emptyButtonText, { color: colors.background }]}>Повторить</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -163,7 +168,7 @@ export const ArchiveScreen = ({ navigation }: Props) => {
           <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
             Слова попадают сюда после{' '}
             <Text style={{ color: colors.primary, fontFamily: fonts.bold }}>
-              {ARCHIVE_THRESHOLD} правильных ответов
+              5 правильных ответов
             </Text>{' '}
             подряд в тренировках. Продолжайте практиковаться!
           </Text>
@@ -182,6 +187,16 @@ export const ArchiveScreen = ({ navigation }: Props) => {
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Архив</Text>
           <Text style={[styles.headerSubtitle, { color: colors.muted }]}>Выученные слова</Text>
+          {lastUpdated && (
+            <Text 
+              style={[styles.lastUpdated, { color: colors.muted }]}
+              accessibilityRole="text"
+              accessibilityLabel={`Последнее обновление: ${lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`}
+              accessibilityLiveRegion="polite"
+            >
+              Обновлено: {lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+          )}
         </View>
       </View>
       <View style={[styles.headerContent, { paddingHorizontal: spacing.md, paddingTop: spacing.md }]}>
@@ -212,8 +227,8 @@ export const ArchiveScreen = ({ navigation }: Props) => {
         </View>
 
         <SearchFilterBar
-          searchQuery={query}
-          onSearchChange={setQuery}
+          searchQuery={queryText}
+          onSearchChange={setQueryText}
           searchPlaceholder="Поиск по словам..."
           onSortPress={() => setSortSheetVisible(true)}
         />
@@ -230,6 +245,21 @@ export const ArchiveScreen = ({ navigation }: Props) => {
             tintColor={colors.primary}
             colors={[colors.primary]}
           />
+        }
+        onEndReached={() => {
+          if (hasNext && !loadMoreLoading) loadMore();
+        }}
+        onEndReachedThreshold={0.3}
+        windowSize={5}
+        maxToRenderPerBatch={5}
+        initialNumToRender={10}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListFooterComponent={
+          loadMoreLoading ? (
+            <View style={styles.loadMoreLoader}>
+              <ActivityIndicator color={colors.primary} size="small" />
+            </View>
+          ) : null
         }
         ListEmptyComponent={
           <View style={styles.noResultsWrap}>
@@ -318,56 +348,43 @@ export const ArchiveScreen = ({ navigation }: Props) => {
         }}
       />
 
-      {/* Sort Options Modal */}
-      <Modal
+      {/* Sort Options BottomSheet */}
+      <BottomSheet
         visible={sortSheetVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setSortSheetVisible(false)}
+        onClose={() => setSortSheetVisible(false)}
+        title="Сортировка словарей"
+        subtitle="Как упорядочить словари в архиве"
       >
-        <TouchableOpacity
-          style={styles.sortModalOverlay}
-          activeOpacity={1}
-          onPress={() => setSortSheetVisible(false)}
-        >
+        {([
+          { key: 'count' as const, label: 'По количеству слов' },
+          { key: 'name' as const, label: 'По названию' },
+          { key: 'score' as const, label: 'По среднему счёту' },
+        ]).map((option) => (
           <TouchableOpacity
-            style={[styles.sortSheet, { backgroundColor: colors.card, borderColor: colors.border }]}
-            activeOpacity={1}
-            onPress={(e) => e.stopPropagation()}
+            key={option.key}
+            style={[
+              styles.sortOption,
+              sortBy === option.key && { backgroundColor: colors.primaryDim },
+            ]}
+            onPress={() => {
+              setSortBy(option.key);
+              setSortSheetVisible(false);
+            }}
           >
-            <Text style={[styles.sortSheetTitle, { color: colors.text }]}>Сортировка словарей</Text>
-            {([
-              { key: 'count' as const, label: 'По количеству слов' },
-              { key: 'name' as const, label: 'По названию' },
-              { key: 'score' as const, label: 'По среднему счёту' },
-            ]).map((option) => (
-              <TouchableOpacity
-                key={option.key}
-                style={[
-                  styles.sortOption,
-                  sortBy === option.key && { backgroundColor: colors.primaryDim },
-                ]}
-                onPress={() => {
-                  setSortBy(option.key);
-                  setSortSheetVisible(false);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.sortOptionText,
-                    { color: sortBy === option.key ? colors.primary : colors.text },
-                  ]}
-                >
-                  {option.label}
-                </Text>
-                {sortBy === option.key && (
-                  <View style={[styles.sortCheckmark, { backgroundColor: colors.primary }]} />
-                )}
-              </TouchableOpacity>
-            ))}
+            <Text
+              style={[
+                styles.sortOptionText,
+                { color: sortBy === option.key ? colors.primary : colors.text },
+              ]}
+            >
+              {option.label}
+            </Text>
+            {sortBy === option.key && (
+              <View style={[styles.sortCheckmark, { backgroundColor: colors.primary }]} />
+            )}
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        ))}
+      </BottomSheet>
     </View>
   );
 };
@@ -401,6 +418,11 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: typography.small,
     fontFamily: fonts.regular,
+  },
+  lastUpdated: {
+    fontSize: typography.xs,
+    fontFamily: fonts.regular,
+    marginTop: 2,
   },
   list: {
     padding: spacing.md,
@@ -554,6 +576,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
   },
+  emptyButton: {
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm + 2,
+    marginTop: spacing.sm,
+  },
+  emptyButtonText: {
+    fontWeight: '700',
+    fontSize: typography.body,
+  },
   noResultsWrap: {
     alignItems: 'center',
     paddingTop: spacing.xl,
@@ -563,27 +595,11 @@ const styles = StyleSheet.create({
     fontSize: typography.body,
     fontFamily: fonts.regular,
   },
-  // Sort modal
-  sortModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+  loadMoreLoader: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
   },
-  sortSheet: {
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.sm,
-  },
-  sortSheetTitle: {
-    fontSize: typography.subtitle,
-    fontFamily: fonts.headingBlack,
-    marginBottom: spacing.sm,
-  },
+  // Sort option styles
   sortOption: {
     flexDirection: 'row',
     alignItems: 'center',

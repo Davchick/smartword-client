@@ -134,24 +134,20 @@ export const WelcomeScreen = ({ navigation }: Props) => {
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
             onPress={handleSignIn}
-            activeOpacity={0.88}
+            activeOpacity={0.8}
           >
             <Text style={styles.primaryBtnText}>Войти или создать аккаунт</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.ghostBtn, { borderColor: colors.border }]}
+            style={[styles.ghostBtn, { borderColor: isDark ? 'rgba(148,163,184,0.3)' : 'rgba(148,163,184,0.4)' }]}
             onPress={handleGuest}
-            activeOpacity={0.7}
+            activeOpacity={0.6}
           >
-            <Text style={[styles.ghostBtnText, { color: colors.textSecondary }]}>
+            <Text style={[styles.ghostBtnText, { color: colors.muted }]}>
               Начать без аккаунта
             </Text>
           </TouchableOpacity>
-
-          <Text style={[styles.hint, { color: colors.muted }]}>
-            Аккаунт нужен для синхронизации и Premium
-          </Text>
         </Animated.View>
       </View>
     </View>
@@ -242,24 +238,26 @@ const styles = StyleSheet.create({
   featureDesc: { fontSize: typography.xs, lineHeight: 17 },
   buttons: { gap: spacing.sm },
   primaryBtn: {
-    borderRadius: radii.md,
-    paddingVertical: spacing.md + 2,
+    borderRadius: 14,
+    paddingVertical: spacing.md + 4,
     alignItems: 'center',
   },
   primaryBtnText: {
     fontSize: typography.body,
     fontFamily: fonts.bold,
-    color: '#000',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
   ghostBtn: {
-    borderRadius: radii.md,
-    paddingVertical: spacing.md,
+    borderRadius: 14,
+    paddingVertical: spacing.md + 2,
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
   },
   ghostBtnText: {
     fontSize: typography.body,
     fontFamily: fonts.medium,
+    letterSpacing: 0.3,
   },
   hint: {
     fontSize: typography.small,

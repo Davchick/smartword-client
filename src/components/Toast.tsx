@@ -113,6 +113,8 @@ const ToastBanner = ({
           transform: [{ translateY }],
         },
       ]}
+      accessibilityRole="alert"
+      accessibilityLabel={item.message}
     >
       <View style={[styles.iconWrap, { backgroundColor: ACCENT[item.type] + '22' }]}>
         <Icon color={ACCENT[item.type]} size={20} strokeWidth={2} />
@@ -133,7 +135,12 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
   const showToast = useCallback(
     (message: string, type: ToastType = 'info', duration = 3500) => {
       const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
-      setToasts((prev) => [...prev.slice(-2), { id, type, message, duration }]);
+      // FIFO очередь — новые добавляются, старые (больше 5) удаляются
+      setToasts((prev) => {
+        const next = [...prev, { id, type, message, duration }];
+        // Максимум 5 видимых тостов — лишние удаляются по FIFO
+        return next.length > 5 ? next.slice(next.length - 5) : next;
+      });
     },
     []
   );
@@ -145,7 +152,7 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <View style={styles.container} pointerEvents="box-none">
+      <View style={styles.container} pointerEvents="box-none" accessibilityRole="alert" aria-live="assertive">
         {toasts.map((t) => (
           <ToastBanner key={t.id} item={t} onDismiss={dismiss} />
         ))}

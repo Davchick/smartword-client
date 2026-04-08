@@ -19,6 +19,8 @@ export const useChat = () => {
   const groupIdRef = useRef<string | undefined>(undefined);
   const groupNameRef = useRef<string | undefined>(undefined);
   const messagesRef = useRef<ChatMessage[]>([]);
+  // Ref для дедупликации — предотвращает одновременные запросы при быстрых кликах
+  const sendingRef = useRef(false);
 
   const setGroup = useCallback((id?: string, name?: string) => {
     groupIdRef.current = id;
@@ -27,6 +29,8 @@ export const useChat = () => {
 
   const sendMessage = useCallback(async (text: string): Promise<void> => {
     if (!text.trim()) return;
+    // Дедупликация — если уже идёт отправка, игнорируем повторный вызов
+    if (sendingRef.current) return;
     if (!authUser || !getBaseUrl()) {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -57,6 +61,7 @@ export const useChat = () => {
     // State обновляем отдельно — не зависит от ref для render
     setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
+    sendingRef.current = true;
 
     try {
       const responseData = await apiPost<{ reply?: string; messages_used?: number; error?: string }>('/chat', {
@@ -116,6 +121,7 @@ export const useChat = () => {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
+      sendingRef.current = false;
     }
   }, [authUser]);
 

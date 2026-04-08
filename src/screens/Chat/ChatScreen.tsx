@@ -29,6 +29,7 @@ import { queryKey } from '../../lib/queryKeys';
 import { TypingIndicator } from '../../components/TypingIndicator';
 import { PaywallModal } from '../../components/PaywallModal';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
+import { pluralizeRu } from '../../lib/pluralizeRu';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
@@ -75,7 +76,9 @@ const playNotificationSound = () => {
       };
     }
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-  } catch {}
+  } catch (err) {
+    console.warn('[playNotificationSound] error:', err);
+  }
 };
 
 export const ChatScreen = () => {
@@ -301,10 +304,24 @@ export const ChatScreen = () => {
             <TouchableOpacity
               style={[styles.limitBadge, { backgroundColor: colors.card, borderColor: colors.border }]}
               onPress={() => setPaywallVisible(true)}
+              activeOpacity={0.7}
             >
-              <Text style={[styles.limitBadgeText, { color: colors.muted }]}>
-                {messagesUsed}/{FREE_MESSAGES_LIMIT}
-              </Text>
+              <View style={styles.limitBadgeContent}>
+                <View style={[styles.limitProgressTrack, { backgroundColor: colors.border }]}>
+                  <View
+                    style={[
+                      styles.limitProgressFill,
+                      {
+                        width: `${(messagesUsed / FREE_MESSAGES_LIMIT) * 100}%`,
+                        backgroundColor: messagesUsed >= FREE_MESSAGES_LIMIT ? colors.danger : messagesUsed >= FREE_MESSAGES_LIMIT * 0.7 ? '#FBBF24' : colors.primary,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.limitBadgeText, { color: colors.muted }]}>
+                  {messagesUsed}/{FREE_MESSAGES_LIMIT}
+                </Text>
+              </View>
             </TouchableOpacity>
           )}
           {stage !== 'welcome' && (
@@ -362,24 +379,35 @@ export const ChatScreen = () => {
             )}
 
             {!isGuestMode && (
-              <TouchableOpacity
-                style={[
-                  styles.startBtn,
-                  {
-                    backgroundColor: colors.primary,
-                    shadowColor: colors.primary,
-                    shadowOffset: { width: 0, height: 8 },
-                    shadowOpacity: 0.5,
-                    shadowRadius: 16,
-                    elevation: 8,
-                  },
-                ]}
-                onPress={handleStartPractice}
-                activeOpacity={0.85}
-              >
-                <Sparkles color={colors.background} size={18} />
-                <Text style={[styles.startBtnText, { color: colors.background }]}>Начать практику</Text>
-              </TouchableOpacity>
+              <>
+                {!profile?.is_premium && (
+                  <View style={styles.limitInfo}>
+                    <Text style={[styles.limitInfoText, { color: colors.muted }]}>
+                      {FREE_MESSAGES_LIMIT - messagesUsed > 0
+                        ? `Осталось ${FREE_MESSAGES_LIMIT - messagesUsed} ${pluralizeRu(FREE_MESSAGES_LIMIT - messagesUsed, ['сообщение', 'сообщения', 'сообщений'])} из ${FREE_MESSAGES_LIMIT} бесплатно`
+                        : 'Бесплатный лимит исчерпан'}
+                    </Text>
+                  </View>
+                )}
+                <TouchableOpacity
+                  style={[
+                    styles.startBtn,
+                    {
+                      backgroundColor: colors.primary,
+                      shadowColor: colors.primary,
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.5,
+                      shadowRadius: 16,
+                      elevation: 8,
+                    },
+                  ]}
+                  onPress={handleStartPractice}
+                  activeOpacity={0.85}
+                >
+                  <Sparkles color={colors.background} size={18} />
+                  <Text style={[styles.startBtnText, { color: colors.background }]}>Начать практику</Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </Animated.View>
@@ -501,7 +529,9 @@ const MessageBubble = ({
       const result = await callAction('translate');
       setTranslation(result);
       setTranslationOpen(true);
-    } catch {}
+    } catch (err) {
+      console.error('[handleTranslate] error:', err);
+    }
     setTranslating(false);
   };
 
@@ -537,7 +567,9 @@ const MessageBubble = ({
       const result = await callAction('hint');
       setHint(result);
       setHintOpen(true);
-    } catch {}
+    } catch (err) {
+      console.error('[handleHint] error:', err);
+    }
     setHintLoading(false);
   };
 
@@ -698,8 +730,11 @@ const styles = StyleSheet.create({
   botAvatarMed: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   headerTitle: { fontSize: typography.body, fontFamily: fonts.headingBold },
   headerSubtitle: { fontSize: typography.small, fontFamily: fonts.regular, marginTop: 1 },
-  limitBadge: { borderRadius: radii.sm, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
-  limitBadgeText: { fontSize: typography.small, fontFamily: fonts.bold },
+  limitBadge: { borderRadius: radii.sm, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, minWidth: 72 },
+  limitBadgeContent: { gap: 4, alignItems: 'center' },
+  limitProgressTrack: { height: 3, borderRadius: 2, width: 56, overflow: 'hidden' },
+  limitProgressFill: { height: '100%', borderRadius: 2 },
+  limitBadgeText: { fontSize: typography.xs, fontFamily: fonts.bold },
   clearBtn: { padding: spacing.xs },
 
   // Welcome
@@ -722,6 +757,8 @@ const styles = StyleSheet.create({
   guestBannerLogin: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   startBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radii.full, paddingVertical: spacing.md, paddingHorizontal: spacing.xl },
   startBtnText: { fontSize: typography.body, fontFamily: fonts.bold, letterSpacing: 0.2 },
+  limitInfo: { alignItems: 'center', marginBottom: spacing.sm },
+  limitInfoText: { fontSize: typography.xs, fontFamily: fonts.regular },
 
   // Choosing screen
   choosingScroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.lg },

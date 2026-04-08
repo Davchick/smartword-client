@@ -60,7 +60,7 @@ export const useProfile = () => {
     queryKey: queryKey.profile.me(),
     queryFn: () => fetchProfileQuery(authUser),
     // Профиль — стабильные данные. Refetch только при фокусе экрана.
-    staleTime: 2 * 60 * 1000, // 2 мин
+    staleTime: 10 * 60 * 1000, // 10 мин — профиль меняется крайне редко
     gcTime: 10 * 60 * 1000,
     enabled: !!authUser,
   });

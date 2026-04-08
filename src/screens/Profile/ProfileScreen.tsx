@@ -6,8 +6,6 @@ import {
   StyleSheet,
   Alert,
   ScrollView,
-  ActivityIndicator,
-  Modal,
   TextInput,
   Linking,
   RefreshControl,
@@ -29,6 +27,8 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useProfile } from '../../hooks/useProfile';
 import { useTrainingProgress } from '../../hooks/useTrainingProgress';
+import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
+import { BottomSheet } from '../../components/ui/BottomSheet';
 import { useStreak } from '../../hooks/useStreak';
 import { queryClient } from '../../lib/queryClient';
 import { queryKey } from '../../lib/queryKeys';
@@ -59,11 +59,13 @@ export const ProfileScreen = () => {
   const [editingNick, setEditingNick] = useState(false);
   const [nickDraft, setNickDraft] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     // Инвалидируем только profile — stats и streaks обновятся по staleTime
     await queryClient.invalidateQueries({ queryKey: queryKey.profile.me() });
+    setLastUpdated(new Date());
     setRefreshing(false);
   }, []);
 
@@ -118,11 +120,7 @@ export const ProfileScreen = () => {
   const accentColor = useMemo(() => AVATAR_COLORS[safeAvatarId], [safeAvatarId]);
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
+    return <SkeletonScreen type="profile" showStats />;
   }
 
   return (
@@ -143,22 +141,24 @@ export const ProfileScreen = () => {
       }
     >
       {/* Кнопка настроек */}
-      <TouchableOpacity
-        style={[
-          styles.settingsBtn,
-          {
-            position: 'absolute',
-            top: spacing.xl + 30,
-            right: spacing.xl,
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-        ]}
-        onPress={() => navigation.navigate('ProfileSettings')}
-        activeOpacity={0.7}
-      >
-        <Settings color={colors.muted} size={20} />
-      </TouchableOpacity>
+      <View style={[
+        styles.settingsContainer,
+        { marginTop: insets.top + spacing.sm },
+      ]}>
+        <TouchableOpacity
+          style={[
+            styles.settingsBtn,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            },
+          ]}
+          onPress={() => navigation.navigate('ProfileSettings')}
+          activeOpacity={0.7}
+        >
+          <Settings color={colors.muted} size={20} />
+        </TouchableOpacity>
+      </View>
 
       {/* Герой — аватар + ник */}
       <View style={styles.heroSection}>
@@ -379,62 +379,60 @@ export const ProfileScreen = () => {
         )}
       </View>
 
+      {lastUpdated && (
+        <Text 
+          style={[styles.lastUpdated, { color: colors.muted }]}
+          accessibilityRole="text"
+          accessibilityLabel={`Последнее обновление: ${lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`}
+          accessibilityLiveRegion="polite"
+        >
+          Обновлено: {lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+      )}
+
       <Text style={[styles.versionText, { color: colors.muted }]}>SmartWord v1.0.0</Text>
 
       {/* Модальное окно выбора аватарки */}
-      <Modal
+      <BottomSheet
         visible={avatarModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setAvatarModalVisible(false)}
+        onClose={() => setAvatarModalVisible(false)}
+        title="Выберите аватарку"
+        subtitle="Выберите милого персонажа для вашего профиля"
+        showHandle={true}
       >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            activeOpacity={1}
-            onPress={() => setAvatarModalVisible(false)}
-          />
-          <View style={[styles.avatarSheet, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-            <Text style={[styles.avatarSheetTitle, { color: colors.text }]}>Выберите аватарку</Text>
-            <Text style={[styles.avatarSheetSubtitle, { color: colors.muted }]}>
-              Выберите милого персонажа для вашего профиля
-            </Text>
-            <View style={styles.avatarGrid}>
-              {AVATAR_CHARS.map((emoji, idx) => {
-                const isSelected = avatarId === idx;
-                const color = AVATAR_COLORS[idx];
-                return (
-                  <TouchableOpacity
-                    key={idx}
-                    style={[
-                      styles.avatarGridItem,
-                      {
-                        backgroundColor: color + '22',
-                        borderColor: isSelected ? color : 'transparent',
-                        borderWidth: 2.5,
-                      },
-                    ]}
-                    onPress={() => {
-                      setAvatarId(idx);
-                      setAvatarModalVisible(false);
-                      Alert.alert('Готово', 'Аватарка обновлена!');
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.avatarGridEmoji}>{emoji}</Text>
-                    {isSelected && (
-                      <View style={[styles.avatarSelectedBadge, { backgroundColor: color }]}>
-                        <Check color="#fff" size={10} strokeWidth={3} />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
+        <View style={styles.avatarGrid}>
+          {AVATAR_CHARS.map((emoji, idx) => {
+            const isSelected = avatarId === idx;
+            const color = AVATAR_COLORS[idx];
+            return (
+              <TouchableOpacity
+                key={idx}
+                style={[
+                  styles.avatarGridItem,
+                  {
+                    backgroundColor: color + '22',
+                    borderColor: isSelected ? color : 'transparent',
+                    borderWidth: 2.5,
+                  },
+                ]}
+                onPress={() => {
+                  setAvatarId(idx);
+                  setAvatarModalVisible(false);
+                  Alert.alert('Готово', 'Аватарка обновлена!');
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.avatarGridEmoji}>{emoji}</Text>
+                {isSelected && (
+                  <View style={[styles.avatarSelectedBadge, { backgroundColor: color }]}>
+                    <Check color="#fff" size={10} strokeWidth={3} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
         </View>
-      </Modal>
+      </BottomSheet>
     </ScrollView>
   );
 };
@@ -444,8 +442,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
+  settingsContainer: {
+    alignItems: 'flex-end',
+    marginBottom: spacing.sm,
+  },
   settingsBtn: {
-    alignSelf: 'flex-end',
     width: 40,
     height: 40,
     borderRadius: radii.sm,
@@ -646,39 +647,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     marginTop: spacing.sm,
   },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  avatarSheet: {
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    borderWidth: 1,
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-    gap: spacing.sm,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: spacing.xs,
-  },
-  avatarSheetTitle: {
-    fontSize: typography.subtitle,
-    fontFamily: fonts.headingBold,
+  lastUpdated: {
     textAlign: 'center',
-  },
-  avatarSheetSubtitle: {
-    fontSize: typography.small,
+    fontSize: typography.xs,
     fontFamily: fonts.regular,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
+    marginTop: spacing.xs,
   },
   avatarGrid: {
     flexDirection: 'row',

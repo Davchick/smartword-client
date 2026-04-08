@@ -17,10 +17,10 @@ import { requestNotificationPermissions } from '../../lib/notifications';
 import { ARCHIVE_THRESHOLD } from '../../constants';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { GroupsStackParamList, MainTabParamList, TrainingStackParamList } from '../../navigation/types';
+import type { MainTabParamList, TrainingStackParamList } from '../../navigation/types';
 import type { WordGroup } from '../../hooks/useGroups';
 
-type Props = NativeStackScreenProps<GroupsStackParamList, 'TrainingModes'> | NativeStackScreenProps<TrainingStackParamList, 'TrainingModes'> | BottomTabScreenProps<MainTabParamList, 'TrainingTab'>;
+type Props = NativeStackScreenProps<TrainingStackParamList, 'TrainingModes'> | BottomTabScreenProps<MainTabParamList, 'TrainingTab'>;
 
 export const TrainingModesScreen = ({ route, navigation }: Props) => {
   const { colors } = useTheme();

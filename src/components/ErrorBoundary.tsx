@@ -33,7 +33,7 @@ class ErrorBoundaryInner extends Component<{ children: ReactNode; colors: Record
     const { colors } = this.props;
     if (this.state.hasError) {
       return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: colors.background }]} accessibilityRole="alert">
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <Text style={styles.emoji}>😵</Text>
             <Text style={[styles.title, { color: colors.text }]}>{'Что-то пошло не так'}</Text>
@@ -48,7 +48,14 @@ class ErrorBoundaryInner extends Component<{ children: ReactNode; colors: Record
                 </Text>
               </View>
             )}
-            <TouchableOpacity style={[styles.resetButton, { backgroundColor: colors.primary }]} onPress={this.handleReset} activeOpacity={0.8}>
+            <TouchableOpacity
+              style={[styles.resetButton, { backgroundColor: colors.primary }]}
+              onPress={this.handleReset}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Попробовать снова"
+              accessibilityHint="Перезагрузить экран и попробовать ещё раз"
+            >
               <Text style={[styles.resetButtonText, { color: colors.background }]}>{'Попробовать снова'}</Text>
             </TouchableOpacity>
           </ScrollView>

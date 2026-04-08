@@ -4,15 +4,16 @@
  * - useQuery для загрузки групп
  * - useMutation для create/delete/rename — с optimistic updates
  * - invalidateQueries автоматически обновляет все экраны
- * - Guest mode через AsyncStorage
+ * - Guest mode через EncryptedStorage (AES-256, ключ в SecureStore)
  */
 
 import { useCallback } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { queryKey, invalidateGroups } from '../lib/queryKeys';
+import { getGuestWords, getGuestGroups, setGuestGroups, setGuestWords } from '../lib/guestStorage';
+import { ARCHIVE_THRESHOLD } from '../constants';
 
 export interface WordGroup {
   id: string;
@@ -20,33 +21,40 @@ export interface WordGroup {
   language: string;
   created_at: string;
   word_count: number;
+  learned_count?: number;
 }
 
 // ─── Guest mode helpers ────────────────────────────────────────────────
 
 async function getGuestData(): Promise<{
   groups: WordGroup[];
-  words: { id: string; group_id: string }[];
+  words: { id: string; group_id: string; correct_count: number }[];
 }> {
-  const [groupsRaw, wordsRaw] = await Promise.all([
-    AsyncStorage.getItem('smartword_guest_groups'),
-    AsyncStorage.getItem('smartword_guest_words'),
+  const [groups, words] = await Promise.all([
+    getGuestGroups<WordGroup[]>(),
+    getGuestWords<{ id: string; group_id: string; correct_count: number }[]>(),
   ]);
-  const groups: WordGroup[] = groupsRaw ? JSON.parse(groupsRaw) : [];
-  const words: { id: string; group_id: string }[] = wordsRaw ? JSON.parse(wordsRaw) : [];
-  return { groups, words };
+  return { groups: groups ?? [], words: words ?? [] };
 }
 
 function generateGuestId(): string {
   return `guest_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-function computeWordCounts(groups: WordGroup[], words: { group_id: string }[]): WordGroup[] {
-  const counts: Record<string, number> = {};
+function computeWordCounts(groups: WordGroup[], words: { group_id: string; correct_count: number }[]): WordGroup[] {
+  const totalCounts: Record<string, number> = {};
+  const learnedCounts: Record<string, number> = {};
   for (const w of words) {
-    counts[w.group_id] = (counts[w.group_id] ?? 0) + 1;
+    totalCounts[w.group_id] = (totalCounts[w.group_id] ?? 0) + 1;
+    if (w.correct_count >= ARCHIVE_THRESHOLD) {
+      learnedCounts[w.group_id] = (learnedCounts[w.group_id] ?? 0) + 1;
+    }
   }
-  return groups.map((g) => ({ ...g, word_count: counts[g.id] ?? 0 }));
+  return groups.map((g) => ({
+    ...g,
+    word_count: totalCounts[g.id] ?? 0,
+    learned_count: learnedCounts[g.id] ?? 0,
+  }));
 }
 
 // ─── Query function ────────────────────────────────────────────────────
@@ -95,10 +103,7 @@ export const useGroups = () => {
         created_at: new Date().toISOString(),
         word_count: 0,
       };
-      await AsyncStorage.setItem(
-        'smartword_guest_groups',
-        JSON.stringify([...existing, newGroup])
-      );
+      await setGuestGroups([...existing, newGroup]);
       return newGroup;
     },
     onMutate: async ({ name, language }) => {
@@ -139,14 +144,8 @@ export const useGroups = () => {
       // Guest mode
       const { groups: existingGroups, words: existingWords } = await getGuestData();
       await Promise.all([
-        AsyncStorage.setItem(
-          'smartword_guest_groups',
-          JSON.stringify(existingGroups.filter((g) => g.id !== groupId))
-        ),
-        AsyncStorage.setItem(
-          'smartword_guest_words',
-          JSON.stringify(existingWords.filter((w) => w.group_id !== groupId))
-        ),
+        setGuestGroups(existingGroups.filter((g) => g.id !== groupId)),
+        setGuestWords(existingWords.filter((w) => w.group_id !== groupId)),
       ]);
     },
     onMutate: async (groupId) => {
@@ -188,7 +187,7 @@ export const useGroups = () => {
       const updated = existing.map((g) =>
         g.id === groupId ? { ...g, name, language } : g
       );
-      await AsyncStorage.setItem('smartword_guest_groups', JSON.stringify(updated));
+      await setGuestGroups(updated);
       return updated.find((g) => g.id === groupId);
     },
     onMutate: async ({ groupId, name, language }) => {

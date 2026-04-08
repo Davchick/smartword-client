@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
-  Animated,
   TextInput,
   KeyboardAvoidingView,
   Platform,
@@ -18,17 +17,19 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, BookOpen, MoreHorizontal, Trash2, Pencil, Archive } from 'lucide-react-native';
 import { useGroups } from '../../hooks/useGroups';
-import { useWords } from '../../hooks/useWords';
 import { useProfile } from '../../hooks/useProfile';
+import { useApiError } from '../../hooks/useApiError';
 import { AddGroupModal } from '../../components/AddGroupModal';
 import { PaywallModal } from '../../components/PaywallModal';
+import { BottomSheet } from '../../components/ui/BottomSheet';
 import { StatsWidget } from '../../components/StatsWidget';
 import { useStats } from '../../hooks/useStats';
+import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
 import { queryClient } from '../../lib/queryClient';
 import { queryKey } from '../../lib/queryKeys';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
-import { ARCHIVE_THRESHOLD, FREE_GROUPS_LIMIT } from '../../constants';
+import { FREE_GROUPS_LIMIT } from '../../constants';
 import type { GroupsScreenProps } from '../../navigation/types';
 import type { WordGroup } from '../../hooks/useGroups';
 
@@ -36,36 +37,29 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { groups, loading, createGroup, deleteGroup, renameGroup } = useGroups();
-  const { words } = useWords(undefined, { fields: ['group_id', 'correct_count'] });
   const { profile } = useProfile();
   const { stats } = useStats();
+  const { handleApiError } = useApiError();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     // Инвалидируем только groups — stats обновится по staleTime (60s)
-    // Избегаем лишнего запроса при каждом pull-to-refresh
     await queryClient.invalidateQueries({ queryKey: queryKey.groups.list() });
+    setLastUpdated(new Date());
     setRefreshing(false);
   }, []);
 
-  // Количество неархивных слов в каждом словаре
-  const activeCountsByGroup = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const w of words) {
-      if (w.correct_count < ARCHIVE_THRESHOLD) {
-        map[w.group_id] = (map[w.group_id] ?? 0) + 1;
-      }
-    }
-    return map;
-  }, [words]);
+  // Количество неархивных слов берём прямо из learned_count группы
+  // learned_count = слова с correct_count >= 5 (архивные)
+  // activeCount = word_count - learned_count
 
   // Bottom-sheet action menu
   const [actionMenuGroup, setActionMenuGroup] = useState<WordGroup | null>(null);
-  const actionMenuAnim = useRef(new Animated.Value(0)).current;
 
   // Rename modal
   const [renameGroup_, setRenameGroup] = useState<WordGroup | null>(null);
@@ -74,34 +68,12 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
 
   const openActionMenu = (group: WordGroup) => {
     setActionMenuGroup(group);
-    Animated.spring(actionMenuAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 65,
-      friction: 11,
-    }).start();
   };
 
   const closeActionMenu = (cb?: () => void) => {
-    Animated.timing(actionMenuAnim, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => {
-      setActionMenuGroup(null);
-      cb?.();
-    });
+    setActionMenuGroup(null);
+    cb?.();
   };
-
-  const sheetTranslateY = actionMenuAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [300, 0],
-  });
-
-  const backdropOpacity = actionMenuAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
-  });
 
   const handleAddPress = () => {
     if (!profile?.is_premium && groups.length >= FREE_GROUPS_LIMIT) {
@@ -126,7 +98,12 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
             {
               text: 'Удалить',
               style: 'destructive',
-              onPress: () => deleteGroup(group.id),
+              onPress: async () => {
+                const result = await deleteGroup(group.id);
+                if (result.error) {
+                  handleApiError(new Error(result.error), 'Не удалось удалить словарь');
+                }
+              },
             },
           ]
         );
@@ -154,11 +131,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   };
 
   if (loading) {
-    return (
-      <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
-      </View>
-    );
+    return <SkeletonScreen type="list" count={3} showStats />;
   }
 
   return (
@@ -173,6 +146,8 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
             style={styles.addButton}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Открыть архив выученных слов"
           >
             <Archive color={colors.muted} size={22} />
           </TouchableOpacity>
@@ -180,6 +155,8 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
             onPress={handleAddPress}
             style={styles.addButton}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Создать новый словарь"
           >
             <Plus color={colors.primary} size={24} />
           </TouchableOpacity>
@@ -201,7 +178,25 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
             colors={[colors.primary]}
           />
         }
-        ListHeaderComponent={<StatsWidget stats={stats} />}
+        windowSize={5}
+        maxToRenderPerBatch={5}
+        initialNumToRender={10}
+        removeClippedSubviews={Platform.OS === 'android'}
+        ListHeaderComponent={
+          <View style={{ gap: spacing.sm }}>
+            <StatsWidget stats={stats} />
+            {lastUpdated && (
+              <Text 
+                style={[styles.lastUpdated, { color: colors.muted }]}
+                accessibilityRole="text"
+                accessibilityLabel={`Последнее обновление: ${lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`}
+                accessibilityLiveRegion="polite"
+              >
+                Обновлено: {lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+            )}
+          </View>
+        }
         ListHeaderComponentStyle={{ marginBottom: 0 }}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -230,7 +225,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
           </View>
         }
         renderItem={({ item }) => {
-          const activeCount = activeCountsByGroup[item.id] ?? 0;
+          const activeCount = Math.max(0, item.word_count - (item.learned_count ?? 0));
           const countLabel = `${activeCount} ${pluralizeRu(activeCount, ['слово', 'слова', 'слов'])}`;
 
           return (
@@ -244,6 +239,9 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
                 })
               }
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Словарь ${item.name}, ${countLabel}`}
+              accessibilityHint="Открыть словарь"
             >
               <View style={styles.cardContent}>
                 <Text style={[styles.groupName, { color: colors.text }]}>{item.name}</Text>
@@ -256,6 +254,8 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
                 onPress={() => openActionMenu(item)}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 style={styles.moreButton}
+                accessibilityRole="button"
+                accessibilityLabel={`Меню действий для словаря ${item.name}`}
               >
                 <MoreHorizontal color={colors.muted} size={20} />
               </TouchableOpacity>
@@ -265,80 +265,67 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
       />
 
       {/* ── Bottom-sheet action menu ── */}
-      <Modal
-        transparent
+      <BottomSheet
         visible={actionMenuGroup !== null}
-        animationType="none"
-        onRequestClose={() => closeActionMenu()}
-        statusBarTranslucent
+        onClose={() => closeActionMenu()}
       >
-        <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => closeActionMenu()} />
-        </Animated.View>
+        {actionMenuGroup && (
+          <View style={styles.sheetPreview}>
+            <Text style={[styles.sheetPreviewName, { color: colors.text }]} numberOfLines={1}>
+              {actionMenuGroup.name}
+            </Text>
+            <Text style={[styles.sheetPreviewMeta, { color: colors.muted }]}>
+              {Math.max(0, actionMenuGroup.word_count - (actionMenuGroup.learned_count ?? 0))}{' '}
+              {pluralizeRu(Math.max(0, actionMenuGroup.word_count - (actionMenuGroup.learned_count ?? 0)), ['слово', 'слова', 'слов'])}
+              {actionMenuGroup.language ? ` · ${actionMenuGroup.language}` : ''}
+            </Text>
+          </View>
+        )}
 
-        <Animated.View
-          style={[
-            styles.sheet,
-            { backgroundColor: colors.elevated, paddingBottom: insets.bottom + spacing.sm },
-            { transform: [{ translateY: sheetTranslateY }] },
-          ]}
+        <View style={[styles.sheetDivider, { backgroundColor: colors.border }]} />
+
+        {/* Rename */}
+        <TouchableOpacity
+          style={styles.sheetAction}
+          onPress={handleRenamePress}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Переименовать словарь"
         >
-          <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+          <View style={[styles.sheetActionIcon, { backgroundColor: colors.primaryDim }]}>
+            <Pencil color={colors.primary} size={18} />
+          </View>
+          <View style={styles.sheetActionText}>
+            <Text style={[styles.sheetActionLabel, { color: colors.text }]}>Переименовать</Text>
+            <Text style={[styles.sheetActionSub, { color: colors.muted }]}>Изменить название или язык</Text>
+          </View>
+        </TouchableOpacity>
 
-          {actionMenuGroup && (
-            <View style={styles.sheetPreview}>
-              <Text style={[styles.sheetPreviewName, { color: colors.text }]} numberOfLines={1}>
-                {actionMenuGroup.name}
-              </Text>
-              <Text style={[styles.sheetPreviewMeta, { color: colors.muted }]}>
-                {(activeCountsByGroup[actionMenuGroup.id] ?? 0)}{' '}
-                {pluralizeRu(activeCountsByGroup[actionMenuGroup.id] ?? 0, ['слово', 'слова', 'слов'])}
-                {actionMenuGroup.language ? ` · ${actionMenuGroup.language}` : ''}
-              </Text>
-            </View>
-          )}
+        {/* Delete */}
+        <TouchableOpacity
+          style={styles.sheetAction}
+          onPress={handleDeletePress}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Удалить словарь"
+        >
+          <View style={[styles.sheetActionIcon, { backgroundColor: 'rgba(251,113,133,0.15)' }]}>
+            <Trash2 color={colors.danger} size={18} />
+          </View>
+          <View style={styles.sheetActionText}>
+            <Text style={[styles.sheetActionLabel, { color: colors.danger }]}>Удалить словарь</Text>
+            <Text style={[styles.sheetActionSub, { color: colors.muted }]}>Невозможно будет восстановить</Text>
+          </View>
+        </TouchableOpacity>
 
-          <View style={[styles.sheetDivider, { backgroundColor: colors.border }]} />
-
-          {/* Rename */}
-          <TouchableOpacity
-            style={styles.sheetAction}
-            onPress={handleRenamePress}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.sheetActionIcon, { backgroundColor: colors.primaryDim }]}>
-              <Pencil color={colors.primary} size={18} />
-            </View>
-            <View style={styles.sheetActionText}>
-              <Text style={[styles.sheetActionLabel, { color: colors.text }]}>Переименовать</Text>
-              <Text style={[styles.sheetActionSub, { color: colors.muted }]}>Изменить название или язык</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Delete */}
-          <TouchableOpacity
-            style={styles.sheetAction}
-            onPress={handleDeletePress}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.sheetActionIcon, { backgroundColor: 'rgba(251,113,133,0.15)' }]}>
-              <Trash2 color={colors.danger} size={18} />
-            </View>
-            <View style={styles.sheetActionText}>
-              <Text style={[styles.sheetActionLabel, { color: colors.danger }]}>Удалить словарь</Text>
-              <Text style={[styles.sheetActionSub, { color: colors.muted }]}>Невозможно будет восстановить</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.sheetCancel, { backgroundColor: colors.card }]}
-            onPress={() => closeActionMenu()}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.sheetCancelText, { color: colors.textSecondary }]}>Отмена</Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </Modal>
+        <TouchableOpacity
+          style={[styles.sheetCancel, { backgroundColor: colors.card }]}
+          onPress={() => closeActionMenu()}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.sheetCancelText, { color: colors.textSecondary }]}>Отмена</Text>
+        </TouchableOpacity>
+      </BottomSheet>
 
       {/* ── Rename modal ── */}
       <Modal
@@ -403,6 +390,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
         onClose={() => setAddModalVisible(false)}
         onSubmit={async (name, lang) => {
           await createGroup(name, lang);
+          // Модал закроется внутри AddGroupModal при успехе
         }}
       />
       <PaywallModal
@@ -466,6 +454,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
   },
+  lastUpdated: {
+    fontSize: typography.xs,
+    fontFamily: fonts.regular,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+  },
   listEmpty: {
     paddingTop: spacing.xl,
   },
@@ -523,20 +517,6 @@ const styles = StyleSheet.create({
   },
 
   // ── Bottom sheet ──
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
-    paddingTop: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
   sheetHandle: {
     width: 36,
     height: 4,
