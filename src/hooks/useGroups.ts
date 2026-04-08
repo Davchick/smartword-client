@@ -150,18 +150,39 @@ export const useGroups = () => {
     },
     onMutate: async (groupId) => {
       const qKey = queryKey.groups.list();
-      await queryClient.cancelQueries({ queryKey: qKey });
-      const previous = queryClient.getQueryData<WordGroup[]>(qKey);
+      const generalWordsKey = queryKey.words.list(); // ['words'] — общий кэш для StatsWidget
+      const groupWordsKey = queryKey.words.list(groupId); // ['words', { groupId }] — кэш слов этой группы
 
+      await queryClient.cancelQueries({ queryKey: qKey });
+      await queryClient.cancelQueries({ queryKey: generalWordsKey });
+      await queryClient.cancelQueries({ queryKey: groupWordsKey });
+
+      const previous = queryClient.getQueryData<WordGroup[]>(qKey);
+      const previousWords = queryClient.getQueryData<{ words: { group_id: string }[]; totalCount: number }>(generalWordsKey);
+
+      // Обновляем кэш групп
       queryClient.setQueryData(qKey, (old: WordGroup[] | undefined) =>
         old?.filter((g) => g.id !== groupId) ?? []
       );
 
-      return { previous };
+      // Обновляем общий кэш слов — удаляем слова из удалённой группы
+      queryClient.setQueryData(generalWordsKey, (old: { words: { group_id: string }[]; totalCount: number } | undefined) => {
+        if (!old) return old;
+        const filtered = old.words.filter((w) => w.group_id !== groupId);
+        return { words: filtered, totalCount: filtered.length };
+      });
+
+      // Удаляем кэш слов удалённой группы
+      queryClient.removeQueries({ queryKey: groupWordsKey });
+
+      return { previous, previousWords };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.previous) {
         queryClient.setQueryData(queryKey.groups.list(), ctx.previous);
+      }
+      if (ctx?.previousWords) {
+        queryClient.setQueryData(queryKey.words.list(), ctx.previousWords);
       }
     },
     onSettled: () => {

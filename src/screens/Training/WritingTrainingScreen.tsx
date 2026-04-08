@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
+  BackHandler,
   View,
   Text,
   StyleSheet,
@@ -75,12 +76,22 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const [paywallVisible, setPaywallVisible] = useState(false);
   const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
 
+  // Отслеживаем достижение лимита во время сессии
+  const [hitLimitThisSession, setHitLimitThisSession] = useState(false);
+
   const feedbackScale = useRef(new Animated.Value(0)).current;
   const feedbackOpacity = useRef(new Animated.Value(0)).current;
   const shakeX = useRef(new Animated.Value(0)).current;
   const progressWidth = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
+  // Отслеживаем достижение лимита во время сессии
+  useEffect(() => {
+    if (finished && !profile?.is_premium) {
+      setHitLimitThisSession(checkLimit());
+    }
+  }, [finished, profile?.is_premium, checkLimit]);
 
   const initTraining = useCallback(() => {
     const tw = getTrainingWords();
@@ -112,13 +123,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     initTraining();
   }, [loading, words.length, weeklyLimitReached, checkLimit, initTraining]);
 
-  // Если trainingWords опустел (например после goToNextWord на последнем слове) — завершаем
-  useEffect(() => {
-    if (!finished && trainingWords.length === 0 && !loading && words.length > 0) {
-      setFinished(true);
-    }
-  }, [trainingWords.length, finished, loading, words.length]);
-
   useEffect(() => {
     if (trainingWords.length === 0) return;
     Animated.timing(progressWidth, {
@@ -128,13 +132,20 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     }).start();
   }, [currentIndex, trainingWords.length, progressWidth]);
 
-  // Flush сессии при выходе из тренировки
+  // Flush сессии при выходе из тренировки + hardware back button handler
   useFocusEffect(
     useCallback(() => {
+      // Hardware back button → goBack (к TrainingModes)
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+        navigation.goBack();
+        return true; // перехватили
+      });
+
       return () => {
         void flushSession();
+        backHandler.remove();
       };
-    }, [flushSession])
+    }, [flushSession, navigation])
   );
 
   // Cleanup: отменяем все pending таймеры при unmount
@@ -261,15 +272,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       </View>
     );
   }
-
-  // Отслеживаем достижение лимита во время сессии — вынесено в useEffect
-  const [hitLimitThisSession, setHitLimitThisSession] = useState(false);
-
-  useEffect(() => {
-    if (finished && !profile?.is_premium) {
-      setHitLimitThisSession(checkLimit());
-    }
-  }, [finished, profile?.is_premium, checkLimit]);
 
   if (finished) {
     const total = sessionTotal;

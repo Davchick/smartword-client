@@ -1,18 +1,21 @@
 /**
  * useStats — React Query версия.
  *
- * - useQuery для загрузки статистики
+ * Ключевые изменения:
+ * - totalWords читается из React Query кэша слов (['words']) — мгновенно, без запроса
+ * - learnedWords, currentStreak, weekActivity — серверные (сложная логика)
  * - Guest mode через computeGuestStats (без изменений)
- * - invalidateQueries обновляет после мутаций
+ * - Fallback на серверный totalWords если кэш слов ещё не загружен
  */
 
-import { useCallback } from 'react';
+import { useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { queryKey } from '../lib/queryKeys';
 import { ARCHIVE_THRESHOLD } from '../constants';
+import type { WordsResponse } from '../hooks/useWords';
 
 export interface DayActivity {
   date: string;
@@ -87,11 +90,17 @@ async function computeGuestStats(): Promise<Stats> {
   return { totalWords, learnedWords, currentStreak: streak, weekActivity };
 }
 
-async function fetchStatsQuery(authUser: ReturnType<typeof useAuth>['user']): Promise<Stats> {
-  if (authUser && getBaseUrl()) {
-    return apiGet<Stats>('/stats');
+interface ServerStats {
+  learnedWords: number;
+  currentStreak: number;
+  weekActivity: DayActivity[];
+}
+
+async function fetchServerStats(): Promise<ServerStats | null> {
+  if (getBaseUrl()) {
+    return apiGet<ServerStats>('/stats');
   }
-  return computeGuestStats();
+  return null;
 }
 
 const EMPTY_STATS: Stats = {
@@ -103,21 +112,76 @@ const EMPTY_STATS: Stats = {
 
 export const useStats = () => {
   const { user: authUser } = useAuth();
+  const queryClient = useQueryClient();
 
+  // Для guest mode — всё вычисляем локально (без изменений)
   const {
-    data: stats = EMPTY_STATS,
-    isLoading: loading,
-    refetch,
+    data: guestStats,
+    isLoading: guestLoading,
   } = useQuery({
     queryKey: queryKey.stats.overview(),
-    queryFn: () => fetchStatsQuery(authUser),
-    staleTime: 60 * 1000, // 1 мин
+    queryFn: computeGuestStats,
+    enabled: !authUser,
+    staleTime: 60 * 1000,
     gcTime: 5 * 60 * 1000,
   });
+
+  // Для авторизованного пользователя:
+  // - totalWords из кэша слов (мгновенно, обновляется при мутациях)
+  // - learnedWords, currentStreak, weekActivity — серверные
+  const {
+    data: serverStats,
+    isLoading: serverLoading,
+  } = useQuery({
+    queryKey: queryKey.stats.overview(),
+    queryFn: fetchServerStats,
+    enabled: !!authUser,
+    staleTime: 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  // Подписываемся на общий кэш слов через useQuery — это даст re-render при обновлении кэша
+  // Если кэш уже заполнен (через useWords или мутации) — запрос не делается (deduplication)
+  // Если кэша нет — делаем один запрос чтобы заполнить его
+  const { data: wordsCache } = useQuery({
+    queryKey: queryKey.words.list(),
+    queryFn: () => apiGet<WordsResponse>('/words'),
+    enabled: !!authUser,
+    staleTime: 30 * 1000, // 30 сек — синхронизировано с useWords
+    gcTime: 5 * 60 * 1000,
+    select: (data) => data,
+  });
+
+  const cachedTotalWords = wordsCache?.totalCount ?? 0;
+  // Fallback: если кэша слов нет — используем 0 (запрос придёт и обновит)
+  const totalWords = wordsCache ? cachedTotalWords : (serverStats as any)?.totalWords ?? 0;
+
+  const stats: Stats = useMemo(() => {
+    if (!authUser) {
+      return guestStats ?? EMPTY_STATS;
+    }
+
+    return {
+      totalWords,
+      learnedWords: serverStats?.learnedWords ?? 0,
+      currentStreak: serverStats?.currentStreak ?? 0,
+      weekActivity: serverStats?.weekActivity ?? [],
+    };
+  }, [authUser, guestStats, totalWords, serverStats]);
+
+  const loading = authUser ? serverLoading : guestLoading;
 
   return {
     stats,
     loading,
-    refetch: () => refetch(),
+    refetch: async () => {
+      if (authUser) {
+        await queryClient.refetchQueries({ queryKey: queryKey.stats.overview() });
+        // Также рефетчим кэш слов чтобы обновить totalWords
+        await queryClient.refetchQueries({ queryKey: queryKey.words.list() });
+      } else {
+        await queryClient.refetchQueries({ queryKey: queryKey.stats.overview() });
+      }
+    },
   };
 };

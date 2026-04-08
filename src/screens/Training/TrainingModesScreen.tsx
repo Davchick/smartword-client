@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import {
+  BackHandler,
   View,
   Text,
   StyleSheet,
@@ -7,6 +8,7 @@ import {
   ScrollView,
   FlatList,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, Layers, PenLine, Bot, BookOpen, ChevronRight } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
@@ -80,6 +82,36 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupFromParams, groupWithWords]);
+
+  // Hardware back button: если выбран словарь (но не через params) — сбрасываем выбор
+  const handleHardwareBack = useCallback(() => {
+    // Если пришли из GroupDetail — не перехватываем (стандартное поведение)
+    if (groupId) {
+      return false;
+    }
+    // Если словарь выбран — сбрасываем (возврат к выбору словаря)
+    if (selectedGroup) {
+      setSelectedGroup(null);
+      return true; // перехватили
+    }
+    // Иначе — не перехватываем (выход из TrainingTab)
+    return false;
+  }, [groupId, selectedGroup]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const subscription = BackHandler.addEventListener('hardwareBackPress', handleHardwareBack);
+      return () => subscription.remove();
+    }, [handleHardwareBack])
+  );
+
+  const handleBackPress = useCallback(() => {
+    if (groupId) {
+      navigation.goBack();
+    } else {
+      setSelectedGroup(null);
+    }
+  }, [groupId, navigation]);
 
   const navigateToTraining = (screen: 'Training' | 'TrainingWrite', gId?: string, gName?: string) => {
     const targetGroupId = gId || activeGroupId;
@@ -207,17 +239,15 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
   // Tab mode: one group with words → use it; several → use selected. Stack mode: use params.
   const activeGroupId = groupId || (groupWithWords ? groupWithWords.id : selectedGroup?.id);
   const activeGroupName = groupId ? groupName : (groupWithWords ? groupWithWords.name : selectedGroup?.name);
-  // Кнопка "назад" показывается только когда groupId передан (переход из словаря)
-  const showBackButton = !!groupId;
+  // Кнопка "назад" показывается когда groupId передан (из словаря) ИЛИ когда выбран словарь (возврат к выбору)
+  const showBackButton = !!groupId || !!selectedGroup;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         {showBackButton && (
           <TouchableOpacity
-            onPress={() => {
-              navigation.goBack();
-            }}
+            onPress={handleBackPress}
             style={[styles.backButton, { backgroundColor: colors.primaryDim }]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             activeOpacity={0.7}

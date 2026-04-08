@@ -14,7 +14,7 @@ import { useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { queryKey, invalidateWords } from '../lib/queryKeys';
+import { queryKey, invalidateWords, invalidateGroups, invalidateStreaks } from '../lib/queryKeys';
 import { ARCHIVE_THRESHOLD } from '../constants';
 import { getGuestWords, setGuestWords } from '../lib/guestStorage';
 
@@ -29,7 +29,7 @@ export interface Word {
   created_at: string;
 }
 
-interface WordsResponse {
+export interface WordsResponse {
   words: Word[];
   totalCount: number;
 }
@@ -158,8 +158,11 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
     },
     onMutate: async ({ original, translation, groupId: gId }) => {
       const qKey = queryKey.words.list(groupId);
+      const generalKey = queryKey.words.list(); // ['words'] — общий кэш для StatsWidget
       await queryClient.cancelQueries({ queryKey: qKey });
+      await queryClient.cancelQueries({ queryKey: generalKey });
       const previous = queryClient.getQueryData<WordsResponse>(qKey);
+      const previousGeneral = queryClient.getQueryData<WordsResponse>(generalKey);
 
       const optimisticWord: Word = {
         id: generateGuestId(),
@@ -172,20 +175,32 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
         created_at: new Date().toISOString(),
       };
 
+      // Обновляем кэш конкретной группы
       queryClient.setQueryData(qKey, (old: WordsResponse | undefined) => ({
         words: old ? [optimisticWord, ...old.words] : [optimisticWord],
         totalCount: (old?.totalCount ?? 0) + 1,
       }));
 
-      return { previous };
+      // Обновляем общий кэш (для StatsWidget на GroupsScreen)
+      queryClient.setQueryData(generalKey, (old: WordsResponse | undefined) => ({
+        words: old ? [optimisticWord, ...old.words] : [optimisticWord],
+        totalCount: (old?.totalCount ?? 0) + 1,
+      }));
+
+      return { previous, previousGeneral };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.previous) {
         queryClient.setQueryData(queryKey.words.list(groupId), ctx.previous);
       }
+      if (ctx?.previousGeneral) {
+        queryClient.setQueryData(queryKey.words.list(), ctx.previousGeneral);
+      }
     },
     onSettled: () => {
       invalidateWords(queryClient);
+      invalidateGroups(queryClient);
+      invalidateStreaks(queryClient);
     },
   });
 
@@ -206,23 +221,38 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
       pendingUpdatesRef.current.delete(wordId); // очищаем pending для удаляемого слова
 
       const qKey = queryKey.words.list(groupId);
+      const generalKey = queryKey.words.list(); // ['words'] — общий кэш для StatsWidget
       await queryClient.cancelQueries({ queryKey: qKey });
+      await queryClient.cancelQueries({ queryKey: generalKey });
       const previous = queryClient.getQueryData<WordsResponse>(qKey);
+      const previousGeneral = queryClient.getQueryData<WordsResponse>(generalKey);
 
+      // Обновляем кэш конкретной группы
       queryClient.setQueryData(qKey, (old: WordsResponse | undefined) => ({
         words: old?.words.filter((w) => w.id !== wordId) ?? [],
         totalCount: Math.max(0, (old?.totalCount ?? 1) - 1),
       }));
 
-      return { previous };
+      // Обновляем общий кэш (для StatsWidget на GroupsScreen)
+      queryClient.setQueryData(generalKey, (old: WordsResponse | undefined) => ({
+        words: old?.words.filter((w) => w.id !== wordId) ?? [],
+        totalCount: Math.max(0, (old?.totalCount ?? 1) - 1),
+      }));
+
+      return { previous, previousGeneral };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.previous) {
         queryClient.setQueryData(queryKey.words.list(groupId), ctx.previous);
       }
+      if (ctx?.previousGeneral) {
+        queryClient.setQueryData(queryKey.words.list(), ctx.previousGeneral);
+      }
     },
     onSettled: () => {
       invalidateWords(queryClient);
+      invalidateGroups(queryClient);
+      invalidateStreaks(queryClient);
     },
   });
 
@@ -252,6 +282,8 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
     },
     onSettled: () => {
       invalidateWords(queryClient);
+      invalidateGroups(queryClient);
+      invalidateStreaks(queryClient);
     },
   });
 

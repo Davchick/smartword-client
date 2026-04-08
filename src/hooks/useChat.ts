@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiPost, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -9,12 +10,35 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-export const useChat = () => {
+// Ключи для AsyncStorage — добавляем userId динамически
+const CHAT_MESSAGES_KEY = (userId: string) => `chat:messages:${userId}`;
+const CHAT_GROUP_KEY = (userId: string) => `chat:group:${userId}`;
+const CHAT_LIMIT_REACHED_KEY = (userId: string) => `chat:limitReached:${userId}`;
+const CHAT_MESSAGES_USED_KEY = (userId: string) => `chat:messagesUsed:${userId}`;
+// Максимум сообщений для сохранения — предотвращаем разрастание
+const MAX_PERSISTED_MESSAGES = 100;
+
+interface PersistedMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string; // ISO string для сериализации
+}
+
+export const useChat = (serverMessagesUsed?: number) => {
   const { user: authUser } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [messagesUsed, setMessagesUsed] = useState(0);
+  const [messagesUsed, setMessagesUsed] = useState(serverMessagesUsed ?? 0);
   const [limitReached, setLimitReached] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  // Синхронизация с сервером — когда профиль загрузился или обновился
+  useEffect(() => {
+    if (typeof serverMessagesUsed === 'number' && serverMessagesUsed > 0) {
+      setMessagesUsed(serverMessagesUsed);
+    }
+  }, [serverMessagesUsed]);
 
   const groupIdRef = useRef<string | undefined>(undefined);
   const groupNameRef = useRef<string | undefined>(undefined);
@@ -22,15 +46,109 @@ export const useChat = () => {
   // Ref для дедупликации — предотвращает одновременные запросы при быстрых кликах
   const sendingRef = useRef(false);
 
+  // ── Загрузка сообщений из AsyncStorage при монтировании / смене пользователя ──
+  useEffect(() => {
+    if (!authUser?.id) {
+      setMessages([]);
+      setInitialized(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadPersisted = async () => {
+      try {
+        const [messagesRaw, groupRaw, limitReachedRaw, messagesUsedRaw] = await Promise.all([
+          AsyncStorage.getItem(CHAT_MESSAGES_KEY(authUser.id)),
+          AsyncStorage.getItem(CHAT_GROUP_KEY(authUser.id)),
+          AsyncStorage.getItem(CHAT_LIMIT_REACHED_KEY(authUser.id)),
+          AsyncStorage.getItem(CHAT_MESSAGES_USED_KEY(authUser.id)),
+        ]);
+
+        if (cancelled) return;
+
+        if (messagesRaw) {
+          const parsed: PersistedMessage[] = JSON.parse(messagesRaw);
+          const restored: ChatMessage[] = parsed.map((m) => ({
+            ...m,
+            timestamp: new Date(m.timestamp),
+          }));
+          // Ограничиваем последние 100 сообщений — не грузим память
+          const trimmed = restored.slice(-MAX_PERSISTED_MESSAGES);
+          setMessages(trimmed);
+          messagesRef.current = trimmed;
+        }
+
+        if (groupRaw) {
+          const { id, name } = JSON.parse(groupRaw);
+          groupIdRef.current = id;
+          groupNameRef.current = name;
+        }
+
+        if (limitReachedRaw === 'true') {
+          setLimitReached(true);
+        }
+
+        if (messagesUsedRaw) {
+          const count = parseInt(messagesUsedRaw, 10);
+          if (!isNaN(count) && count >= 0) {
+            setMessagesUsed(count);
+          }
+        }
+
+        setInitialized(true);
+      } catch (err) {
+        console.error('[useChat] Failed to load persisted chat:', err);
+        setInitialized(true);
+      }
+    };
+
+    loadPersisted();
+    return () => { cancelled = true; };
+  }, [authUser?.id]);
+
+  // ── Сохранение сообщений при каждом изменении ──
+  useEffect(() => {
+    if (!authUser?.id || !initialized) return;
+
+    // Не сохраняем во время загрузки — только после полной инициализации
+    const toPersist = messages.slice(-MAX_PERSISTED_MESSAGES);
+    const serialized: PersistedMessage[] = toPersist.map((m) => ({
+      ...m,
+      timestamp: m.timestamp.toISOString(),
+    }));
+
+    AsyncStorage.setItem(CHAT_MESSAGES_KEY(authUser.id), JSON.stringify(serialized)).catch((err) => {
+      console.error('[useChat] Failed to persist messages:', err);
+    });
+  }, [messages, authUser?.id, initialized]);
+
+  // ── Сохранение messagesUsed при изменении ──
+  useEffect(() => {
+    if (!authUser?.id || !initialized) return;
+    AsyncStorage.setItem(CHAT_MESSAGES_USED_KEY(authUser.id), String(messagesUsed)).catch((err) => {
+      console.error('[useChat] Failed to persist messagesUsed:', err);
+    });
+  }, [messagesUsed, authUser?.id, initialized]);
+
   const setGroup = useCallback((id?: string, name?: string) => {
     groupIdRef.current = id;
     groupNameRef.current = name;
-  }, []);
 
-  const sendMessage = useCallback(async (text: string): Promise<void> => {
-    if (!text.trim()) return;
+    // Сохраняем группу
+    if (authUser?.id) {
+      if (id) {
+        AsyncStorage.setItem(CHAT_GROUP_KEY(authUser.id), JSON.stringify({ id, name })).catch(() => {});
+      } else {
+        AsyncStorage.removeItem(CHAT_GROUP_KEY(authUser.id)).catch(() => {});
+      }
+    }
+  }, [authUser?.id]);
+
+  const sendMessage = useCallback(async (text: string): Promise<boolean> => {
+    if (!text.trim()) return false;
     // Дедупликация — если уже идёт отправка, игнорируем повторный вызов
-    if (sendingRef.current) return;
+    if (sendingRef.current) return false;
     if (!authUser || !getBaseUrl()) {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -39,7 +157,7 @@ export const useChat = () => {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMsg]);
-      return;
+      return false;
     }
 
     const userMessage: ChatMessage = {
@@ -72,7 +190,11 @@ export const useChat = () => {
 
       if (responseData?.error === 'limit_reached') {
         setLimitReached(true);
-        return;
+        // Сохраняем состояние лимита
+        if (authUser?.id) {
+          AsyncStorage.setItem(CHAT_LIMIT_REACHED_KEY(authUser.id), 'true').catch(() => {});
+        }
+        return false;
       }
 
       const assistantMessage: ChatMessage = {
@@ -87,6 +209,7 @@ export const useChat = () => {
       if (typeof responseData?.messages_used === 'number') {
         setMessagesUsed(responseData.messages_used);
       }
+      return true;
     } catch (err: unknown) {
       console.error('[useChat] error:', err);
       const e = err as { status?: number; body?: { error?: string } };
@@ -119,6 +242,7 @@ export const useChat = () => {
       };
       messagesRef.current = [...messagesRef.current, errorMessage];
       setMessages((prev) => [...prev, errorMessage]);
+      return false;
     } finally {
       setLoading(false);
       sendingRef.current = false;
@@ -131,7 +255,19 @@ export const useChat = () => {
     setLimitReached(false);
     groupIdRef.current = undefined;
     groupNameRef.current = undefined;
-  }, []);
+
+    // Очищаем AsyncStorage для текущего пользователя
+    if (authUser?.id) {
+      AsyncStorage.multiRemove([
+        CHAT_MESSAGES_KEY(authUser.id),
+        CHAT_GROUP_KEY(authUser.id),
+        CHAT_LIMIT_REACHED_KEY(authUser.id),
+        CHAT_MESSAGES_USED_KEY(authUser.id),
+      ]).catch((err) => {
+        console.error('[useChat] Failed to clear persisted chat:', err);
+      });
+    }
+  }, [authUser?.id]);
 
   return { messages, loading, messagesUsed, limitReached, sendMessage, setGroup, clearMessages };
 };

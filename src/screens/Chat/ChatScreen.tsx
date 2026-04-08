@@ -29,7 +29,6 @@ import { queryKey } from '../../lib/queryKeys';
 import { TypingIndicator } from '../../components/TypingIndicator';
 import { PaywallModal } from '../../components/PaywallModal';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
-import { pluralizeRu } from '../../lib/pluralizeRu';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
@@ -93,7 +92,7 @@ export const ChatScreen = () => {
   const [selectedGroup, setSelectedGroup] = useState<WordGroup | null>(null);
   const [freeMode, setFreeMode] = useState(false);
 
-  const { messages, loading, messagesUsed, limitReached, sendMessage, setGroup, clearMessages } = useChat();
+  const { messages, loading, messagesUsed, limitReached, sendMessage, setGroup, clearMessages } = useChat(profile?.ai_messages_used);
 
   const [inputText, setInputText] = useState('');
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -118,7 +117,13 @@ export const ChatScreen = () => {
 
   // Кнопка "Начать практику" — только проверяем авторизацию и переходим к выбору (без запроса к ИИ)
   const handleStartPractice = useCallback(async () => {
-    if (!getBaseUrl() || !profile) {
+    if (!profile) {
+      navigation.navigate('SignIn');
+      return;
+    }
+    try {
+      getBaseUrl(); // может бросить Error в production без HTTPS
+    } catch {
       navigation.navigate('SignIn');
       return;
     }
@@ -160,19 +165,20 @@ export const ChatScreen = () => {
       return;
     }
     const text = inputText;
-    setInputText('');
-    await sendMessage(text);
-    scrollToBottom();
+    const success = await sendMessage(text);
+    if (success) {
+      setInputText('');
+      scrollToBottom();
+    }
   }, [inputText, loading, profile, messagesUsed, limitReached, sendMessage, scrollToBottom]);
 
   const handleReset = useCallback(() => {
     clearMessages(); // clearMessages уже сбрасывает groupIdRef внутри
-    setStage('welcome');
+    setStage('choosing');
     setSelectedGroup(null);
     setFreeMode(false);
     setInputText('');
-    Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-  }, [clearMessages, fadeAnim]);
+  }, [clearMessages]);
 
   const handleInsertFromHint = useCallback((text: string) => {
     if (!text) return;
@@ -201,9 +207,6 @@ export const ChatScreen = () => {
     >
       {/* Приветствие Лекси */}
       <View style={styles.choosingGreeting}>
-        <View style={[styles.botAvatarMed, { backgroundColor: colors.primaryDim }]}>
-          <Bot color={colors.primary} size={18} />
-        </View>
         <View style={[styles.choosingBubble, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.choosingBubbleText, { color: colors.text }]}>
             {groups.length > 0
@@ -324,7 +327,7 @@ export const ChatScreen = () => {
               </View>
             </TouchableOpacity>
           )}
-          {stage !== 'welcome' && (
+          {stage === 'active' && (
             <TouchableOpacity
               onPress={handleReset}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -356,7 +359,7 @@ export const ChatScreen = () => {
 
           <View style={[styles.welcomeBottom, { paddingBottom: insets.bottom + spacing.md, borderTopColor: colors.border }]}>
             <View style={[styles.disclaimer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <AlertCircle color={colors.muted} size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+              <AlertCircle color={colors.muted} size={13} style={{ flexShrink: 0 }} />
               <Text style={[styles.disclaimerText, { color: colors.muted }]}>
                 Контент генерирует нейросеть. ИИ может давать неточные ответы. Чат предназначен исключительно для языковой практики.
               </Text>
@@ -380,15 +383,6 @@ export const ChatScreen = () => {
 
             {!isGuestMode && (
               <>
-                {!profile?.is_premium && (
-                  <View style={styles.limitInfo}>
-                    <Text style={[styles.limitInfoText, { color: colors.muted }]}>
-                      {FREE_MESSAGES_LIMIT - messagesUsed > 0
-                        ? `Осталось ${FREE_MESSAGES_LIMIT - messagesUsed} ${pluralizeRu(FREE_MESSAGES_LIMIT - messagesUsed, ['сообщение', 'сообщения', 'сообщений'])} из ${FREE_MESSAGES_LIMIT} бесплатно`
-                        : 'Бесплатный лимит исчерпан'}
-                    </Text>
-                  </View>
-                )}
                 <TouchableOpacity
                   style={[
                     styles.startBtn,
@@ -508,6 +502,12 @@ const MessageBubble = ({
   const [hintOpen, setHintOpen] = useState(false);
   const [hintLoading, setHintLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const mountedRef = useRef(true);
+
+  // Cleanup при размонтировании — предотвращает setState на unmounted
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const callAction = async (action: 'translate' | 'hint'): Promise<string> => {
     const endpoint = action === 'translate' ? '/chat/translate' : '/chat/hint';
@@ -516,6 +516,7 @@ const MessageBubble = ({
   };
 
   const handleTranslate = async () => {
+    if (translating) return;
     if (translationOpen && translation) {
       setTranslationOpen(false);
       return;
@@ -527,12 +528,15 @@ const MessageBubble = ({
     setTranslating(true);
     try {
       const result = await callAction('translate');
-      setTranslation(result);
-      setTranslationOpen(true);
+      if (mountedRef.current) {
+        setTranslation(result);
+        setTranslationOpen(true);
+      }
     } catch (err) {
       console.error('[handleTranslate] error:', err);
+    } finally {
+      if (mountedRef.current) setTranslating(false);
     }
-    setTranslating(false);
   };
 
   const handleCopy = () => {
@@ -554,6 +558,7 @@ const MessageBubble = ({
   };
 
   const handleHint = async () => {
+    if (hintLoading) return;
     if (hintOpen && hint) {
       setHintOpen(false);
       return;
@@ -565,12 +570,15 @@ const MessageBubble = ({
     setHintLoading(true);
     try {
       const result = await callAction('hint');
-      setHint(result);
-      setHintOpen(true);
+      if (mountedRef.current) {
+        setHint(result);
+        setHintOpen(true);
+      }
     } catch (err) {
       console.error('[handleHint] error:', err);
+    } finally {
+      if (mountedRef.current) setHintLoading(false);
     }
-    setHintLoading(false);
   };
 
   const getHintOptions = () => {
@@ -596,11 +604,6 @@ const MessageBubble = ({
 
   return (
     <View style={[styles.messageRow, isUser && styles.messageRowUser]}>
-      {!isUser && (
-        <View style={[styles.botAvatar, { backgroundColor: colors.primaryDim }]}>
-          <Bot color={colors.primary} size={14} />
-        </View>
-      )}
       <View style={styles.bubbleWrapper}>
         <View style={[
           styles.bubble,
@@ -750,19 +753,19 @@ const styles = StyleSheet.create({
   featureDivider: { height: 1, marginHorizontal: spacing.md },
   featureText: { fontSize: typography.small, fontFamily: fonts.regular, flex: 1, lineHeight: 20 },
   welcomeBottom: { paddingTop: spacing.md, paddingHorizontal: spacing.xl, gap: spacing.md, borderTopWidth: 1 },
-  disclaimer: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs + 2, borderRadius: radii.sm, borderWidth: 1, padding: spacing.sm + 2 },
+  disclaimer: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, borderRadius: radii.sm, borderWidth: 1, padding: spacing.sm + 2 },
   disclaimerText: { fontSize: typography.xs, fontFamily: fonts.regular, flex: 1, lineHeight: 18 },
   guestBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radii.sm, borderWidth: 1, padding: spacing.sm + 2 },
   guestBannerText: { fontSize: typography.small, fontFamily: fonts.regular, flex: 1 },
   guestBannerLogin: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   startBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radii.full, paddingVertical: spacing.md, paddingHorizontal: spacing.xl },
   startBtnText: { fontSize: typography.body, fontFamily: fonts.bold, letterSpacing: 0.2 },
-  limitInfo: { alignItems: 'center', marginBottom: spacing.sm },
-  limitInfoText: { fontSize: typography.xs, fontFamily: fonts.regular },
 
   // Choosing screen
   choosingScroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.lg },
-  choosingGreeting: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  choosingGreeting: {
+    alignItems: 'flex-start',
+  },
   choosingBubble: {
     flex: 1,
     borderRadius: radii.lg,

@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
+  BackHandler,
   View,
   Text,
   StyleSheet,
@@ -60,10 +61,21 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const canGoBack = navigation.canGoBack();
   const [isProcessing, setIsProcessing] = useState(false);
   const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
+
+  // Отслеживаем достижение лимита во время сессии
+  const [hitLimitThisSession, setHitLimitThisSession] = useState(false);
+
   const processingRef = useRef(false); // Ref-дубль для мгновенной проверки в race condition
 
   // Ref для предотвращения повторной инициализации при ре-рендере
   const initializedRef = useRef(false);
+
+  // Отслеживаем достижение лимита во время сессии
+  useEffect(() => {
+    if (finished && !profile?.is_premium) {
+      setHitLimitThisSession(checkLimit());
+    }
+  }, [finished, profile?.is_premium, checkLimit]);
 
   // Инициализация тренировки — вызывается один раз при загрузке слов
   const initTraining = useCallback(() => {
@@ -108,17 +120,29 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     }
   }, [round, trainingWords.length, finished, loading]);
 
-  // Flush сессии при выходе из тренировки
+  // Flush сессии при выходе из тренировки + hardware back button handler
   useFocusEffect(
     useCallback(() => {
-      return () => {
+      // Cleanup при размонтировании/уходе с экрана
+      const cleanup = () => {
         void flushSession();
         // Сбрасываем isProcessing при размонтировании — предотвращает
         // зависание состояния если свайп/нажатие произошло во время unmount
         setIsProcessing(false);
         processingRef.current = false;
       };
-    }, [flushSession])
+
+      // Hardware back button → goBack (к TrainingModes)
+      const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+        navigation.goBack();
+        return true; // перехватили
+      });
+
+      return () => {
+        cleanup();
+        backHandler.remove();
+      };
+    }, [flushSession, navigation])
   );
 
   const formatScore = (value: number) => {
@@ -311,16 +335,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       </View>
     );
   }
-
-  // Отслеживаем достижение лимита во время сессии — вынесено в useEffect
-  // чтобы избежать side-effect в render-методе (checkLimit вызывает setState)
-  const [hitLimitThisSession, setHitLimitThisSession] = useState(false);
-
-  useEffect(() => {
-    if (finished && !profile?.is_premium) {
-      setHitLimitThisSession(checkLimit());
-    }
-  }, [finished, profile?.is_premium, checkLimit]);
 
   // ─── Render: Finished ───
   if (finished) {

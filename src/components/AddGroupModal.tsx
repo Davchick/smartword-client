@@ -8,6 +8,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
 } from 'react-native';
 import { X } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography } from '../theme';
@@ -47,11 +48,16 @@ export const AddGroupModal = ({ visible, onClose, onSubmit }: Props) => {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior="padding"
-      >
-        <View style={[styles.sheet, { backgroundColor: colors.elevated }]}>
+      <Pressable style={[styles.overlay, { backgroundColor: 'rgba(0,0,0,0.6)' }]} onPress={handleClose}>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+        >
+          <View 
+            style={[styles.sheet, { backgroundColor: colors.elevated }]}
+            onStartShouldSetResponder={() => true}
+          >
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.text }]}>Новый словарь</Text>
             <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -81,7 +87,8 @@ export const AddGroupModal = ({ visible, onClose, onSubmit }: Props) => {
             <Text style={[styles.buttonText, { color: colors.background }]}>{loading ? 'Создание...' : 'Создать'}</Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </Pressable>
     </Modal>
   );
 };
@@ -89,7 +96,10 @@ export const AddGroupModal = ({ visible, onClose, onSubmit }: Props) => {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
