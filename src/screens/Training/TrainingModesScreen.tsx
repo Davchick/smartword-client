@@ -172,7 +172,7 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
             <BookOpen color={colors.muted} size={48} strokeWidth={1.5} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет слов для тренировки</Text>
             <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-              Добавьте слова в словарь или повторите слова, которые нужно подтянуть
+              Добавьте слова в словарь и возвращайтесь сюда повторять их
             </Text>
           </View>
         ) : (
@@ -229,7 +229,7 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
           <BookOpen color={colors.muted} size={48} strokeWidth={1.5} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет слов для тренировки</Text>
           <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
-            Добавьте слова в словарь или повторите слова, которые нужно подтянуть
+            Добавьте слова в словарь и возвращайтесь сюда повторять их
           </Text>
         </View>
       </View>

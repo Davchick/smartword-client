@@ -3,6 +3,8 @@ import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiPost, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { queryClient } from '../lib/queryClient';
+import { queryKey } from '../lib/queryKeys';
 
 // ─── Keys ────────────────────────────────────────────────────────────────
 const PENDING_SESSION_KEY = '@SmartWord:pendingTrainingSession';
@@ -197,6 +199,30 @@ export const useTrainingSession = () => {
         failed = session.updates.length;
       } else {
         sent = data?.updated ?? session.updates.length;
+
+        // Optimistic update кэша training-progress — без лишнего GET-запроса.
+        // Сервер делает increment: points += totalPoints, делаем то же самое на клиенте.
+        const queryK = queryKey.stats.trainingProgress();
+        queryClient.setQueryData(queryK, (prev: import('./useTrainingProgress').TrainingDayProgress[] | undefined) => {
+          if (!prev) return prev;
+
+          // Локальная дата сегодня в формате YYYY-MM-DD (без смещения, как сервер)
+          const now = new Date();
+          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+          const earned = session.totalPoints;
+
+          return prev.map((day) => {
+            if (day.date === todayStr) {
+              // Запись за сегодня уже есть — инкрементируем
+              return { ...day, points: day.points + earned };
+            }
+            if (day.isToday && !day.date) {
+              // Пустые данные — заполняем сегодняшнюю запись
+              return { ...day, date: todayStr, points: earned };
+            }
+            return day;
+          });
+        });
       }
     } else {
       // Гостевой режим — данные уже сохранены через optimistic update в useWords.

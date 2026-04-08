@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Flame, BookOpen, CheckCircle2 } from 'lucide-react-native';
 import { useTheme, fonts, spacing, radii, typography } from '../theme';
 import type { Stats } from '../hooks/useStats';
+import { AnimatedBorderSnake } from './AnimatedBorderSnake';
 
 interface Props {
   stats: Stats;
@@ -56,39 +57,49 @@ export const StatsWidget = ({ stats }: Props) => {
               ? colors.primary + '15'
               : 'transparent';
 
-            const borderColor = isActive || isToday ? colors.primary : colors.border;
+            const borderColor = isActive ? colors.primary : (isToday ? 'transparent' : colors.border);
 
             // Получаем день месяца из даты
             const dayOfMonth = new Date(day.date).getDate();
 
             return (
               <View key={day.date} style={styles.dayItem}>
-                <View style={[
-                  styles.daySquare,
-                  {
-                    backgroundColor: bgColor,
-                    borderColor: borderColor,
-                    borderWidth: isActive || isToday ? 2 : 1.5,
-                  },
-                ]}>
-                  <Text style={[
-                    styles.dayWeekday,
+                <View style={styles.daySquareWrapper}>
+                  <View style={[
+                    styles.daySquare,
                     {
-                      color: isActive || isToday ? colors.primary : colors.muted,
-                      fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
+                      backgroundColor: bgColor,
+                      borderColor: borderColor,
+                      borderWidth: isActive ? 2 : 1.5,
                     },
                   ]}>
-                    {day.dayLabel}
-                  </Text>
-                  <Text style={[
-                    styles.dayDate,
-                    {
-                      color: isActive || isToday ? colors.primary : colors.text,
-                      fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
-                    },
-                  ]}>
-                    {dayOfMonth}
-                  </Text>
+                    <Text style={[
+                      styles.dayWeekday,
+                      {
+                        color: isActive || isToday ? colors.primary : colors.muted,
+                        fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
+                      },
+                    ]}>
+                      {day.dayLabel}
+                    </Text>
+                    <Text style={[
+                      styles.dayDate,
+                      {
+                        color: isToday ? colors.primary : (isActive ? colors.primary : colors.text),
+                        fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
+                      },
+                    ]}>
+                      {dayOfMonth}
+                    </Text>
+                  </View>
+                  {isToday && (
+                    <AnimatedBorderSnake
+                      color={colors.primary}
+                      size={40}
+                      strokeWidth={2}
+                      borderRadius={8}
+                    />
+                  )}
                 </View>
               </View>
             );
@@ -210,6 +221,13 @@ const styles = StyleSheet.create({
   },
   dayItem: {
     alignItems: 'center',
+  },
+  daySquareWrapper: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
   },
   daySquare: {
     width: 40,
