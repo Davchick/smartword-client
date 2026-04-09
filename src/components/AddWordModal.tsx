@@ -5,6 +5,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
@@ -53,17 +54,18 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <KeyboardAvoidingView
-        style={styles.overlay}
-        behavior="padding"
-      >
-        <View style={[styles.sheet, { backgroundColor: colors.elevated }]}>
-          <View style={styles.header}>
-            <Text style={[styles.title, { color: colors.text }]}>Новое слово</Text>
-            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <X color={colors.muted} size={22} />
-            </TouchableOpacity>
-          </View>
+      <Pressable style={styles.overlay} onPress={handleClose}>
+        <KeyboardAvoidingView
+          style={styles.container}
+          behavior="padding"
+        >
+          <View style={[styles.sheet, { backgroundColor: colors.elevated }]} onStartShouldSetResponder={() => true}>
+            <View style={styles.header}>
+              <Text style={[styles.title, { color: colors.text }]}>Новое слово</Text>
+              <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <X color={colors.muted} size={22} />
+              </TouchableOpacity>
+            </View>
 
           <TextInput
             style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
@@ -94,8 +96,9 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
           >
             <Text style={[styles.buttonText, { color: colors.background }]}>{loading ? 'Добавление...' : 'Добавить'}</Text>
           </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+          </View>
+        </KeyboardAvoidingView>
+      </Pressable>
     </Modal>
   );
 };
@@ -104,6 +107,10 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {

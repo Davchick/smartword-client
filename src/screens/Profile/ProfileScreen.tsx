@@ -89,7 +89,7 @@ export const ProfileScreen = () => {
   };
 
   const handleSupport = () => {
-    Linking.openURL('https://t.me/smartwordd_bot');
+    Linking.openURL('mailto:support@smart-word.ru');
   };
 
   const startEditNick = () => {
@@ -128,7 +128,7 @@ export const ProfileScreen = () => {
       style={{ flex: 1, backgroundColor: 'transparent' }}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: insets.top + spacing.sm, paddingBottom: insets.bottom + spacing.xl },
+        { paddingTop: insets.top, paddingBottom: insets.bottom + spacing.xl },
       ]}
       showsVerticalScrollIndicator={false}
       refreshControl={
@@ -141,10 +141,7 @@ export const ProfileScreen = () => {
       }
     >
       {/* Кнопка настроек */}
-      <View style={[
-        styles.settingsContainer,
-        { marginTop: insets.top + spacing.sm },
-      ]}>
+      <View style={styles.settingsContainer}>
         <TouchableOpacity
           style={[
             styles.settingsBtn,
@@ -263,7 +260,7 @@ export const ProfileScreen = () => {
               <View style={{ flex: 1, marginLeft: spacing.md }}>
                 <Text style={[styles.upgradeTitle, { color: colors.text }]}>SmartWord Premium</Text>
                 <Text style={[styles.upgradeSubtitle, { color: colors.muted }]}>
-                  Безлимит · AI-чат · от 299 ₽/мес
+                  Безлимит · AI-чат · от 264 ₽/мес
                 </Text>
               </View>
               <View
@@ -418,7 +415,6 @@ export const ProfileScreen = () => {
                 onPress={() => {
                   setAvatarId(idx);
                   setAvatarModalVisible(false);
-                  Alert.alert('Готово', 'Аватарка обновлена!');
                 }}
                 activeOpacity={0.8}
               >
@@ -443,8 +439,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   settingsContainer: {
-    alignItems: 'flex-end',
-    marginBottom: spacing.sm,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    width: '100%',
+    marginTop: spacing.xs,
   },
   settingsBtn: {
     width: 40,
@@ -456,7 +454,6 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     alignItems: 'center',
-    paddingTop: spacing.xl,
     paddingBottom: spacing.sm,
     gap: spacing.sm,
   },

@@ -20,7 +20,7 @@ import {
   Languages, Copy, Lightbulb,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { apiPost, getBaseUrl } from '../../lib/api';
+import { apiPostWithRetry, getBaseUrl } from '../../lib/api';
 import { useChat } from '../../hooks/useChat';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
@@ -511,7 +511,7 @@ const MessageBubble = ({
 
   const callAction = async (action: 'translate' | 'hint'): Promise<string> => {
     const endpoint = action === 'translate' ? '/chat/translate' : '/chat/hint';
-    const data = await apiPost<{ result?: string }>(endpoint, { text: item.content });
+    const data = await apiPostWithRetry<{ result?: string }>(endpoint, { text: item.content });
     return data?.result ?? '';
   };
 

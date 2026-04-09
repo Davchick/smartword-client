@@ -24,17 +24,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refetch = useCallback(async () => {
-    if (!getBaseUrl()) {
+    let baseUrl = '';
+    try {
+      baseUrl = getBaseUrl();
+    } catch (err) {
+      console.error('[Auth] refetch: getBaseUrl() threw error:', err);
+      return;
+    }
+    
+    if (!baseUrl) {
       console.error('[Auth] refetch skipped: getBaseUrl() is empty');
       return;
     }
+    
     try {
       const profile = await apiGet<ApiProfile>('/profile');
       setUserState(profile);
     } catch (err) {
       // НЕ сбрасываем user при ошибке — временный сбой сети не должен «выкидывать» пользователя.
       // Предыдущее состояние сохраняется, UI продолжит работать с кэшированными данными.
-      console.error('[Auth] refetch failed, keeping current user state:', err);
+      if (__DEV__) {
+        console.error('[Auth] refetch failed, keeping current user state:', err);
+      }
     }
   }, []);
 
@@ -56,17 +67,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!getBaseUrl()) {
+    // Проверяем валидность API URL перед запросом
+    let baseUrl = '';
+    try {
+      baseUrl = getBaseUrl();
+    } catch (err) {
+      console.error('[Auth] getBaseUrl() threw error:', err);
+      baseUrl = '';
+    }
+    
+    if (!baseUrl) {
+      console.warn('[Auth] No valid API URL — skipping auth check');
       setLoading(false);
       setUserState(null);
       return;
     }
+    
     let cancelled = false;
     (async () => {
       try {
         const profile = await apiGet<ApiProfile>('/profile');
         if (!cancelled) setUserState(profile);
-      } catch {
+      } catch (err) {
+        // Ловим ВСЕ ошибки — network, timeout, 401, 500 и т.д.
+        if (__DEV__) {
+          console.warn('[Auth] Initial profile fetch failed (keeping user null):', err);
+        }
         if (!cancelled) setUserState(null);
       } finally {
         if (!cancelled) setLoading(false);

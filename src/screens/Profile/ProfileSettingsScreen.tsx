@@ -94,7 +94,7 @@ export const ProfileSettingsScreen = () => {
       clearTimeout(timeoutId);
       setStep('new');
     } catch (err: unknown) {
-      const e = err as { status?: number; body?: { error?: string }; message?: string };
+      const e = err as { status?: number; body?: { error?: string }; message?: string; name?: string };
       if (e?.name === 'AbortError' || e?.message?.includes('abort')) {
         showToast('Превышено время ожидания. Попробуйте снова.', 'error');
       } else {
@@ -123,14 +123,14 @@ export const ProfileSettingsScreen = () => {
       // Таймаут 10 секунд для защиты от зависания
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
-      
+
       await apiPatch('/auth/password', { currentPassword, newPassword }, { signal: controller.signal });
-      
+
       clearTimeout(timeoutId);
       showToast('Пароль успешно изменён', 'success');
       handleCloseModal();
     } catch (err: unknown) {
-      const e = err as { status?: number; body?: { error?: string }; message?: string };
+      const e = err as { status?: number; body?: { error?: string }; message?: string; name?: string };
       if (e?.name === 'AbortError' || e?.message?.includes('abort')) {
         showToast('Превышено время ожидания. Попробуйте снова.', 'error');
       } else if (e?.status === 401) {
@@ -413,8 +413,8 @@ const styles = StyleSheet.create({
   card: { borderRadius: radii.md, borderWidth: 1, overflow: 'hidden' },
   themeRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
   menuRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
-  menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  menuText: { flex: 1, fontSize: typography.body, fontFamily: fonts.medium },
+  menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  menuText: { fontSize: typography.body, fontFamily: fonts.medium },
   menuMeta: { fontSize: typography.small, fontFamily: fonts.regular },
   checkCircle: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },

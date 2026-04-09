@@ -6,11 +6,11 @@ export const PRODUCT_IDS = {
 
 export type ProductId = (typeof PRODUCT_IDS)[keyof typeof PRODUCT_IDS];
 
-// Безопасная загрузка нативного модуля — в Expo Go он недоступен
-const getIAP = (): typeof import('expo-in-app-purchases') | null => {
+// Безопасная загрузка нативного модуля — в Expo Go и на dev он недоступен
+const getIAP = (): typeof import('../mocks/expo-in-app-purchases') | null => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require('expo-in-app-purchases');
+    return require('../mocks/expo-in-app-purchases');
   } catch {
     return null;
   }

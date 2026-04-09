@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { apiPost, getBaseUrl } from '../lib/api';
+import { apiPostWithRetry, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 
 export interface ChatMessage {
@@ -15,6 +15,7 @@ const CHAT_MESSAGES_KEY = (userId: string) => `chat:messages:${userId}`;
 const CHAT_GROUP_KEY = (userId: string) => `chat:group:${userId}`;
 const CHAT_LIMIT_REACHED_KEY = (userId: string) => `chat:limitReached:${userId}`;
 const CHAT_MESSAGES_USED_KEY = (userId: string) => `chat:messagesUsed:${userId}`;
+const CHAT_LAST_RESET_DATE_KEY = (userId: string) => `chat:lastResetDate:${userId}`;
 // Максимум сообщений для сохранения — предотвращаем разрастание
 const MAX_PERSISTED_MESSAGES = 100;
 
@@ -24,6 +25,12 @@ interface PersistedMessage {
   content: string;
   timestamp: string; // ISO string для сериализации
 }
+
+// Возвращает сегодняшнюю дату в формате YYYY-MM-DD для сравнения
+const getTodayKey = (): string => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
 
 export const useChat = (serverMessagesUsed?: number) => {
   const { user: authUser } = useAuth();
@@ -58,14 +65,19 @@ export const useChat = (serverMessagesUsed?: number) => {
 
     const loadPersisted = async () => {
       try {
-        const [messagesRaw, groupRaw, limitReachedRaw, messagesUsedRaw] = await Promise.all([
+        const [messagesRaw, groupRaw, limitReachedRaw, messagesUsedRaw, lastResetDateRaw] = await Promise.all([
           AsyncStorage.getItem(CHAT_MESSAGES_KEY(authUser.id)),
           AsyncStorage.getItem(CHAT_GROUP_KEY(authUser.id)),
           AsyncStorage.getItem(CHAT_LIMIT_REACHED_KEY(authUser.id)),
           AsyncStorage.getItem(CHAT_MESSAGES_USED_KEY(authUser.id)),
+          AsyncStorage.getItem(CHAT_LAST_RESET_DATE_KEY(authUser.id)),
         ]);
 
         if (cancelled) return;
+
+        // Daily reset на клиенте: если последний сброс был не сегодня — обнуляем
+        const todayKey = getTodayKey();
+        const isNewDay = lastResetDateRaw !== todayKey;
 
         if (messagesRaw) {
           const parsed: PersistedMessage[] = JSON.parse(messagesRaw);
@@ -85,14 +97,24 @@ export const useChat = (serverMessagesUsed?: number) => {
           groupNameRef.current = name;
         }
 
-        if (limitReachedRaw === 'true') {
-          setLimitReached(true);
-        }
+        if (isNewDay) {
+          // Новый день — сбрасываем локальный лимит
+          setLimitReached(false);
+          setMessagesUsed(0);
+          // Сохраняем новую дату сброса
+          AsyncStorage.setItem(CHAT_LAST_RESET_DATE_KEY(authUser.id), todayKey).catch(() => {});
+          AsyncStorage.removeItem(CHAT_LIMIT_REACHED_KEY(authUser.id)).catch(() => {});
+        } else {
+          // Тот же день — восстанавливаем сохранённые значения
+          if (limitReachedRaw === 'true') {
+            setLimitReached(true);
+          }
 
-        if (messagesUsedRaw) {
-          const count = parseInt(messagesUsedRaw, 10);
-          if (!isNaN(count) && count >= 0) {
-            setMessagesUsed(count);
+          if (messagesUsedRaw) {
+            const count = parseInt(messagesUsedRaw, 10);
+            if (!isNaN(count) && count >= 0) {
+              setMessagesUsed(count);
+            }
           }
         }
 
@@ -126,7 +148,12 @@ export const useChat = (serverMessagesUsed?: number) => {
   // ── Сохранение messagesUsed при изменении ──
   useEffect(() => {
     if (!authUser?.id || !initialized) return;
-    AsyncStorage.setItem(CHAT_MESSAGES_USED_KEY(authUser.id), String(messagesUsed)).catch((err) => {
+    const todayKey = getTodayKey();
+    // Сохраняем вместе с датой сброса — для консистентности
+    Promise.all([
+      AsyncStorage.setItem(CHAT_MESSAGES_USED_KEY(authUser.id), String(messagesUsed)),
+      AsyncStorage.setItem(CHAT_LAST_RESET_DATE_KEY(authUser.id), todayKey),
+    ]).catch((err) => {
       console.error('[useChat] Failed to persist messagesUsed:', err);
     });
   }, [messagesUsed, authUser?.id, initialized]);
@@ -182,7 +209,7 @@ export const useChat = (serverMessagesUsed?: number) => {
     sendingRef.current = true;
 
     try {
-      const responseData = await apiPost<{ reply?: string; messages_used?: number; error?: string }>('/chat', {
+      const responseData = await apiPostWithRetry<{ reply?: string; messages_used?: number; error?: string }>('/chat', {
         messages: apiMessages,
         group_id: groupIdRef.current,
         group_name: groupNameRef.current,
@@ -208,10 +235,14 @@ export const useChat = (serverMessagesUsed?: number) => {
 
       if (typeof responseData?.messages_used === 'number') {
         setMessagesUsed(responseData.messages_used);
+        // Если сервер принял запрос — лимит точно не достигнут
+        setLimitReached(false);
+        if (authUser?.id) {
+          AsyncStorage.removeItem(CHAT_LIMIT_REACHED_KEY(authUser.id)).catch(() => {});
+        }
       }
       return true;
     } catch (err: unknown) {
-      console.error('[useChat] error:', err);
       const e = err as { status?: number; body?: { error?: string } };
       let errorContent = 'Ошибка соединения. Попробуйте позже.';
 
@@ -219,17 +250,15 @@ export const useChat = (serverMessagesUsed?: number) => {
         setLimitReached(true);
         errorContent = 'Лимит сообщений исчерпан.';
       } else if (e?.body?.error === 'No OpenRouter API keys configured') {
-        errorContent = 'AI сервис не настроен. Обратитесь к администратору.';
+        errorContent = 'AI сервис не настроен.';
       } else if (e?.body?.error === 'All OpenRouter API keys exhausted') {
         errorContent = 'Превышен лимит запросов. Попробуйте через минуту.';
-      } else if (e?.body?.error?.includes('rate limit')) {
-        errorContent = 'Превышен лимит запросов. Попробуйте через минуту.';
       } else if (e?.status === 401) {
-        errorContent = 'Необходима авторизация. Войдите в аккаунт.';
+        errorContent = 'Необходима авторизация.';
       } else if (e?.status === 403) {
         errorContent = 'Лимит сообщений исчерпан.';
       } else if (e?.status === 502) {
-        errorContent = 'AI сервис временно недоступен. Попробуйте позже.';
+        errorContent = 'AI сервис временно недоступен.';
       } else if (typeof e?.body?.error === 'string') {
         errorContent = e.body.error;
       }
@@ -253,6 +282,7 @@ export const useChat = (serverMessagesUsed?: number) => {
     setMessages([]);
     messagesRef.current = [];
     setLimitReached(false);
+    setMessagesUsed(0);
     groupIdRef.current = undefined;
     groupNameRef.current = undefined;
 
@@ -263,6 +293,7 @@ export const useChat = (serverMessagesUsed?: number) => {
         CHAT_GROUP_KEY(authUser.id),
         CHAT_LIMIT_REACHED_KEY(authUser.id),
         CHAT_MESSAGES_USED_KEY(authUser.id),
+        CHAT_LAST_RESET_DATE_KEY(authUser.id),
       ]).catch((err) => {
         console.error('[useChat] Failed to clear persisted chat:', err);
       });

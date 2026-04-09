@@ -5,14 +5,18 @@ const ACCESS_TOKEN_KEY = 'smartword_access_token';
 const REFRESH_TOKEN_KEY = 'smartword_refresh_token';
 
 /**
- * API request timeout in milliseconds (15 seconds)
+ * API request timeout in milliseconds (35 seconds)
+ * Должен быть больше серверного таймаута OpenRouter (30с),
+ * чтобы клиент успевал получить ответ от сервера.
  */
-export const API_TIMEOUT_MS = 15000;
+export const API_TIMEOUT_MS = 35000;
 
 /**
  * Get base API URL with HTTPS enforcement for production.
  * - Development: Allows HTTP for local testing
  * - Production: Requires HTTPS only
+ * 
+ * Returns empty string if configuration is invalid (caller should handle).
  */
 export function getBaseUrl(): string {
   const url = API_URL.replace(/\/$/, '');
@@ -20,7 +24,7 @@ export function getBaseUrl(): string {
   // In production (__DEV__ is false), enforce HTTPS
   if (!__DEV__ && !url.startsWith('https://')) {
     console.error('[SECURITY] Production API must use HTTPS. Current URL:', url);
-    throw new Error('Ошибка конфигурации: в production требуется HTTPS');
+    return ''; // Возвращаем пустую строку вместо throw — вызывающий код обработит
   }
 
   return url;
@@ -241,9 +245,37 @@ export async function apiPost<T = unknown>(path: string, body?: unknown, init?: 
   }
 }
 
-export async function apiPatch<T = unknown>(path: string, body?: unknown): Promise<T> {
+/**
+ * POST с автоматическим retry при таймауте.
+ * Используется для AI-эндпоинтов, которые могут отвечать долго.
+ */
+export async function apiPostWithRetry<T = unknown>(path: string, body?: unknown, init?: ApiRequestInit): Promise<T> {
+  const MAX_RETRIES = 2;
+  let lastError: Error | unknown;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await apiPost<T>(path, body, init);
+    } catch (error) {
+      lastError = error;
+      const isTimeout = error instanceof Error && error.message.includes('Превышено время ожидания');
+
+      if (isTimeout && attempt < MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+export async function apiPatch<T = unknown>(path: string, body?: unknown, init?: ApiRequestInit): Promise<T> {
   const res = await apiFetch(path, {
     method: 'PATCH',
+    ...init,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -7,16 +7,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Linking,
-  Platform,
+  Animated,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Crown, ChevronLeft, Clock, Send, MessageCircle, BookOpen, Zap, ChevronDown, CreditCard, ExternalLink, FileText, Shield } from 'lucide-react-native';
-import { SvgXml } from 'react-native-svg';
-import sbpIcon from '../../../assets/icons/SBP.svg';
-import sberPayIcon from '../../../assets/icons/sber-pay-simple.svg';
-import tpayIcon from '../../../assets/icons/t-pay.svg';
+import { Crown, ChevronLeft, Zap, MessageCircle, BookOpen, Sparkles, CreditCard, ExternalLink, FileText, Shield, Check, ArrowRight, RotateCcw, Info } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import { useToast } from '../../components/Toast';
 import { useProfile } from '../../hooks/useProfile';
@@ -24,17 +20,61 @@ import { createSubscriptionPayment, type PlanId, type PaymentMethod } from '../.
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-const PLANS: { id: PlanId; title: string; price: string; description: string }[] = [
-  { id: 'month', title: 'Месяц', price: '299 ₽', description: '30 дней полного доступа' },
-  { id: 'half_year', title: 'Полгода', price: '1 699 ₽', description: '6 месяцев: выгоднее помесячной оплаты' },
-  { id: 'year', title: 'Год', price: '3 169 ₽', description: '365 дней, лучшая цена' },
+// SVG иконки — имена с заглавной буквы (требование React)
+// @ts-ignore
+import SbpIcon from '../../../assets/icons/SBP.svg';
+// @ts-ignore
+import SberIcon from '../../../assets/icons/sber.svg';
+// @ts-ignore
+import TbankIcon from '../../../assets/icons/tbank.svg';
+
+// --- Данные тарифов с расчётом выгоды ---
+const PLANS: {
+  id: PlanId;
+  title: string;
+  price: string;
+  description: string;
+  highlight?: boolean;
+  savings?: string;
+  perMonth?: string;
+}[] = [
+  {
+    id: 'month',
+    title: '1 месяц',
+    price: '299 ₽',
+    description: 'Попробовать всё',
+  },
+  {
+    id: 'half_year',
+    title: '6 месяцев',
+    price: '1 699 ₽',
+    description: 'Экономия 95 ₽',
+    savings: '-5%',
+    perMonth: '~283 ₽/мес',
+  },
+  {
+    id: 'year',
+    title: '12 месяцев',
+    price: '3 169 ₽',
+    description: 'Максимальная выгода',
+    highlight: true,
+    savings: '-12%',
+    perMonth: '~264 ₽/мес',
+  },
 ];
 
-const METHODS: { id: PaymentMethod; label: string; note: string }[] = [
-  { id: 'card', label: 'Карта (РФ)', note: 'Банковские карты российских банков' },
-  { id: 'sbp', label: 'СБП', note: 'По номеру телефона или QR-коду' },
-  { id: 'sberpay', label: 'СберPay', note: 'Оплата через приложение СберБанк Онлайн' },
-  { id: 'tpay', label: 'T‑Pay', note: 'Оплата через приложение Тинькофф' },
+const METHODS: { id: PaymentMethod; label: string; sublabel?: string }[] = [
+  { id: 'card', label: 'Банковская карта', sublabel: 'Visa, MasterCard, МИР' },
+  { id: 'sbp', label: 'СБП', sublabel: 'Быстрый перевод' },
+  { id: 'sberpay', label: 'СберПэй', sublabel: 'Онлайн' },
+  { id: 'tpay', label: 'T-Pay', sublabel: 'Онлайн' },
+];
+
+const BENEFITS = [
+  { icon: BookOpen, title: 'Все словари', desc: 'Создавайте словари без ограничений', color: '#38BDF8' },
+  { icon: Zap, title: 'Слова без лимита', desc: 'Повторяйте сколько угодно', color: '#F59E0B' },
+  { icon: MessageCircle, title: 'AI-чат с Лекси', desc: 'Живой диалог 24/7', color: '#8B5CF6' },
+  { icon: Sparkles, title: 'Ранний доступ', desc: 'Новые функции первыми', color: '#10B981' },
 ];
 
 export const PaymentScreen = () => {
@@ -44,14 +84,42 @@ export const PaymentScreen = () => {
   const { showToast } = useToast();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
-  const [selectedPlan, setSelectedPlan] = useState<PlanId>('month');
+  const [selectedPlan, setSelectedPlan] = useState<PlanId>('year');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('card');
-  const [methodsOpen, setMethodsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const toggleMethods = () => {
-    setMethodsOpen(prev => !prev);
+  // Анимация scale для выбранного тарифа
+  const [planScales, setPlanScales] = useState<Record<PlanId, Animated.Value>>(() => ({
+    month: new Animated.Value(1),
+    half_year: new Animated.Value(1),
+    year: new Animated.Value(1),
+  }));
+
+  const selectedPlanData = PLANS.find((p) => p.id === selectedPlan)!;
+  const isPremiumActive = profile?.is_premium;
+
+  const expiresText = useMemo(() => {
+    if (!profile?.subscription_expires_at) return null;
+    const d = new Date(profile.subscription_expires_at);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+  }, [profile?.subscription_expires_at]);
+
+  const animatePlanScale = (planId: PlanId) => {
+    Animated.sequence([
+      Animated.timing(planScales[planId], { toValue: 0.96, duration: 80, useNativeDriver: true }),
+      Animated.timing(planScales[planId], { toValue: 1, duration: 150, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const handlePlanSelect = (planId: PlanId) => {
+    animatePlanScale(planId);
+    setSelectedPlan(planId);
   };
 
   const handleActivate = async () => {
@@ -65,24 +133,11 @@ export const PaymentScreen = () => {
         setError('Не удалось получить ссылку на оплату. Попробуйте позже.');
       }
     } catch (e) {
-      setError('Ошибка при создании платежа. Проверьте подключение к интернету и попробуйте ещё раз.');
+      setError('Ошибка при создании платежа. Проверьте интернет и попробуйте ещё раз.');
     } finally {
       setLoading(false);
     }
   };
-
-  const expiresText = (() => {
-    if (!profile?.subscription_expires_at) return null;
-    const d = new Date(profile.subscription_expires_at);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString('ru-RU', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    });
-  })();
-
-  const selectedMethodData = METHODS.find((m) => m.id === selectedMethod) || METHODS[0];
 
   const handleGoBack = () => {
     if (navigation.canGoBack()) {
@@ -93,8 +148,8 @@ export const PaymentScreen = () => {
   };
 
   const handleOpenLegal = async (docType: 'terms' | 'privacy') => {
-    const url = docType === 'terms' 
-      ? 'https://smart-word.ru/terms' 
+    const url = docType === 'terms'
+      ? 'https://smart-word.ru/terms'
       : 'https://smart-word.ru/privacy';
     try {
       const supported = await Linking.canOpenURL(url);
@@ -108,387 +163,319 @@ export const PaymentScreen = () => {
     }
   };
 
+  // Градиенты для hero
+  const gradientColors: readonly [string, string, ...string[]] = isDark
+    ? ['#0EA5E9', '#6366F1', '#8B5CF6']
+    : ['#0284C7', '#4F46E5', '#7C3AED'];
+
+  // Фоновый градиент для экрана
+  const bgGradient: readonly [string, string, ...string[]] = isDark
+    ? ['#020617', '#0F172A', '#020617']
+    : ['#F8FAFC', '#EFF6FF', '#F8FAFC'];
+
+  const MethodIcon = ({ methodId, selected }: { methodId: PaymentMethod; selected: boolean }) => {
+    if (methodId === 'card') {
+      return <CreditCard color={selected ? colors.primary : colors.muted} size={20} />;
+    }
+    if (methodId === 'sbp') {
+      return <SbpIcon width={28} height={28} />;
+    }
+    if (methodId === 'sberpay') {
+      return <SberIcon width={28} height={28} />;
+    }
+    return <TbankIcon width={28} height={28} />;
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: 'transparent', paddingTop: insets.top + spacing.sm }]}>
-      <View style={[styles.header, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Фоновый градиент */}
+      <LinearGradient
+        colors={bgGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
+
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
         <TouchableOpacity
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.card }]}
           onPress={handleGoBack}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <ChevronLeft color={colors.muted} size={20} />
+          <ChevronLeft color={colors.text} size={22} />
         </TouchableOpacity>
         <View style={styles.headerTitleWrap}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Оформление подписки</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.muted }]}>Оплата через ЮKassa</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Premium</Text>
         </View>
+        <View style={{ width: 44 }} />
       </View>
 
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: insets.bottom + spacing.xl }}
+        style={styles.scrollView}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 140 }]}
         showsVerticalScrollIndicator={false}
+        bounces={false}
       >
-        <View
-          style={[
-            styles.heroCard,
-            {
-              borderColor: colors.primaryDim,
-              backgroundColor: colors.card,
-            },
-          ]}
+        {/* ===== HERO СЕКЦИЯ (компактнее) ===== */}
+        <LinearGradient
+          colors={gradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[styles.heroCard, { shadowColor: gradientColors[1] }]}
         >
-          <View style={[styles.heroIconCircle, { backgroundColor: colors.primary }]}>
-            <Crown color="#0f172a" size={26} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.heroTitle, { color: colors.text }]}>SmartWord Premium</Text>
-            <Text style={[styles.heroText, { color: colors.muted }]}>
-              {profile?.is_premium
-                ? 'Спасибо, что поддерживаете SmartWord! Все премиум‑возможности уже активны.'
-                : 'Откройте безлимитные словари, AI‑чат и все будущие функции без ограничений.'}
+          {/* Декоративные круги */}
+          <View style={[styles.heroDecoration, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+          <View style={[styles.heroDecoration2, { backgroundColor: 'rgba(255,255,255,0.05)' }]} />
+
+          <View style={styles.heroContent}>
+            <View style={styles.heroIconRow}>
+              <Crown color="#fff" size={20} />
+              <Text style={styles.heroIconText}>Premium</Text>
+            </View>
+
+            <Text style={styles.heroTitle}>Разблокируйте всё</Text>
+            <Text style={styles.heroSubtitle}>
+              {isPremiumActive
+                ? 'Спасибо за поддержку! 💙'
+                : 'Безлимитные словари, слова и AI-чат'}
             </Text>
-            {expiresText && (
-              <View style={styles.expiresRow}>
-                <Clock color={colors.muted} size={14} />
-                <Text style={[styles.expiresText, { color: colors.muted }]}>
-                  Действует до {expiresText}
-                </Text>
+
+            {expiresText && !isPremiumActive && (
+              <View style={styles.expiresBadge}>
+                <RotateCcw color="rgba(255,255,255,0.8)" size={12} />
+                <Text style={styles.expiresBadgeText}>Действует до {expiresText}</Text>
               </View>
             )}
           </View>
-        </View>
+        </LinearGradient>
 
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>СПОСОБ ОПЛАТЫ</Text>
-        <View
-          style={[
-            styles.methodsCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
-            methodsOpen && styles.methodsCardOpen,
-          ]}
-        >
-          <TouchableOpacity
-            style={styles.methodSelector}
-            onPress={toggleMethods}
-            activeOpacity={0.8}
-          >
-            <View style={styles.methodIconWrapper}>
-              {selectedMethod === 'card' ? (
-                <CreditCard color={colors.primary} size={24} />
-              ) : selectedMethod === 'sbp' ? (
-                <SvgXml xml={sbpIcon} width={28} height={28} />
-              ) : selectedMethod === 'sberpay' ? (
-                <SvgXml xml={sberPayIcon} width={28} height={28} />
-              ) : (
-                <SvgXml xml={tpayIcon} width={28} height={28} />
-              )}
+        {!isPremiumActive && (
+          <>
+            {/* ===== ЧТО ДАЁТ ПОДПИСКА (перенесено вверх, сразу после hero) ===== */}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Что даёт подписка</Text>
+            <View style={styles.benefitsGrid}>
+              {BENEFITS.map(({ icon: Icon, title, desc, color }, i) => (
+                <View key={i} style={[styles.benefitCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={[styles.benefitIconWrap, { backgroundColor: color + '18' }]}>
+                    <Icon color={color} size={20} />
+                  </View>
+                  <Text style={[styles.benefitTitle, { color: colors.text }]}>{title}</Text>
+                  <Text style={[styles.benefitDesc, { color: colors.muted }]}>{desc}</Text>
+                </View>
+              ))}
             </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.methodRowLabel, { color: colors.text }]}>
-                  {selectedMethodData.label}
-                </Text>
-                <Text style={[styles.methodRowNote, { color: colors.muted }]} numberOfLines={1}>
-                  {selectedMethodData.note}
-                </Text>
-              </View>
-              <ChevronDown
-                color={colors.muted}
-                size={16}
-                style={{ transform: [{ rotate: methodsOpen ? '180deg' : '0deg' }] }}
-              />
-          </TouchableOpacity>
 
-          {methodsOpen && (
-            <View style={styles.dropdownContainer}>
-              {Platform.OS === 'ios' ? (
-                <BlurView 
-                  intensity={100} 
-                  tint={isDark ? 'dark' : 'light'}
-                  style={styles.blurContainer}
-                  experimentalBlurMethod="dimezisBlurView"
-                >
-                  <View style={[styles.methodsDropdown, {
-                    backgroundColor: isDark
-                      ? 'rgba(30, 41, 59, 0.75)'
-                      : 'rgba(255, 255, 255, 0.75)',
-                    borderColor: (colors.border || '#334155') + '60'
-                  }]}>
-                    {METHODS.map((method) => {
-                      const selected = selectedMethod === method.id;
-                      return (
-                        <TouchableOpacity
-                          key={method.id}
-                          style={[
-                            styles.methodRow,
-                            selected && styles.methodRowSelected,
-                          ]}
-                          onPress={() => {
-                            setSelectedMethod(method.id);
-                            toggleMethods();
-                          }}
-                          activeOpacity={0.8}
-                        >
-                          <View style={[styles.methodRowIconWrapper, { backgroundColor: selected ? colors.primary + '20' : colors.background }]}>
-                            {method.id === 'card' ? (
-                              <CreditCard color={selected ? colors.primary : colors.text} size={20} />
-                            ) : method.id === 'sbp' ? (
-                              <SvgXml xml={sbpIcon} width={20} height={20} />
-                            ) : method.id === 'sberpay' ? (
-                              <SvgXml xml={sberPayIcon} width={20} height={20} />
-                            ) : (
-                              <SvgXml xml={tpayIcon} width={20} height={20} />
-                            )}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={[
-                                styles.methodRowLabel,
-                                { color: selected ? colors.primary : colors.text },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {method.label}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.methodRowNote,
-                                { color: selected ? colors.primary + '99' : colors.muted },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {method.note}
-                            </Text>
-                          </View>
+            {/* ===== ТАРИФЫ (вертикальный список вместо горизонтального скролла) ===== */}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Выберите тариф</Text>
+            <View style={styles.plansList}>
+              {PLANS.map((plan) => {
+                const selected = selectedPlan === plan.id;
+                const AnimatedPlanCard = Animated.View;
+                return (
+                  <TouchableOpacity
+                    key={plan.id}
+                    activeOpacity={0.9}
+                    onPress={() => handlePlanSelect(plan.id)}
+                  >
+                    <AnimatedPlanCard
+                      style={[
+                        styles.planCard,
+                        {
+                          backgroundColor: selected
+                            ? isDark ? '#1E293B' : '#FFFFFF'
+                            : colors.card,
+                          borderColor: selected ? colors.primary : colors.border,
+                          borderWidth: selected ? 2 : 1,
+                          transform: [{ scale: planScales[plan.id] }],
+                        },
+                        selected && styles.planCardSelected,
+                      ]}
+                    >
+                      {plan.highlight && (
+                        <View style={styles.planBadge}>
+                          <Text style={styles.planBadgeText}>🔥 Лучший выбор</Text>
+                        </View>
+                      )}
+                      {plan.savings && !plan.highlight && (
+                        <View style={[styles.planBadge, styles.planBadgeSecondary]}>
+                          <Text style={styles.planBadgeText}>{plan.savings} экономия</Text>
+                        </View>
+                      )}
+
+                      <View style={styles.planContent}>
+                        <View style={styles.planLeft}>
+                          <Text style={[styles.planTitle, { color: colors.text }]}>{plan.title}</Text>
+                          {plan.perMonth && (
+                            <Text style={[styles.planPerMonth, { color: colors.muted }]}>{plan.perMonth}</Text>
+                          )}
+                        </View>
+                        <View style={styles.planRight}>
+                          <Text style={[styles.planPrice, { color: selected ? colors.primary : colors.text }]}>
+                            {plan.price}
+                          </Text>
                           {selected && (
-                            <View style={[styles.checkmark, { backgroundColor: colors.primary }]}>
-                              <Text style={styles.checkmarkText}>✓</Text>
+                            <View style={[styles.planCheck, { backgroundColor: colors.primary }]}>
+                              <Check color="#fff" size={14} strokeWidth={3} />
                             </View>
                           )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </BlurView>
-              ) : (
-                <View style={[styles.methodsDropdown, { 
-                  backgroundColor: colors.elevated, 
-                  borderColor: colors.border,
-                  borderWidth: 1,
-                }]}>
-                  {METHODS.map((method) => {
-                    const selected = selectedMethod === method.id;
-                    return (
-                      <TouchableOpacity
-                        key={method.id}
-                        style={[
-                          styles.methodRow,
-                          selected && styles.methodRowSelected,
-                        ]}
-                        onPress={() => {
-                          setSelectedMethod(method.id);
-                          toggleMethods();
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.methodRowIconWrapper}>
-                          {method.id === 'card' ? (
-                            <CreditCard color={selected ? colors.primary : colors.text} size={24} />
-                          ) : method.id === 'sbp' ? (
-                            <SvgXml xml={sbpIcon} width={28} height={28} />
-                          ) : method.id === 'sberpay' ? (
-                            <SvgXml xml={sberPayIcon} width={28} height={28} />
-                          ) : (
-                            <SvgXml xml={tpayIcon} width={28} height={28} />
-                          )}
                         </View>
-                        <View style={{ flex: 1 }}>
-                          <Text
-                            style={[
-                              styles.methodRowLabel,
-                              { color: selected ? colors.primary : colors.text },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {method.label}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.methodRowNote,
-                              { color: selected ? colors.primary + '99' : colors.muted },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {method.note}
-                          </Text>
-                        </View>
-                        {selected && (
-                          <View style={[styles.checkmark, { backgroundColor: colors.primary }]}>
-                            <Text style={styles.checkmarkText}>✓</Text>
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          )}
-        </View>
-
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>ТАРИФ</Text>
-        <View style={styles.cardsScroll}>
-          {PLANS.map((plan) => {
-            const selected = selectedPlan === plan.id;
-            const isBest = plan.id === 'year';
-            return (
-              <TouchableOpacity
-                key={plan.id}
-                style={[
-                  styles.planCard,
-                  {
-                    backgroundColor: selected ? colors.primaryDim : colors.card,
-                    borderColor: selected ? colors.primary : colors.border,
-                    shadowColor: selected ? colors.primary : 'transparent',
-                    shadowOpacity: selected ? 0.35 : 0,
-                    shadowRadius: selected ? 18 : 0,
-                    shadowOffset: { width: 0, height: selected ? 10 : 0 },
-                    elevation: selected ? 8 : 0,
-                  },
-                  selected && { transform: [{ scale: 1.02 }] },
-                ]}
-                onPress={() => setSelectedPlan(plan.id)}
-                activeOpacity={0.88}
-              >
-                <View style={styles.planHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={[styles.planTitle, { color: colors.text }]}>{plan.title}</Text>
-                    {isBest && (
-                      <View style={[styles.planBadge, { backgroundColor: colors.primary }]}>
-                        <Text style={[styles.planBadgeText, { color: '#0f172a' }]}>Лучшая цена</Text>
                       </View>
-                    )}
-                  </View>
-                  <Text
+
+                      <Text style={[styles.planDescription, { color: colors.muted }]}>{plan.description}</Text>
+                    </AnimatedPlanCard>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* ===== СПОСОБ ОПЛАТЫ (улучшенный дизайн) ===== */}
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Способ оплаты</Text>
+            <View style={[styles.methodsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {METHODS.map((method, index) => {
+                const selected = selectedMethod === method.id;
+                return (
+                  <TouchableOpacity
+                    key={method.id}
                     style={[
-                      styles.planPrice,
-                      { color: selected ? colors.primary : colors.text },
+                      styles.methodRow,
+                      {
+                        backgroundColor: selected
+                          ? isDark ? 'rgba(56, 189, 248, 0.12)' : 'rgba(56, 189, 248, 0.08)'
+                          : 'transparent',
+                      },
+                      selected && styles.methodRowSelected,
                     ]}
+                    onPress={() => setSelectedMethod(method.id)}
+                    activeOpacity={0.7}
                   >
-                    {plan.price}
-                  </Text>
+                    <View style={[
+                      styles.methodIconWrap,
+                      {
+                        backgroundColor: selected
+                          ? isDark ? 'rgba(56, 189, 248, 0.2)' : 'rgba(56, 189, 248, 0.12)'
+                          : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                        borderColor: selected ? colors.primary : 'transparent',
+                        borderWidth: selected ? 1.5 : 0,
+                        marginRight: 9,
+                        ...(method.id === 'tpay' ? { paddingLeft: 3 } : {}),
+                      },
+                    ]}>
+                      <MethodIcon methodId={method.id} selected={selected} />
+                    </View>
+                    <View style={styles.methodTextWrap}>
+                      <Text
+                        style={[
+                          styles.methodLabel,
+                          { color: selected ? colors.primary : colors.text },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {method.label}
+                      </Text>
+                      {method.sublabel && (
+                        <Text style={[styles.methodSublabel, { color: colors.muted }]} numberOfLines={1}>
+                          {method.sublabel}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={[styles.methodRadio, {
+                      borderColor: selected ? colors.primary : colors.border,
+                    }]}>
+                      {selected && (
+                        <View style={[styles.methodRadioDot, { backgroundColor: colors.primary }]}>
+                          <Check color={isDark ? '#020617' : '#fff'} size={10} strokeWidth={3} />
+                        </View>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* ===== ЮРИДИЧЕСКАЯ ИНФОРМАЦИЯ ===== */}
+            <Text style={[styles.sectionSubTitle, { color: colors.muted }]}>Документы</Text>
+            <View style={styles.legalBlock}>
+              <TouchableOpacity
+                style={[styles.legalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => handleOpenLegal('terms')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.legalIconWrap, { backgroundColor: colors.primaryDim }]}>
+                  <FileText color={colors.primary} size={16} />
                 </View>
-                <Text style={[styles.planDescription, { color: colors.muted }]}>
-                  {plan.description}
-                </Text>
+                <Text style={[styles.legalLabel, { color: colors.text }]}>Условия использования</Text>
+                <ExternalLink color={colors.muted} size={14} />
               </TouchableOpacity>
-            );
-          })}
-        </View>
-
-          <View style={[styles.benefitsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Что даёт подписка</Text>
-            <View style={styles.benefitRow}>
-              <View style={[styles.benefitIcon, { backgroundColor: colors.primaryDim }]}>
-                <BookOpen color={colors.primary} size={16} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.benefitTitle, { color: colors.text }]}>Все словари без ограничений</Text>
-                <Text style={[styles.benefitText, { color: colors.muted }]}>
-                  Создавайте сколько угодно тематических подборок слов и фраз.
-                </Text>
-              </View>
+              <TouchableOpacity
+                style={[styles.legalCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => handleOpenLegal('privacy')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.legalIconWrap, { backgroundColor: colors.primaryDim }]}>
+                  <Shield color={colors.primary} size={16} />
+                </View>
+                <Text style={[styles.legalLabel, { color: colors.text }]}>Политика конфиденциальности</Text>
+                <ExternalLink color={colors.muted} size={14} />
+              </TouchableOpacity>
             </View>
-            <View style={styles.benefitRow}>
-              <View style={[styles.benefitIcon, { backgroundColor: colors.primaryDim }]}>
-                <Zap color={colors.primary} size={16} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.benefitTitle, { color: colors.text }]}>Неограниченное количество слов</Text>
-                <Text style={[styles.benefitText, { color: colors.muted }]}>
-                  Добавляйте новые слова без лимитов и развивайте активный словарный запас.
-                </Text>
-              </View>
-            </View>
-            <View style={styles.benefitRow}>
-              <View style={[styles.benefitIcon, { backgroundColor: colors.primaryDim }]}>
-                <MessageCircle color={colors.primary} size={16} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.benefitTitle, { color: colors.text }]}>Безлимитный AI-чат с Лекси</Text>
-                <Text style={[styles.benefitText, { color: colors.muted }]}>
-                  Практикуйте язык в живом диалоге без счётчика сообщений и жёстких ограничений.
-                </Text>
-              </View>
-            </View>
-          </View>
-
-        {error && (
-          <Text style={[styles.errorText, { color: colors.danger }]}>
-            {error}
-          </Text>
+          </>
         )}
 
-        <TouchableOpacity
-          style={[
-            styles.activateBtn,
-            {
-              backgroundColor: colors.primary,
-              shadowColor: colors.primary,
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.55,
-              shadowRadius: 20,
-              elevation: 10,
-            },
-            loading && styles.activateBtnDisabled,
-          ]}
-          onPress={handleActivate}
-          disabled={loading}
-          activeOpacity={0.85}
-        >
-          {loading ? (
-            <ActivityIndicator color="#0f172a" />
-          ) : (
-            <>
-              <Send color="#0f172a" size={18} />
-              <Text style={[styles.activateText, { color: '#0f172a' }]}>Активировать подписку</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {/* Если Premium уже активен */}
+        {isPremiumActive && (
+          <View style={[styles.premiumActiveBlock, { backgroundColor: colors.card, borderColor: colors.primary }]}>
+            <Crown color={colors.primary} size={28} />
+            <Text style={[styles.premiumActiveTitle, { color: colors.text }]}>Premium активен</Text>
+            <Text style={[styles.premiumActiveDesc, { color: colors.muted }]}>
+              У вас уже есть доступ ко всем функциям. Спасибо за поддержку! 💙
+            </Text>
+          </View>
+        )}
+      </ScrollView>
 
-        {/* Ссылки на документы (требование 2300-1 ФЗ «О защите прав потребителей») */}
-        <View style={styles.legalBlock}>
-          <Text style={[styles.legalLabel, { color: colors.muted }]}>
-            Перед оплатой ознакомьтесь:
-          </Text>
+      {/* ===== STICKY CTA КНОПКА (улучшенный дизайн) ===== */}
+      {!isPremiumActive && (
+        <View style={[styles.stickyFooter, {
+          paddingBottom: insets.bottom + spacing.md,
+          backgroundColor: isDark ? '#0F172AF2' : '#FFFFFFF2',
+          borderTopColor: colors.border,
+        }]}>
+          {error && (
+            <Text style={[styles.errorText, { color: colors.danger }]} numberOfLines={2}>{error}</Text>
+          )}
           <TouchableOpacity
-            style={styles.legalLink}
-            onPress={() => handleOpenLegal('terms')}
-            activeOpacity={0.7}
+            style={[
+              styles.ctaButton,
+              {
+                shadowColor: colors.primary,
+              },
+              loading && styles.ctaButtonDisabled,
+            ]}
+            onPress={handleActivate}
+            disabled={loading}
+            activeOpacity={0.85}
           >
-            <FileText color={colors.primary} size={16} />
-            <Text style={[styles.legalLinkText, { color: colors.primary }]}>
-              Условия использования
-            </Text>
-            <ExternalLink color={colors.primary} size={14} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.legalLink}
-            onPress={() => handleOpenLegal('privacy')}
-            activeOpacity={0.7}
-          >
-            <Shield color={colors.primary} size={16} />
-            <Text style={[styles.legalLinkText, { color: colors.primary }]}>
-              Политика конфиденциальности
-            </Text>
-            <ExternalLink color={colors.primary} size={14} />
+            <LinearGradient
+              colors={isDark ? ['#38BDF8', '#818CF8'] : ['#0284C7', '#4F46E5']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.ctaGradient}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <View style={styles.ctaContent}>
+                  <Text style={styles.ctaText}>Оплатить</Text>
+                  <View style={styles.ctaDivider} />
+                  <Text style={styles.ctaPrice}>{selectedPlanData.price}</Text>
+                  <ArrowRight color="#fff" size={20} />
+                </View>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
         </View>
-
-        <Text style={[styles.helperText, { color: colors.muted }]}>
-          После оплаты вернитесь в приложение. Подписка обновится автоматически в течение пары секунд
-          после обработки платежа ЮKassa.
-        </Text>
-      </ScrollView>
+      )}
     </View>
   );
 };
@@ -500,271 +487,428 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    gap: spacing.sm,
+    paddingVertical: spacing.sm,
   },
   backBtn: {
-    padding: spacing.xs,
+    width: 44,
+    height: 44,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitleWrap: {
     flex: 1,
+    alignItems: 'center',
   },
   headerTitle: {
     fontSize: typography.body,
     fontWeight: '700',
+    fontFamily: fonts.bold,
   },
-  headerSubtitle: {
-    fontSize: typography.xs,
-    marginTop: 2,
+  scrollView: {
+    flex: 1,
   },
+  scrollContent: {
+    paddingHorizontal: spacing.lg,
+  },
+
+  // Hero — компактный
   heroCard: {
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    marginTop: spacing.md,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 28,
+    elevation: 10,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroDecoration: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    top: -25,
+    right: -15,
+  },
+  heroDecoration2: {
+    position: 'absolute',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    bottom: -15,
+    left: -10,
+  },
+  heroContent: {
+    position: 'relative',
+    zIndex: 1,
+  },
+  heroIconRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-    marginTop: spacing.lg,
-    marginBottom: spacing.md,
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
   },
-  heroIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+  heroIconText: {
+    color: '#fff',
+    fontSize: typography.small,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
   heroTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    fontFamily: fonts.black,
+    color: '#fff',
+    marginBottom: spacing.xs,
+    lineHeight: 30,
+  },
+  heroSubtitle: {
     fontSize: typography.body,
-    fontWeight: '700',
-    marginBottom: 2,
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 22,
   },
-  heroText: {
-    fontSize: typography.small,
-  },
-  expiresRow: {
+  expiresBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: spacing.xs,
+    gap: spacing.xs,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
   },
-  expiresText: {
+  expiresBadgeText: {
+    color: '#fff',
     fontSize: typography.xs,
     fontWeight: '600',
   },
-  sectionLabel: {
+
+  // Section title
+  sectionTitle: {
+    fontSize: typography.subtitle,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  sectionSubTitle: {
     fontSize: typography.xs,
     fontWeight: '700',
+    fontFamily: fonts.bold,
     letterSpacing: 1,
+    textTransform: 'uppercase',
     marginTop: spacing.lg,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
-  cardsScroll: {
-    marginTop: spacing.xs,
+
+  // Benefits — grid 2x2
+  benefitsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  benefitCard: {
+    flex: 1,
+    minWidth: '47%',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  benefitIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  benefitTitle: {
+    fontSize: typography.small,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    textAlign: 'center',
+  },
+  benefitDesc: {
+    fontSize: typography.xs,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+
+  // Plans — вертикальный список
+  plansList: {
     gap: spacing.sm,
   },
   planCard: {
-    width: '100%',
     borderRadius: radii.md,
-    borderWidth: 1.5,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    padding: spacing.md + 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+    position: 'relative',
   },
-  planHeader: {
+  planCardSelected: {
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  planBadge: {
+    position: 'absolute',
+    top: -10,
+    right: 12,
+    backgroundColor: '#F59E0B',
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 1,
+  },
+  planBadgeSecondary: {
+    backgroundColor: '#10B981',
+    shadowColor: '#10B981',
+  },
+  planBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  planContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.xs,
+  },
+  planLeft: {
+    flex: 1,
   },
   planTitle: {
     fontSize: typography.body,
     fontWeight: '700',
+    fontFamily: fonts.bold,
+  },
+  planPerMonth: {
+    fontSize: typography.xs,
+    marginTop: 2,
+  },
+  planRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   planPrice: {
     fontSize: typography.subtitle,
-    fontWeight: '700',
+    fontWeight: '800',
+    fontFamily: fonts.black,
   },
-  planDescription: {
-    fontSize: typography.small,
-    marginTop: spacing.xs,
-  },
-  planBadge: {
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-  },
-  planBadgeText: {
-    fontSize: typography.xs,
-    fontWeight: '700',
-  },
-  methodsCard: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    marginTop: spacing.xs,
-    overflow: 'visible',
-  },
-  methodsCardOpen: {
-    marginBottom: spacing.xl * 2,
-  },
-  methodSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
-  },
-  methodIconWrapper: {
-    width: 32,
-    height: 32,
+  planCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dropdownContainer: {
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    marginTop: 4,
-    zIndex: 100,
-    overflow: 'hidden',
+  planDescription: {
+    fontSize: typography.small,
   },
-  blurContainer: {
-    borderRadius: radii.md,
-    overflow: 'hidden',
+
+  // Methods — карточный дизайн с отступами
+  methodsContainer: {
+    borderRadius: radii.lg,
     borderWidth: 1,
-  },
-  methodsDropdown: {
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
+    padding: spacing.sm,
     gap: spacing.xs,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 16,
-    borderWidth: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   methodRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    gap: spacing.md,
+    padding: spacing.md,
     borderRadius: radii.md,
   },
   methodRowSelected: {
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  methodRowIconWrapper: {
-    width: 32,
-    height: 32,
+  methodLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    flex: 1,
+    paddingLeft: 8,
+  },
+  methodTextWrap: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  methodIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
-  methodRowLabel: {
+  methodLabel: {
     fontSize: typography.body,
     fontWeight: '600',
+    fontFamily: fonts.medium,
   },
-  methodRowNote: {
+  methodSublabel: {
     fontSize: typography.xs,
     marginTop: 2,
   },
-  checkmark: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  methodRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginLeft: spacing.sm,
+  },
+  methodRadioDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkmarkText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  errorText: {
-    marginTop: spacing.md,
-    fontSize: typography.small,
-  },
-  activateBtn: {
-    marginTop: spacing.lg,
-    borderRadius: radii.full,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 8,
-  },
-  activateBtnDisabled: {
-    opacity: 0.7,
-  },
-  activateText: {
-    fontSize: typography.body,
-    fontWeight: '700',
-  },
-  helperText: {
-    fontSize: typography.xs,
-    marginTop: spacing.sm,
-    textAlign: 'center',
-  },
-  legalBlock: {
-    marginTop: spacing.lg,
-    paddingHorizontal: spacing.md,
-    gap: spacing.sm,
-  },
-  legalLabel: {
-    fontSize: typography.xs,
-    textAlign: 'center',
-  },
-  legalLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.xs,
-  },
-  legalLinkText: {
-    fontSize: typography.xs,
-    fontFamily: fonts.medium,
-  },
-  benefitsCard: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  sectionTitle: {
-    fontSize: typography.small,
-    fontWeight: '700',
-    marginBottom: spacing.xs,
-  },
-  benefitRow: {
+
+  // Subscription info
+  subscriptionInfo: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    marginTop: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginTop: spacing.lg,
   },
-  benefitIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 16,
+  infoText: {
+    flex: 1,
+    fontSize: typography.small,
+    lineHeight: 20,
+  },
+
+  // Legal
+  legalBlock: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  legalCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    gap: spacing.md,
+  },
+  legalIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
+    flexShrink: 0,
   },
-  benefitTitle: {
-    fontSize: typography.small,
+  legalLabel: {
+    flex: 1,
+    fontSize: typography.body,
     fontWeight: '600',
+    fontFamily: fonts.medium,
   },
-  benefitText: {
-    fontSize: typography.xs,
-    marginTop: 2,
+
+  // Premium active
+  premiumActiveBlock: {
+    alignItems: 'center',
+    borderRadius: radii.xl,
+    borderWidth: 1.5,
+    padding: spacing.xl,
+    marginTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  premiumActiveTitle: {
+    fontSize: typography.subtitle,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+  },
+  premiumActiveDesc: {
+    fontSize: typography.body,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+
+  // Sticky footer
+  stickyFooter: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+  },
+  errorText: {
+    fontSize: typography.small,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+    lineHeight: 20,
+  },
+  ctaButton: {
+    borderRadius: radii.full,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  ctaButtonDisabled: {
+    opacity: 0.7,
+  },
+  ctaGradient: {
+    paddingVertical: spacing.md + 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  ctaText: {
+    fontSize: typography.body,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    color: '#fff',
+  },
+  ctaDivider: {
+    width: 1,
+    height: 20,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  ctaPrice: {
+    fontSize: typography.body,
+    fontWeight: '800',
+    fontFamily: fonts.black,
+    color: '#fff',
   },
 });
-

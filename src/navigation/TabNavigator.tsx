@@ -28,7 +28,13 @@ const HapticTab: React.FC<any> = (props) => {
       {...rest}
       onPress={(e) => {
         if (Platform.OS !== 'web') {
-          Haptics.selectionAsync().catch(() => {});
+          try {
+            Haptics.selectionAsync().catch(() => {
+              // Игнорируем ошибки haptics — не критично
+            });
+          } catch {
+            // Haptics модуль может быть недоступен — игнорируем
+          }
         }
         onPress?.(e);
       }}

@@ -15,16 +15,17 @@ config.resolver = {
   sourceExts: [...(config.resolver.sourceExts || []), 'svg'],
   // На web заменяем нативные модули заглушками
   resolveRequest: (context, moduleName, platform) => {
+    // expo-in-app-purchases — заглушка пока модуль не установлен
+    if (moduleName === 'expo-in-app-purchases') {
+      return {
+        filePath: path.resolve(__dirname, 'src/mocks/expo-in-app-purchases.ts'),
+        type: 'sourceFile',
+      };
+    }
     if (platform === 'web') {
       if (moduleName === 'expo-haptics') {
         return {
           filePath: path.resolve(__dirname, 'src/mocks/expo-haptics.js'),
-          type: 'sourceFile',
-        };
-      }
-      if (moduleName === 'expo-in-app-purchases') {
-        return {
-          filePath: path.resolve(__dirname, 'src/mocks/expo-in-app-purchases.js'),
           type: 'sourceFile',
         };
       }
