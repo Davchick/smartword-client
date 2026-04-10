@@ -8,6 +8,7 @@ import { queryKey } from '../lib/queryKeys';
 
 // ─── Keys ────────────────────────────────────────────────────────────────
 const PENDING_SESSION_KEY = '@SmartWord:pendingTrainingSession';
+const LOCAL_STORAGE_KEY = '@local_training_progress';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 interface WordUpdate {
@@ -34,6 +35,69 @@ interface FlushResult {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
+const DAY_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+/**
+ * Сохраняет очки в локальное хранилище (гостевой режим).
+ * Обновляет React Query кэш для мгновенного обновления UI.
+ */
+async function saveLocalPoints(points: number): Promise<void> {
+  try {
+    const raw = await AsyncStorage.getItem(LOCAL_STORAGE_KEY);
+    let data: Array<{ date: string; dayLabel: string; points: number; isToday: boolean }> = [];
+
+    if (raw) {
+      data = JSON.parse(raw);
+    } else {
+      // Инициализируем пустую неделю
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      const dayOfWeek = now.getDay();
+      startOfWeek.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+
+      for (let i = 0; i < 7; i++) {
+        const date = new Date(startOfWeek);
+        date.setDate(startOfWeek.getDate() + i);
+        data.push({
+          date: date.toISOString(),
+          dayLabel: DAY_NAMES[date.getDay()]!,
+          points: 0,
+          isToday: date.toDateString() === now.toDateString(),
+        });
+      }
+    }
+
+    const today = new Date().toDateString();
+    let todayEntry = data.find(d => new Date(d.date).toDateString() === today);
+
+    if (todayEntry) {
+      todayEntry.points += points;
+    } else {
+      const now = new Date();
+      data.push({
+        date: now.toISOString(),
+        dayLabel: DAY_NAMES[now.getDay()]!,
+        points,
+        isToday: true,
+      });
+    }
+
+    // Оставляем только последние 7 дней, сортируя по дате (от старых к новым)
+    const sorted = data
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(-7);
+
+    await AsyncStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sorted));
+
+    // Обновляем кэш React Query для мгновенного обновления UI
+    // Используем тот же ключ что и useTrainingProgress для гостей
+    queryClient.setQueryData(['local_training_progress'], sorted);
+    queryClient.setQueryData(queryKey.stats.trainingProgress(), sorted);
+  } catch (err) {
+    if (__DEV__) console.warn('[saveLocalPoints] error:', err);
+  }
+}
+
 /**
  * Экспоненциальный backoff: 2^attempt * baseDelay
  */
@@ -225,7 +289,10 @@ export const useTrainingSession = () => {
         });
       }
     } else {
-      // Гостевой режим — данные уже сохранены через optimistic update в useWords.
+      // Гостевой режим — сохраняем очки локально в AsyncStorage
+      if (session.totalPoints > 0) {
+        await saveLocalPoints(session.totalPoints);
+      }
     }
 
     // Очищаем сессию

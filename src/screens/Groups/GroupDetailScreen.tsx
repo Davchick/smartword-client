@@ -19,6 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ArrowLeft, Plus, Dumbbell, BookOpen, MoreHorizontal, Trash2, Pencil } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { useProfile } from '../../hooks/useProfile';
+import { useAuth } from '../../contexts/AuthContext';
 import { useApiError } from '../../hooks/useApiError';
 import { AddWordModal } from '../../components/AddWordModal';
 import { SearchFilterBar } from '../../components/SearchFilterBar';
@@ -51,6 +52,7 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
   const activeCount = visibleWords.length;
   const activeCountLabel = `${activeCount} ${pluralizeRu(activeCount, ['слово', 'слова', 'слов'])}`;
   const { profile } = useProfile();
+  const { user } = useAuth();
   const { handleApiError } = useApiError();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
@@ -268,12 +270,14 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
           filteredAndSortedWords.length === 0 && styles.listEmpty,
         ]}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
+          user ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          ) : undefined
         }
         windowSize={5}
         maxToRenderPerBatch={10}

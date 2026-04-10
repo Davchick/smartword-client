@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { View, ActivityIndicator } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer, NavigationContainerRef, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,50 +18,21 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 export const RootNavigator = () => {
   const { colors, isDark } = useTheme();
   const navRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
-  const { user, loading: authLoading } = useAuth();
-  const [hasSeenWelcome, setHasSeenWelcome] = useState<boolean | null>(null); // null = ещё не загружено
-  const hadUserRef = useRef(false);
+  const { user, loading: authLoading, guestMode } = useAuth();
   const navReadyRef = useRef(false);
 
-  useEffect(() => {
-    AsyncStorage.getItem('smartword_has_seen_welcome')
-      .then((seen) => {
-        setHasSeenWelcome(seen === '1');
-      })
-      .catch((err) => {
-        // Не блокируем приложение при сбое AsyncStorage
-        console.warn('[RootNavigator] Failed to read has_seen_welcome:', err);
-        setHasSeenWelcome(true); // Fallback — показываем Main
-      });
-  }, []);
+  // Логика определения начального экрана:
+  // 1. guestMode === true (выбрал "Начать без аккаунта") → Main
+  // 2. user !== null (авторизован) → Main
+  // 3. guestMode === false && user === null → Welcome (показываем выбор)
+  // 4. loading === true → загрузка
 
-  useEffect(() => {
-    if (authLoading) return;
-    if (hasSeenWelcome === null) return; // Ждём загрузки
-    if (!navReadyRef.current) return; // Ждём готовности NavigationContainer
-    if (user) {
-      hadUserRef.current = true;
-      AsyncStorage.removeItem('smartword_guest_mode');
-      navRef.current?.reset({
-        index: 0,
-        routes: [{ name: 'Main' }],
-      });
-    } else if (hadUserRef.current) {
-      hadUserRef.current = false;
-      navRef.current?.reset({
-        index: 0,
-        routes: [{ name: 'SignIn' }],
-      });
-    }
-  }, [authLoading, user, hasSeenWelcome]);
-
-  const initialRoute: keyof RootStackParamList = hasSeenWelcome === null
-    ? 'Welcome' // Fallback — не должен произойти т.к. мы выше return при null
-    : user
-      ? 'Main'
-      : hasSeenWelcome
-        ? 'SignIn'
-        : 'Welcome';
+  const initialRoute = useMemo<keyof RootStackParamList>(() => {
+    if (authLoading) return 'Welcome'; // fallback, реально покажем loader
+    if (guestMode) return 'Main';
+    if (user) return 'Main';
+    return 'Welcome';
+  }, [authLoading, guestMode, user]);
 
   const navigationTheme = useMemo(() => ({
     ...(isDark ? DarkTheme : DefaultTheme),
@@ -76,8 +46,38 @@ export const RootNavigator = () => {
     },
   }), [isDark, colors.background, colors.card, colors.border, colors.primary, colors.text]);
 
-  // Показываем загрузку пока не прочитали AsyncStorage или authLoading
-  if (authLoading || hasSeenWelcome === null) {
+  // При выходе из аккаунта (user стал null, но не guestMode) → показываем Welcome
+  useEffect(() => {
+    if (!navReadyRef.current) return;
+    if (authLoading) return;
+    
+    // Гость — всегда Main
+    if (guestMode) {
+      return;
+    }
+    
+    // Вошёл в аккаунт — Main
+    if (user) {
+      navRef.current?.reset({
+        index: 0,
+        routes: [{ name: 'Main' }],
+      });
+      return;
+    }
+    
+    // Был в аккаунте, но вышел (user null, не guest) → Welcome
+    // Проверяем, что мы не уже на Welcome
+    const currentRoute = navRef.current?.getCurrentRoute()?.name;
+    if (currentRoute !== 'Welcome') {
+      navRef.current?.reset({
+        index: 0,
+        routes: [{ name: 'Welcome' }],
+      });
+    }
+  }, [user, authLoading, guestMode]);
+
+  // Показываем загрузку пока auth не определился
+  if (authLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={colors.primary} size="large" />

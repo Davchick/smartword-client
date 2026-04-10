@@ -89,14 +89,14 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
     if (groupId) {
       return false;
     }
-    // Если словарь выбран — сбрасываем (возврат к выбору словаря)
-    if (selectedGroup) {
+    // Если словарь выбран и словарей > 1 — сбрасываем (возврат к выбору словаря)
+    if (selectedGroup && groups.length > 1) {
       setSelectedGroup(null);
       return true; // перехватили
     }
     // Иначе — не перехватываем (выход из TrainingTab)
     return false;
-  }, [groupId, selectedGroup]);
+  }, [groupId, selectedGroup, groups.length]);
 
   useFocusEffect(
     useCallback(() => {
@@ -108,10 +108,10 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
   const handleBackPress = useCallback(() => {
     if (groupId) {
       navigation.goBack();
-    } else {
+    } else if (groups.length > 1) {
       setSelectedGroup(null);
     }
-  }, [groupId, navigation]);
+  }, [groupId, navigation, groups.length]);
 
   const navigateToTraining = (screen: 'Training' | 'TrainingWrite', gId?: string, gName?: string) => {
     const targetGroupId = gId || activeGroupId;
@@ -239,8 +239,9 @@ export const TrainingModesScreen = ({ route, navigation }: Props) => {
   // Tab mode: one group with words → use it; several → use selected. Stack mode: use params.
   const activeGroupId = groupId || (groupWithWords ? groupWithWords.id : selectedGroup?.id);
   const activeGroupName = groupId ? groupName : (groupWithWords ? groupWithWords.name : selectedGroup?.name);
-  // Кнопка "назад" показывается когда groupId передан (из словаря) ИЛИ когда выбран словарь (возврат к выбору)
-  const showBackButton = !!groupId || !!selectedGroup;
+  // Кнопка "назад" только если словарей > 1 — есть к чему возвращаться
+  const hasMultipleGroups = groups.length > 1;
+  const showBackButton = hasMultipleGroups && (!!groupId || !!selectedGroup);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, backgroundColor: colors.background }]}>

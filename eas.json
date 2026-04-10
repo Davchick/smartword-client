@@ -12,10 +12,18 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.smart-word.ru",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "726322860015-fus89rv4tj3pj80mer47sr6f49c0rll2.apps.googleusercontent.com"
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.smart-word.ru",
+        "EXPO_PUBLIC_GOOGLE_CLIENT_ID": "726322860015-fus89rv4tj3pj80mer47sr6f49c0rll2.apps.googleusercontent.com"
+      }
     }
   },
   "submit": {

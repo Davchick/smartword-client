@@ -1,16 +1,11 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, Animated, Platform, useWindowDimensions } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { View, Text, StyleSheet, Animated, useWindowDimensions } from 'react-native';
 import Svg, { Path, G, Defs, LinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import { useTheme, spacing, radii, typography, fonts } from '../theme';
 import type { TrainingDayProgress } from '../hooks/useTrainingProgress';
 
-// Проверяем, что blur работает (не Expo Go)
-const supportsBlur = Platform.OS !== 'ios' || !__DEV__;
-
 interface ProgressChartProps {
   data: TrainingDayProgress[];
-  locked?: boolean;
 }
 
 const CHART_HEIGHT = 160;
@@ -31,8 +26,8 @@ const EMPTY_CHART_DATA: TrainingDayProgress[] = [
   { date: '', dayLabel: 'Вс', points: 0, isToday: true },
 ];
 
-export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = false }) => {
-  const { colors, isDark } = useTheme();
+export const ProgressChart: React.FC<ProgressChartProps> = ({ data }) => {
+  const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const chartWidth = useMemo(() => windowWidth - spacing.lg * 2, [windowWidth]);
   const fadeAnim = useRef(new Animated.Value(0));
@@ -52,7 +47,16 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
     return chartData.reduce((sum, d) => sum + d.points, 0);
   }, [chartData]);
 
-  // Запускаем анимацию только один раз при монтировании или смене данных
+  // Запускаем анимацию при монтировании или при реальном изменении очков
+  const dataChecksum = useMemo(() => {
+    return chartData.map(d => `${d.dayLabel}:${d.points}`).join(',');
+  }, [chartData]);
+
+  useEffect(() => {
+    // Сбрасываем флаг при изменении данных
+    animatingRef.current = false;
+  }, [dataChecksum]);
+
   useEffect(() => {
     if (animatingRef.current) return;
     animatingRef.current = true;
@@ -84,7 +88,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
     return () => {
       lineAnim.current.removeListener(listener);
     };
-  }, [chartData]); // Перезапуск при смене данных — анимация покажет новый график
+  }, [dataChecksum]);
 
   // Generate smooth curve path
   const generateCurvePath = (progress: number) => {
@@ -138,7 +142,7 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
       {/* Header */}
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Прогресс за 7 дней</Text>
-        {isEmpty && !locked ? (
+        {isEmpty ? (
           <Text style={[styles.emptyHint, { color: colors.muted }]}>Начните тренироваться</Text>
         ) : (
           <Text style={[styles.totalValue, { color: colors.primary }]}>{totalPoints}</Text>
@@ -156,11 +160,6 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
             <LinearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
               <Stop offset="0" stopColor={GRADIENT_START} stopOpacity="1" />
               <Stop offset="1" stopColor={GRADIENT_END} stopOpacity="1" />
-            </LinearGradient>
-            {/* Gradient overlay for locked state */}
-            <LinearGradient id="lockGradient" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#FFFFFF" stopOpacity="0" />
-              <Stop offset="1" stopColor="#FFFFFF" stopOpacity="0.3" />
             </LinearGradient>
           </Defs>
 
@@ -226,45 +225,8 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data, locked = fal
               </G>
             );
           })}
-
-          {/* White overlay for locked state to obscure the chart */}
-          {locked && (
-            <Path
-              d={`M ${PADDING} ${CHART_HEIGHT - PADDING} L ${chartWidth - PADDING} ${CHART_HEIGHT - PADDING} L ${chartWidth - PADDING} ${PADDING * 0.5} L ${PADDING} ${PADDING * 0.5} Z`}
-              fill="url(#lockGradient)"
-            />
-          )}
         </Svg>
       </View>
-
-      {/* Lock overlay */}
-      {locked && (
-        <View style={styles.lockOverlay}>
-          {supportsBlur ? (
-            <BlurView intensity={100} tint={isDark ? 'dark' : 'light'} style={styles.blurView} experimentalBlurMethod="dimezisBlurView">
-              <View style={styles.lockContent}>
-                <View style={styles.lockIconContainer}>
-                  <Text style={styles.lockIcon}>🔒</Text>
-                </View>
-                <Text style={[styles.lockTitle, { color: colors.text }]}>Войдите в аккаунт</Text>
-                <Text style={[styles.lockSubtitle, { color: colors.muted }]}>
-                  Чтобы видеть статистику и отслеживать свой прогресс
-                </Text>
-              </View>
-            </BlurView>
-          ) : (
-            <View style={[styles.lockContent, { backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.92)', borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(15,23,42,0.15)' }]}>
-              <View style={styles.lockIconContainer}>
-                <Text style={styles.lockIcon}>🔒</Text>
-              </View>
-              <Text style={[styles.lockTitle, { color: colors.text }]}>Войдите в аккаунт</Text>
-              <Text style={[styles.lockSubtitle, { color: colors.muted }]}>
-                Чтобы видеть статистику и отслеживать свой прогресс
-              </Text>
-            </View>
-          )}
-        </View>
-      )}
     </Animated.View>
   );
 };
@@ -296,59 +258,5 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     alignItems: 'center',
-  },
-  lockOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: radii.lg,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  blurView: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: radii.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lockContent: {
-    borderRadius: radii.lg,
-    padding: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: supportsBlur 
-      ? 'rgba(255, 255, 255, 0.15)'
-      : 'rgba(255, 255, 255, 0.92)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  lockIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(6, 214, 160, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
-    borderWidth: 2,
-    borderColor: 'rgba(6, 214, 160, 0.3)',
-  },
-  lockIcon: {
-    fontSize: 26,
-  },
-  lockTitle: {
-    fontSize: typography.body,
-    fontFamily: fonts.headingBold,
-  },
-  lockSubtitle: {
-    fontSize: typography.small,
-    fontFamily: fonts.regular,
-    textAlign: 'center',
-    maxWidth: 200,
   },
 });

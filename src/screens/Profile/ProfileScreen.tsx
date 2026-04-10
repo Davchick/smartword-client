@@ -132,12 +132,14 @@ export const ProfileScreen = () => {
       ]}
       showsVerticalScrollIndicator={false}
       refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          tintColor={colors.primary}
-          colors={[colors.primary]}
-        />
+        profile ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        ) : undefined
       }
     >
       {/* Кнопка настроек */}
@@ -215,7 +217,7 @@ export const ProfileScreen = () => {
       </View>
 
       {/* График прогресса тренировок */}
-      <ProgressChart data={trainingProgress} locked={!profile} />
+      <ProgressChart data={trainingProgress} />
 
       {/* Streak Counter */}
       {streak && (

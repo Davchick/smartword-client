@@ -8,7 +8,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from '../../contexts/AuthContext';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import type { RootStackParamList } from '../../navigation/types';
@@ -26,6 +26,7 @@ const FEATURES = [
 export const WelcomeScreen = ({ navigation }: Props) => {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
+  const { setGuestMode, setHasAccount } = useAuth();
 
   // Анимации
   const logoAnim = useRef(new Animated.Value(0)).current;
@@ -58,13 +59,12 @@ export const WelcomeScreen = ({ navigation }: Props) => {
   }, []);
 
   const handleGuest = async () => {
-    await AsyncStorage.setItem('smartword_guest_mode', '1');
-    await AsyncStorage.setItem('smartword_has_seen_welcome', '1');
+    await setGuestMode(true);
     navigation.replace('Main');
   };
 
   const handleSignIn = async () => {
-    await AsyncStorage.setItem('smartword_has_seen_welcome', '1');
+    await setHasAccount(true);
     navigation.navigate('SignIn');
   };
 

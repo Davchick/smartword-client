@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 import { useArchivedWords } from '../../hooks/useArchivedWords';
 import { useGroups } from '../../hooks/useGroups';
+import { useAuth } from '../../contexts/AuthContext';
 import { SearchFilterBar } from '../../components/SearchFilterBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
@@ -44,6 +45,7 @@ interface Section {
 export const ArchiveScreen = ({ navigation }: Props) => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const { user } = useAuth();
   const [queryText, setQueryText] = useState('');
   const debouncedQuery = useDebounceValue(queryText, 350);
   const { words, totalCount, loading, refreshing, hasNext, loadMore, loadMoreLoading, refetch, query } = useArchivedWords(debouncedQuery.trim() || undefined);
@@ -239,12 +241,14 @@ export const ArchiveScreen = ({ navigation }: Props) => {
         keyExtractor={(s) => s.groupId}
         contentContainerStyle={styles.list}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
+          user ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          ) : undefined
         }
         onEndReached={() => {
           if (hasNext && !loadMoreLoading) loadMore();

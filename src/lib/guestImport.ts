@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiPost, getBaseUrl } from './api';
-import { getEncryptedItem, removeEncryptedItem } from './encryptedStorage';
 
 type GuestGroup = {
   id: string;
@@ -20,11 +19,8 @@ type GuestWord = {
   created_at?: string;
 };
 
-/**
- * Keys for encrypted guest data storage
- */
-const GUEST_GROUPS_KEY = 'smartword_guest_groups_encrypted';
-const GUEST_WORDS_KEY = 'smartword_guest_words_encrypted';
+const GUEST_GROUPS_KEY = 'smartword_guest_groups';
+const GUEST_WORDS_KEY = 'smartword_guest_words';
 const GUEST_MODE_KEY = 'smartword_guest_mode';
 
 export const importGuestDataIfNeeded = async (userId: string): Promise<void> => {
@@ -33,25 +29,8 @@ export const importGuestDataIfNeeded = async (userId: string): Promise<void> => 
   const migratedKey = `smartword_guest_migrated_user_${userId}`;
 
   try {
-    // Read from encrypted storage first, fallback to plain AsyncStorage
-    let groupsRaw: string | null = null;
-    let wordsRaw: string | null = null;
-
-    try {
-      const encGroups = await getEncryptedItem<GuestGroup[]>(GUEST_GROUPS_KEY);
-      groupsRaw = encGroups ? JSON.stringify(encGroups) : null;
-    } catch {
-      // Encrypted storage unavailable, fall back to plain AsyncStorage
-      groupsRaw = await AsyncStorage.getItem('smartword_guest_groups');
-    }
-
-    try {
-      const encWords = await getEncryptedItem<GuestWord[]>(GUEST_WORDS_KEY);
-      wordsRaw = encWords ? JSON.stringify(encWords) : null;
-    } catch {
-      wordsRaw = await AsyncStorage.getItem('smartword_guest_words');
-    }
-
+    const groupsRaw = await AsyncStorage.getItem(GUEST_GROUPS_KEY);
+    const wordsRaw = await AsyncStorage.getItem(GUEST_WORDS_KEY);
     const migrated = await AsyncStorage.getItem(migratedKey);
 
     if (migrated === '1') return;
@@ -71,8 +50,8 @@ export const importGuestDataIfNeeded = async (userId: string): Promise<void> => 
 
     await Promise.all([
       AsyncStorage.setItem(migratedKey, '1'),
-      AsyncStorage.removeItem('smartword_guest_groups'),
-      AsyncStorage.removeItem('smartword_guest_words'),
+      AsyncStorage.removeItem(GUEST_GROUPS_KEY),
+      AsyncStorage.removeItem(GUEST_WORDS_KEY),
       AsyncStorage.removeItem(GUEST_MODE_KEY),
     ]);
   } catch (err: unknown) {
@@ -84,32 +63,18 @@ export const importGuestDataIfNeeded = async (userId: string): Promise<void> => 
   }
 };
 
-/**
- * Store guest groups in encrypted storage
- */
 export const saveGuestGroups = async (groups: GuestGroup[]): Promise<void> => {
-  await Promise.all([
-    AsyncStorage.setItem('smartword_guest_groups', JSON.stringify(groups)),
-  ]);
+  await AsyncStorage.setItem(GUEST_GROUPS_KEY, JSON.stringify(groups));
 };
 
-/**
- * Store guest words in encrypted storage
- */
 export const saveGuestWords = async (words: GuestWord[]): Promise<void> => {
-  await Promise.all([
-    AsyncStorage.setItem('smartword_guest_words', JSON.stringify(words)),
-  ]);
+  await AsyncStorage.setItem(GUEST_WORDS_KEY, JSON.stringify(words));
 };
 
-/**
- * Clear all guest data
- */
 export const clearGuestData = async (): Promise<void> => {
   await Promise.all([
-    AsyncStorage.removeItem('smartword_guest_groups'),
-    AsyncStorage.removeItem('smartword_guest_words'),
+    AsyncStorage.removeItem(GUEST_GROUPS_KEY),
+    AsyncStorage.removeItem(GUEST_WORDS_KEY),
     AsyncStorage.removeItem(GUEST_MODE_KEY),
   ]);
 };
-

@@ -63,6 +63,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
 
   const [trainingWords, setTrainingWords] = useState<Word[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [totalWords, setTotalWords] = useState(0); // Общее кол-во слов для прогресса
   const [input, setInput] = useState('');
   const [checked, setChecked] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
@@ -85,6 +86,20 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const progressWidth = useRef(new Animated.Value(0)).current;
   const inputRef = useRef<TextInput>(null);
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const trainingWordsRef = useRef<Word[]>([]);
+  const initializedRef = useRef(false);
+
+  /**
+   * Перемешивает массив (Fisher-Yates shuffle).
+   */
+  const shuffleArray = useCallback(<T,>(array: T[]): T[] => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+    }
+    return shuffled;
+  }, []);
 
   // Отслеживаем достижение лимита во время сессии
   useEffect(() => {
@@ -94,8 +109,14 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   }, [finished, profile?.is_premium, checkLimit]);
 
   const initTraining = useCallback(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     const tw = getTrainingWords();
-    setTrainingWords(tw);
+    const shuffled = shuffleArray(tw);
+    trainingWordsRef.current = shuffled;
+    setTrainingWords(shuffled);
+    setTotalWords(shuffled.length);
     setCurrentIndex(0);
     setInput('');
     setChecked(false);
@@ -108,11 +129,15 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     setSkipped(false);
     progressWidth.setValue(0);
     startSession(groupId, groupName);
-  }, [getTrainingWords, groupId, groupName, startSession, progressWidth]);
+  }, [getTrainingWords, groupId, groupName, startSession, progressWidth, shuffleArray]);
 
   // Проверяем лимит при загрузке тренировки и инициализируем
   useEffect(() => {
     if (weeklyLimitReached || loading || words.length === 0) {
+      // Если слова пропали (ушли с экрана) — сбрасываем флаг
+      if (words.length === 0) {
+        initializedRef.current = false;
+      }
       return;
     }
 
@@ -123,14 +148,16 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     initTraining();
   }, [loading, words.length, weeklyLimitReached, checkLimit, initTraining]);
 
+  // Обновляем прогресс-бар на основе завершённых слов
   useEffect(() => {
-    if (trainingWords.length === 0) return;
+    if (totalWords === 0) return;
+    const completed = totalWords - trainingWords.length;
     Animated.timing(progressWidth, {
-      toValue: (currentIndex + 1) / trainingWords.length,
+      toValue: completed / totalWords,
       duration: 500,
       useNativeDriver: false,
     }).start();
-  }, [currentIndex, trainingWords.length, progressWidth]);
+  }, [trainingWords.length, totalWords, progressWidth]);
 
   // Flush сессии при выходе из тренировки + hardware back button handler
   useFocusEffect(
@@ -169,6 +196,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   }, []);
 
   const handleRestart = useCallback(() => {
+    initializedRef.current = false;
     resetLocal();
     initTraining();
   }, [initTraining, resetLocal]);
@@ -191,6 +219,150 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
       ]).start();
     }
   };
+
+  const currentWord = trainingWords[currentIndex] ?? null;
+  const promptText = currentWord ? (direction === 'foreign' ? currentWord.translation : currentWord.original) : '';
+  const answerText = currentWord ? (direction === 'foreign' ? currentWord.original : currentWord.translation) : '';
+  const inputPlaceholder = 'Введите перевод';
+  const primaryAnswer = answerText ? (answerText.split(/[/,|]/)[0]?.trim() ?? '') : '';
+
+  const goToNextWord = useCallback(() => {
+    setInput('');
+    setChecked(false);
+    setIsCorrect(null);
+    setHintCount(0);
+    feedbackOpacity.setValue(0);
+    feedbackScale.setValue(0);
+    setSkipped(false);
+
+    // Убираем текущее слово из массива — оно больше не появится
+    const remaining = trainingWordsRef.current.filter((_, idx) => idx !== currentIndex);
+
+    if (remaining.length === 0) {
+      setFinished(true);
+      trainingWordsRef.current = [];
+      setTrainingWords([]);
+    } else {
+      trainingWordsRef.current = remaining;
+      setTrainingWords(remaining);
+      // currentIndex остаётся 0 — всегда берём первый элемент из оставшихся
+    }
+
+    safeTimeout(() => inputRef.current?.focus(), 80);
+  }, [currentIndex, feedbackOpacity, feedbackScale, safeTimeout]);
+
+  const handleInputChange = useCallback((text: string) => {
+    if (checked || !currentWord) return;
+    setInput(text);
+    if (!text.trim()) return;
+    if (checkAnswer(text, answerText)) {
+      setSkipped(false);
+      setChecked(true);
+      setIsCorrect(true);
+      setSessionTotal((t) => t + 1);
+      setSessionCorrect((c) => c + 1);
+      animateFeedback(true);
+
+      // Обновляем локально (optimistic), без сети — данные уйдут при flush
+      updateWordProgress(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0, offline: true }).catch(() => {
+        // Не критично — локальное состояние уже обновлено
+      });
+
+      // Проверяем, выучено ли слово (correct_count стал >= ARCHIVE_THRESHOLD)
+      const wasLearnedBefore = currentWord.correct_count >= ARCHIVE_THRESHOLD;
+      const isNowLearned = (currentWord.correct_count + 1) >= ARCHIVE_THRESHOLD;
+      const justLearned = !wasLearnedBefore && isNowLearned;
+
+      if (justLearned) {
+        setWordsLearnedInSession((prev) => prev + 1);
+        incrementAndCheck(1);
+      }
+
+      // Записываем в сессию (для последующего batch flush)
+      const points = hintCount > 0 ? 0.5 : 1;
+      recordWord(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0, points });
+      safeTimeout(() => {
+        goToNextWord();
+      }, 900);
+    }
+  }, [checked, currentWord, answerText, animateFeedback, updateWordProgress, ARCHIVE_THRESHOLD, hintCount, recordWord, safeTimeout, goToNextWord, incrementAndCheck]);
+
+  const handleHint = useCallback(() => {
+    if (checked || !currentWord) return;
+    if (!primaryAnswer) return;
+    if (hintCount >= primaryAnswer.length) return;
+
+    setSkipped(false);
+    setSessionHints((h) => h + 1);
+
+    const nextCount = Math.min(primaryAnswer.length, hintCount + 1);
+    setHintCount(nextCount);
+    const newInput = primaryAnswer.slice(0, nextCount);
+    setInput(newInput);
+
+    if (nextCount >= primaryAnswer.length) {
+      // Полностью раскрыли слово подсказками — считаем попытку без очков
+      setSkipped(true);
+      setChecked(true);
+      setIsCorrect(false);
+      setSessionTotal((t) => t + 1);
+      animateFeedback(false);
+
+      // Обновляем прогресс слова локально
+      updateWordProgress(currentWord.id, false, { correctDelta: 0, incorrectDelta: 1, offline: true }).catch(() => {});
+
+      // Записываем в сессию — 0 очков за полное использование подсказок
+      recordWord(currentWord.id, false, { correctDelta: 0, incorrectDelta: 1, points: 0 });
+
+      safeTimeout(() => {
+        goToNextWord();
+      }, 1300);
+    }
+  }, [checked, currentWord, primaryAnswer, hintCount, animateFeedback, updateWordProgress, recordWord, safeTimeout, goToNextWord]);
+
+  const handleDontRemember = useCallback(() => {
+    if (checked || !currentWord) return;
+    setSkipped(true);
+    setChecked(true);
+    setIsCorrect(false);
+    setSessionTotal((t) => t + 1);
+    animateFeedback(false);
+
+    // Обновляем прогресс слова локально
+    updateWordProgress(currentWord.id, false, { correctDelta: 0, incorrectDelta: 1, offline: true }).catch(() => {});
+
+    // Записываем в сессию — 0 очков за неправильный ответ
+    recordWord(currentWord.id, false, { correctDelta: 0, incorrectDelta: 1, points: 0 });
+
+    safeTimeout(() => {
+      goToNextWord();
+    }, 1600);
+  }, [checked, currentWord, animateFeedback, updateWordProgress, recordWord, safeTimeout, goToNextWord]);
+
+  const handleSwap = useCallback(() => {
+    setDirection((d) => (d === 'foreign' ? 'native' : 'foreign'));
+    setInput('');
+    setChecked(false);
+    setIsCorrect(null);
+    setHintCount(0);
+    feedbackOpacity.setValue(0);
+    setSkipped(false);
+  }, []);
+
+  const cardBorderColor = skipped
+    ? colors.primary
+    : checked
+    ? isCorrect
+      ? colors.success
+      : colors.danger
+    : colors.border;
+  const inputBorderColor = skipped
+    ? colors.border
+    : checked
+    ? isCorrect
+      ? colors.success
+      : colors.danger
+    : colors.border;
 
   if (loading) {
     return <SkeletonScreen type="training" showHeader={false} />;
@@ -385,130 +557,9 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
     );
   }
 
-  const currentWord = trainingWords[currentIndex];
   if (!currentWord) {
     return null;
   }
-  const promptText = direction === 'foreign' ? currentWord.translation : currentWord.original;
-  const answerText = direction === 'foreign' ? currentWord.original : currentWord.translation;
-  const inputPlaceholder = 'Введите перевод';
-  const primaryAnswer = answerText.split(/[/,|]/)[0]?.trim() ?? '';
-
-  const goToNextWord = () => {
-    const next = currentIndex + 1;
-    if (next >= trainingWords.length) {
-      setFinished(true);
-    } else {
-      setCurrentIndex(next);
-    }
-    setInput('');
-    setChecked(false);
-    setIsCorrect(null);
-    setHintCount(0);
-    feedbackOpacity.setValue(0);
-    feedbackScale.setValue(0);
-    setSkipped(false);
-    safeTimeout(() => inputRef.current?.focus(), 80);
-  };
-
-  const handleInputChange = (text: string) => {
-    if (checked || !currentWord) return;
-    setInput(text);
-    if (!text.trim()) return;
-    if (checkAnswer(text, answerText)) {
-      setSkipped(false);
-      setChecked(true);
-      setIsCorrect(true);
-      setSessionTotal((t) => t + 1);
-      setSessionCorrect((c) => c + 1);
-      animateFeedback(true);
-
-      // Обновляем локально (optimistic), без сети — данные уйдут при flush
-      updateWordProgress(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0, offline: true }).catch(() => {
-        // Не критично — локальное состояние уже обновлено
-      });
-
-      // Проверяем, выучено ли слово (correct_count стал >= ARCHIVE_THRESHOLD)
-      const wasLearnedBefore = currentWord.correct_count >= ARCHIVE_THRESHOLD;
-      const isNowLearned = (currentWord.correct_count + 1) >= ARCHIVE_THRESHOLD;
-      const justLearned = !wasLearnedBefore && isNowLearned;
-
-      if (justLearned) {
-        setWordsLearnedInSession((prev) => prev + 1);
-        incrementAndCheck(1);
-      }
-
-      // Записываем в сессию (для последующего batch flush)
-      const points = hintCount > 0 ? 0.5 : 1;
-      recordWord(currentWord.id, true, { correctDelta: 1, incorrectDelta: 0, points });
-      safeTimeout(() => {
-        goToNextWord();
-      }, 900);
-    }
-  };
-
-  const handleHint = () => {
-    if (checked || !currentWord) return;
-    if (!primaryAnswer) return;
-    if (hintCount >= primaryAnswer.length) return;
-
-    setSkipped(false);
-    setSessionHints((h) => h + 1);
-
-    const nextCount = Math.min(primaryAnswer.length, hintCount + 1);
-    setHintCount(nextCount);
-    const newInput = primaryAnswer.slice(0, nextCount);
-    setInput(newInput);
-
-    if (nextCount >= primaryAnswer.length) {
-      // Полностью раскрыли слово подсказками — считаем попытку без очков
-      setSkipped(true);
-      setChecked(true);
-      setIsCorrect(false);
-      setSessionTotal((t) => t + 1);
-      animateFeedback(false);
-      safeTimeout(() => {
-        goToNextWord();
-      }, 1300);
-    }
-  };
-
-  const handleDontRemember = () => {
-    if (checked) return;
-    setSkipped(true);
-    setChecked(true);
-    setIsCorrect(false);
-    setSessionTotal((t) => t + 1);
-    animateFeedback(false);
-    safeTimeout(() => {
-      goToNextWord();
-    }, 1600);
-  };
-
-  const handleSwap = () => {
-    setDirection((d) => (d === 'foreign' ? 'native' : 'foreign'));
-    setInput('');
-    setChecked(false);
-    setIsCorrect(null);
-    setHintCount(0);
-    feedbackOpacity.setValue(0);
-    setSkipped(false);
-  };
-
-  const cardBorderColor = skipped
-    ? colors.primary
-    : checked
-    ? isCorrect
-      ? colors.success
-      : colors.danger
-    : colors.border;
-  const inputBorderColor = skipped
-    ? colors.border
-    : checked
-    ? isCorrect
-      ? colors.success
-      : colors.danger
-    : colors.border;
 
   return (
     <KeyboardAvoidingView
@@ -523,7 +574,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
         <View style={styles.headerMid}>
           <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>{groupName}</Text>
           <Text style={[styles.headerSub, { color: colors.muted }]}>
-            {currentIndex + 1} / {trainingWords.length}
+            {totalWords - trainingWords.length + 1} / {totalWords}
           </Text>
         </View>
         <TouchableOpacity

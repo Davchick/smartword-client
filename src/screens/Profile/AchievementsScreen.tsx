@@ -10,6 +10,7 @@ import {
 import { useTheme, spacing, typography, fonts, radii } from '../../theme';
 import { AchievementCard } from '../../components/AchievementCard';
 import { useAchievements } from '../../hooks/useAchievements';
+import { useAuth } from '../../contexts/AuthContext';
 import { StreakCounter } from '../../components/StreakCounter';
 import { useStreak } from '../../hooks/useStreak';
 import { queryClient } from '../../lib/queryClient';
@@ -19,6 +20,7 @@ type CategoryFilter = 'all' | 'streak' | 'words' | 'swipe' | 'chat';
 
 export const AchievementsScreen: React.FC = () => {
   const { colors } = useTheme();
+  const { user } = useAuth();
   const { achievements, summary, loading } = useAchievements();
   const { streak } = useStreak();
   const [refreshing, setRefreshing] = useState(false);
@@ -47,7 +49,9 @@ export const AchievementsScreen: React.FC = () => {
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        user ? (
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        ) : undefined
       }
     >
       {/* Header */}

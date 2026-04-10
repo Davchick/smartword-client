@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Plus, BookOpen, MoreHorizontal, Trash2, Pencil, Archive } from 'lucide-react-native';
 import { useGroups } from '../../hooks/useGroups';
 import { useProfile } from '../../hooks/useProfile';
+import { useAuth } from '../../contexts/AuthContext';
 import { useApiError } from '../../hooks/useApiError';
 import { AddGroupModal } from '../../components/AddGroupModal';
 import { PaywallModal } from '../../components/PaywallModal';
@@ -38,6 +39,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   const { colors } = useTheme();
   const { groups, loading, createGroup, deleteGroup, renameGroup } = useGroups();
   const { profile } = useProfile();
+  const { user } = useAuth();
   const { stats } = useStats();
   const { handleApiError } = useApiError();
 
@@ -171,12 +173,14 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
           groups.length === 0 && styles.listEmpty,
         ]}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
+          user ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          ) : undefined
         }
         windowSize={5}
         maxToRenderPerBatch={5}
