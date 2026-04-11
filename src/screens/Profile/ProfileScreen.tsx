@@ -295,22 +295,22 @@ export const ProfileScreen = () => {
           </View>
         )
       ) : (
-        <View style={[styles.premiumActiveCard, { borderColor: colors.border, backgroundColor: colors.card }]}>
+        <TouchableOpacity
+          style={[styles.premiumActiveCard, { borderColor: colors.border, backgroundColor: colors.card }]}
+          onPress={() => navigation.navigate('SignIn', { fromProfile: true })}
+          activeOpacity={0.85}
+        >
           <Crown color={colors.primary} size={22} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.upgradeTitle, { color: colors.text }]}>Создайте аккаунт</Text>
             <Text style={[styles.upgradeSubtitle, { color: colors.muted }]}>
-              Сохраним ваш прогресс в облаке и откроем Premium-функции.
+              Сохраним ваш прогресс в облаке и откроем дополнительные функции.
             </Text>
           </View>
-          <TouchableOpacity
-            style={[styles.upgradeArrow, { backgroundColor: colors.primary }]}
-            onPress={() => navigation.navigate('SignIn', { fromProfile: true })}
-            activeOpacity={0.85}
-          >
+          <View style={[styles.upgradeArrow, { backgroundColor: colors.primary }]}>
             <ChevronRight color={colors.background} size={18} />
-          </TouchableOpacity>
-        </View>
+          </View>
+        </TouchableOpacity>
       )}
 
       {/* Сообщество */}

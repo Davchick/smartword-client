@@ -2,20 +2,20 @@
  * useStats — React Query версия.
  *
  * Ключевые изменения:
- * - totalWords читается из React Query кэша слов (['words']) — мгновенно, без запроса
- * - learnedWords, currentStreak, weekActivity — серверные (сложная логика)
- * - Guest mode через computeGuestStats (без изменений)
- * - Fallback на серверный totalWords если кэш слов ещё не загружен
+ * - totalWords и learnedWords читаются из React Query кэша слов (['words']) — мгновенно, без запроса
+ * - currentStreak, weekActivity — вычисляются на основе кэша слов (guest) или серверные (auth)
+ * - Guest mode больше не читает AsyncStorage напрямую — подписан на кэш слов через React Query
+ * - Автоматическое обновление при любых изменениях кэша слов
  */
 
 import { useMemo } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { queryKey } from '../lib/queryKeys';
 import { ARCHIVE_THRESHOLD } from '../constants';
-import type { WordsResponse } from '../hooks/useWords';
+import type { WordsResponse, Word } from '../hooks/useWords';
+import { getGuestWords } from '../lib/guestStorage';
 
 export interface DayActivity {
   date: string;
@@ -41,14 +41,10 @@ function toDateStr(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-async function computeGuestStats(): Promise<Stats> {
-  const wordsRaw = await AsyncStorage.getItem('smartword_guest_words');
-  const allWords: { correct_count: number; last_reviewed: string | null }[] = wordsRaw
-    ? JSON.parse(wordsRaw)
-    : [];
-  const totalWords = allWords.length;
-  const learnedWords = allWords.filter((w) => w.correct_count >= ARCHIVE_THRESHOLD).length;
-
+/**
+ * Вычисляет статистику на основе массива слов.
+ */
+function computeStatsFromWords(words: Word[]): Omit<Stats, 'totalWords' | 'learnedWords'> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const dayOfWeek = today.getDay();
@@ -57,7 +53,7 @@ async function computeGuestStats(): Promise<Stats> {
   monday.setDate(today.getDate() + mondayOffset);
 
   const activeDays = new Set<string>();
-  for (const w of allWords) {
+  for (const w of words) {
     if (w.last_reviewed) {
       const d = new Date(w.last_reviewed);
       d.setHours(0, 0, 0, 0);
@@ -90,7 +86,7 @@ async function computeGuestStats(): Promise<Stats> {
     } else break;
   }
 
-  return { totalWords, learnedWords, currentStreak: streak, weekActivity };
+  return { currentStreak: streak, weekActivity };
 }
 
 interface ServerStats {
@@ -117,21 +113,32 @@ export const useStats = () => {
   const { user: authUser } = useAuth();
   const queryClient = useQueryClient();
 
-  // Для guest mode — всё вычисляем локально (без изменений)
-  const {
-    data: guestStats,
-    isLoading: guestLoading,
-  } = useQuery({
-    queryKey: queryKey.stats.overview(),
-    queryFn: computeGuestStats,
-    enabled: !authUser,
-    staleTime: 60 * 1000,
+  // Для авторизованного пользователя: читаем кэш слов
+  const { data: wordsCache } = useQuery({
+    queryKey: queryKey.words.list(),
+    queryFn: () => apiGet<WordsResponse>('/words'),
+    enabled: !!authUser,
+    staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
+    select: (data) => data,
   });
 
-  // Для авторизованного пользователя:
-  // - totalWords из кэша слов (мгновенно, обновляется при мутациях)
-  // - learnedWords, currentStreak, weekActivity — серверные
+  // Для guest mode: используем ОТДЕЛЬНЫЙ queryKey от useWords
+  // Это предотвращает конфликт при optimistic updates
+  const { data: guestWordsData } = useQuery({
+    queryKey: queryKey.stats.guestWords(),
+    queryFn: async () => {
+      const words = await getGuestWords<Word[]>();
+      const wordsArray = words ?? [];
+      return { words: wordsArray, totalCount: wordsArray.length };
+    },
+    enabled: !authUser,
+    staleTime: 1000, // 1 сек — избегаем слишком частых refetch'ей
+    gcTime: 5 * 60 * 1000,
+    refetchOnMount: false, // Не refetch'им при каждом маунте
+  });
+
+  // Серверная статистика для streak и weekActivity
   const {
     data: serverStats,
     isLoading: serverLoading,
@@ -143,36 +150,36 @@ export const useStats = () => {
     gcTime: 5 * 60 * 1000,
   });
 
-  // Подписываемся на общий кэш слов через useQuery — это даст re-render при обновлении кэша
-  // Если кэш уже заполнен (через useWords или мутации) — запрос не делается (deduplication)
-  // Если кэша нет — делаем один запрос чтобы заполнить его
-  const { data: wordsCache } = useQuery({
-    queryKey: queryKey.words.list(),
-    queryFn: () => apiGet<WordsResponse>('/words'),
-    enabled: !!authUser,
-    staleTime: 30 * 1000, // 30 сек — синхронизировано с useWords
-    gcTime: 5 * 60 * 1000,
-    select: (data) => data,
-  });
+  // Определяем активный набор слов
+  const activeCache = authUser ? wordsCache : guestWordsData;
+  const activeWords = activeCache?.words ?? [];
+  const totalWords = activeCache?.totalCount ?? 0;
+  const learnedWords = activeWords.filter((w) => w.correct_count >= ARCHIVE_THRESHOLD).length;
 
-  const cachedTotalWords = wordsCache?.totalCount ?? 0;
-  // Fallback: если кэша слов нет — используем 0 (запрос придёт и обновит)
-  const totalWords = wordsCache ? cachedTotalWords : (serverStats as any)?.totalWords ?? 0;
+  // Вычисляем streak и weekActivity
+  const cacheStats = useMemo(() => computeStatsFromWords(activeWords), [activeWords]);
 
   const stats: Stats = useMemo(() => {
-    if (!authUser) {
-      return guestStats ?? EMPTY_STATS;
+    if (authUser) {
+      // Для авторизованных: streak и weekActivity с сервера
+      return {
+        totalWords,
+        learnedWords,
+        currentStreak: serverStats?.currentStreak ?? cacheStats.currentStreak,
+        weekActivity: serverStats?.weekActivity ?? cacheStats.weekActivity,
+      };
     }
 
+    // Для guest: всё из кэша
     return {
       totalWords,
-      learnedWords: serverStats?.learnedWords ?? 0,
-      currentStreak: serverStats?.currentStreak ?? 0,
-      weekActivity: serverStats?.weekActivity ?? [],
+      learnedWords,
+      currentStreak: cacheStats.currentStreak,
+      weekActivity: cacheStats.weekActivity,
     };
-  }, [authUser, guestStats, totalWords, serverStats]);
+  }, [authUser, totalWords, learnedWords, cacheStats, serverStats]);
 
-  const loading = authUser ? serverLoading : guestLoading;
+  const loading = authUser ? serverLoading : (guestWordsData === undefined);
 
   return {
     stats,
@@ -180,10 +187,10 @@ export const useStats = () => {
     refetch: async () => {
       if (authUser) {
         await queryClient.refetchQueries({ queryKey: queryKey.stats.overview() });
-        // Также рефетчим кэш слов чтобы обновить totalWords
         await queryClient.refetchQueries({ queryKey: queryKey.words.list() });
       } else {
-        await queryClient.refetchQueries({ queryKey: queryKey.stats.overview() });
+        // В guest mode инвалидируем guest words — queryFn перечитает AsyncStorage
+        await queryClient.invalidateQueries({ queryKey: queryKey.stats.guestWords() });
       }
     },
   };

@@ -201,6 +201,8 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
       invalidateWords(queryClient);
       invalidateGroups(queryClient);
       invalidateStreaks(queryClient);
+      // Инвалидируем guest words для статистики (guest mode)
+      queryClient.invalidateQueries({ queryKey: queryKey.stats.guestWords() });
     },
   });
 
@@ -253,6 +255,8 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
       invalidateWords(queryClient);
       invalidateGroups(queryClient);
       invalidateStreaks(queryClient);
+      // Инвалидируем guest words для статистики (guest mode)
+      queryClient.invalidateQueries({ queryKey: queryKey.stats.guestWords() });
     },
   });
 
@@ -284,6 +288,8 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
       invalidateWords(queryClient);
       invalidateGroups(queryClient);
       invalidateStreaks(queryClient);
+      // Инвалидируем guest words для статистики (guest mode)
+      queryClient.invalidateQueries({ queryKey: queryKey.stats.guestWords() });
     },
   });
 
@@ -382,6 +388,8 @@ export const useWords = (groupId?: string, options?: UseWordsOptions) => {
     onSuccess: (data, vars) => {
       // Сервер подтвердил — удаляем из pending
       pendingUpdatesRef.current.delete(vars.wordId);
+      // Инвалидируем guest words для статистики — correct_count изменился
+      queryClient.invalidateQueries({ queryKey: queryKey.stats.guestWords() });
     },
   });
 

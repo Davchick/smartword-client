@@ -11,7 +11,7 @@ import { useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiGet, apiPost, apiPatch, apiDelete, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { queryKey, invalidateGroups } from '../lib/queryKeys';
+import { queryKey, invalidateGroups, invalidateStats } from '../lib/queryKeys';
 import { getGuestWords, getGuestGroups, setGuestGroups, setGuestWords } from '../lib/guestStorage';
 import { ARCHIVE_THRESHOLD } from '../constants';
 
@@ -133,6 +133,7 @@ export const useGroups = () => {
     },
     onSettled: () => {
       invalidateGroups(queryClient);
+      invalidateStats(queryClient);
     },
   });
 
@@ -187,6 +188,7 @@ export const useGroups = () => {
     },
     onSettled: () => {
       invalidateGroups(queryClient);
+      invalidateStats(queryClient);
     },
   });
 
@@ -229,6 +231,7 @@ export const useGroups = () => {
     },
     onSettled: () => {
       invalidateGroups(queryClient);
+      invalidateStats(queryClient);
     },
   });
 

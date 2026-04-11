@@ -31,6 +31,7 @@ export const queryKey = {
   stats: {
     all: ['stats'] as const,
     overview: () => ['stats', 'overview'] as const,
+    guestWords: () => ['stats', 'guestWords'] as const, // Guest words для статистики
     trainingProgress: () => ['stats', 'training-progress'] as const,
   },
   streaks: {
@@ -82,7 +83,9 @@ export function invalidateProfile(queryClient: import('@tanstack/react-query').Q
 }
 
 export function invalidateStats(queryClient: import('@tanstack/react-query').QueryClient) {
-  return queryClient.invalidateQueries({ queryKey: queryKey.stats.all });
+  // Инвалидируем stats и guest words (для guest mode)
+  queryClient.invalidateQueries({ queryKey: queryKey.stats.all });
+  return queryClient.invalidateQueries({ queryKey: queryKey.stats.guestWords() });
 }
 
 export function invalidateStreaks(queryClient: import('@tanstack/react-query').QueryClient) {

@@ -209,19 +209,6 @@ export const ProgressChart: React.FC<ProgressChartProps> = ({ data }) => {
                 >
                   {day.dayLabel}
                 </SvgText>
-
-                {/* Today indicator dot */}
-                {day.isToday && (
-                  <SvgText
-                    x={x}
-                    y={CHART_HEIGHT - 24}
-                    textAnchor="middle"
-                    fill={GRADIENT_START}
-                    fontSize={16}
-                  >
-                    ●
-                  </SvgText>
-                )}
               </G>
             );
           })}
