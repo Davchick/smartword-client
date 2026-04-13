@@ -2,7 +2,6 @@ import React from 'react';
 import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { Flame, BookOpen, CheckCircle2 } from 'lucide-react-native';
 import { useTheme, fonts, spacing, radii, typography } from '../theme';
-import { moderateScale } from '../utils/responsive';
 import type { Stats } from '../hooks/useStats';
 import { AnimatedBorderSnake } from './AnimatedBorderSnake';
 
@@ -13,6 +12,32 @@ interface Props {
 export const StatsWidget = ({ stats }: Props) => {
   const { colors } = useTheme();
   const { width: screenWidth } = useWindowDimensions();
+
+  // Адаптивные размеры для иконок метрик
+  // Сжимаем на экранах < 375px (iPhone SE и аналоги)
+  const getIconSizes = () => {
+    const baseWidth = 375;
+    const minIconSize = 14;
+    const maxIconSize = 16;
+    const minStreakIcon = 12;
+    const maxStreakIcon = 14;
+
+    if (screenWidth >= baseWidth) {
+      return {
+        metricIcon: maxIconSize,
+        streakIcon: maxStreakIcon,
+      };
+    }
+
+    const scale = Math.max(0, Math.min(1, (screenWidth - 320) / (baseWidth - 320)));
+
+    return {
+      metricIcon: Math.round(minIconSize + (maxIconSize - minIconSize) * scale),
+      streakIcon: Math.round(minStreakIcon + (maxStreakIcon - minStreakIcon) * scale),
+    };
+  };
+
+  const iconSizes = getIconSizes();
 
   // Адаптивные размеры для дней недели
   // Начинаем сжимать с 420px
@@ -42,7 +67,33 @@ export const StatsWidget = ({ stats }: Props) => {
   };
 
   const daySizes = getDaySizes();
-  const animatedSnakeSize = daySizes.squareSize - 4;
+  // Размер SVG с учётом stroke (анимация выходит за пределы квадрата)
+  const strokeWidth = 2;
+  const svgSize = daySizes.squareSize + strokeWidth * 2;
+
+  // Адаптивный левый отступ для секции с днями недели
+  // Уменьшаем только paddingLeft начиная с 405px
+  const getWeekSectionPadding = () => {
+    const baseWidth = 405;
+    const minPaddingLeft = 8;
+    const maxPaddingLeft = spacing.md; // 12px
+
+    if (screenWidth >= baseWidth) {
+      return {
+        paddingLeft: maxPaddingLeft,
+        paddingRight: spacing.md,
+      };
+    }
+
+    const scale = Math.max(0, Math.min(1, (screenWidth - 320) / (baseWidth - 320)));
+
+    return {
+      paddingLeft: Math.round(minPaddingLeft + (maxPaddingLeft - minPaddingLeft) * scale),
+      paddingRight: spacing.md,
+    };
+  };
+
+  const weekSectionPadding = getWeekSectionPadding();
 
   const styles = createStyles(daySizes);
 
@@ -51,7 +102,7 @@ export const StatsWidget = ({ stats }: Props) => {
       {/* Верхний ряд: метрики */}
       <View style={styles.metricsRow}>
         <MetricItem
-          icon={<BookOpen color={colors.primary} size={moderateScale(16)} />}
+          icon={<BookOpen color={colors.primary} size={iconSizes.metricIcon} />}
           value={stats.totalWords}
           label="записано"
           colors={colors}
@@ -60,7 +111,7 @@ export const StatsWidget = ({ stats }: Props) => {
         />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <MetricItem
-          icon={<CheckCircle2 color={colors.success} size={moderateScale(16)} />}
+          icon={<CheckCircle2 color={colors.success} size={iconSizes.metricIcon} />}
           value={stats.learnedWords}
           label="изучено"
           colors={colors}
@@ -73,7 +124,7 @@ export const StatsWidget = ({ stats }: Props) => {
           <View style={styles.streakRow}>
             <Text style={[styles.streakValue, { color: colors.primary }]}>{stats.currentStreak}</Text>
             <View style={[styles.streakIconWrapper, { backgroundColor: colors.primaryDim }]}>
-              <Flame color={colors.primary} size={moderateScale(14)} fill={colors.primary} />
+              <Flame color={colors.primary} size={iconSizes.streakIcon} fill={colors.primary} />
             </View>
           </View>
           <Text style={[styles.streakLabel, { color: colors.muted }]}>дней подряд</Text>
@@ -81,7 +132,7 @@ export const StatsWidget = ({ stats }: Props) => {
       </View>
 
       {/* Нижний ряд: неделя активности */}
-      <View style={[styles.weekSection, { backgroundColor: colors.background }]}>
+      <View style={[styles.weekSection, { backgroundColor: colors.background, paddingLeft: weekSectionPadding.paddingLeft, paddingRight: weekSectionPadding.paddingRight }]}>
         <View style={[styles.weekDays, { gap: daySizes.gap }]}>
           {stats.weekActivity.map((day) => {
             const isActive = day.hasActivity;
@@ -103,8 +154,8 @@ export const StatsWidget = ({ stats }: Props) => {
                 <View style={[
                   styles.daySquareWrapper,
                   {
-                    width: daySizes.wrapperSize,
-                    height: daySizes.wrapperSize,
+                    width: svgSize,
+                    height: svgSize,
                   }
                 ]}>
                   <View style={[
@@ -142,8 +193,8 @@ export const StatsWidget = ({ stats }: Props) => {
                   {isToday && (
                     <AnimatedBorderSnake
                       color={colors.primary}
-                      size={animatedSnakeSize}
-                      strokeWidth={2}
+                      size={daySizes.squareSize}
+                      strokeWidth={strokeWidth}
                       borderRadius={Math.round(daySizes.squareSize * 0.2)}
                     />
                   )}
@@ -235,7 +286,6 @@ const createStyles = (daySizes: { wrapperSize: number; squareSize: number; gap: 
     fontFamily: fonts.regular,
   },
   weekSection: {
-    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   weekDays: {
@@ -244,11 +294,11 @@ const createStyles = (daySizes: { wrapperSize: number; squareSize: number; gap: 
   },
   dayItem: {
     alignItems: 'center',
+    justifyContent: 'center',
   },
   daySquareWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'visible',
   },
   daySquare: {
     alignItems: 'center',
