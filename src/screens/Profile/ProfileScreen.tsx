@@ -33,6 +33,9 @@ import { useStreak } from '../../hooks/useStreak';
 import { queryClient } from '../../lib/queryClient';
 import { queryKey } from '../../lib/queryKeys';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
+import { useDeviceSize } from '../../hooks/useDeviceSize';
+import { useResponsiveTypography } from '../../hooks/useResponsiveTypography';
+import { moderateScale, scale } from '../../utils/responsive';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ProgressChart } from '../../components/ProgressChart';
@@ -49,6 +52,8 @@ export const ProfileScreen = () => {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const deviceSize = useDeviceSize();
+  const responsiveTypo = useResponsiveTypography();
   const { signOut } = useAuth();
   const { profile, loading, refetch, avatarId, setAvatarId, nickname, setNickname } = useProfile();
   const { progress: trainingProgress, loading: progressLoading } = useTrainingProgress();
@@ -118,6 +123,7 @@ export const ProfileScreen = () => {
     return avatarId;
   }, [avatarId]);
   const accentColor = useMemo(() => AVATAR_COLORS[safeAvatarId], [safeAvatarId]);
+  const styles = useProfileStyles();
 
   if (loading) {
     return <SkeletonScreen type="profile" showStats />;
@@ -155,7 +161,7 @@ export const ProfileScreen = () => {
           onPress={() => navigation.navigate('ProfileSettings')}
           activeOpacity={0.7}
         >
-          <Settings color={colors.muted} size={20} />
+          <Settings color={colors.muted} size={moderateScale(20)} />
         </TouchableOpacity>
       </View>
 
@@ -175,7 +181,7 @@ export const ProfileScreen = () => {
         >
           <Text style={styles.avatarEmoji}>{AVATAR_CHARS[safeAvatarId]}</Text>
           <View style={[styles.avatarEditBadge, { backgroundColor: colors.primary }]}>
-            <Pencil color={colors.background} size={10} />
+            <Pencil color={colors.background} size={moderateScale(10)} />
           </View>
         </TouchableOpacity>
 
@@ -198,20 +204,20 @@ export const ProfileScreen = () => {
                 style={[styles.nickActionBtn, { backgroundColor: colors.primary }]}
                 activeOpacity={0.8}
               >
-                <Check color={colors.background} size={16} strokeWidth={3} />
+                <Check color={colors.background} size={moderateScale(16)} strokeWidth={3} />
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => setEditingNick(false)}
                 style={[styles.nickActionBtn, { backgroundColor: colors.elevated }]}
                 activeOpacity={0.8}
               >
-                <X color={colors.muted} size={16} />
+                <X color={colors.muted} size={moderateScale(16)} />
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity style={styles.nickRow} onPress={startEditNick} activeOpacity={0.7}>
               <Text style={[styles.heroTitle, { color: colors.text }]}>{displayName}</Text>
-              <Pencil color={colors.muted} size={13} style={{ marginTop: 2 }} />
+              <Pencil color={colors.muted} size={moderateScale(13)} style={{ marginTop: 2 }} />
             </TouchableOpacity>
           )}
       </View>
@@ -258,7 +264,7 @@ export const ProfileScreen = () => {
               onPress={() => navigation.navigate('BillingPayment')}
               activeOpacity={0.85}
             >
-              <Crown color={colors.primary} size={26} />
+              <Crown color={colors.primary} size={moderateScale(26)} />
               <View style={{ flex: 1, marginLeft: spacing.md }}>
                 <Text style={[styles.upgradeTitle, { color: colors.text }]}>SmartWord Premium</Text>
                 <Text style={[styles.upgradeSubtitle, { color: colors.muted }]}>
@@ -278,20 +284,20 @@ export const ProfileScreen = () => {
                   },
                 ]}
               >
-                <ChevronRight color={colors.background} size={18} />
+                <ChevronRight color={colors.background} size={moderateScale(18)} />
               </View>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={[styles.premiumActiveCard, { borderColor: colors.primary, backgroundColor: colors.card }]}>
-            <Crown color={colors.primary} size={22} />
+            <Crown color={colors.primary} size={moderateScale(22)} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.upgradeTitle, { color: colors.primary }]}>Premium активен</Text>
               <Text style={[styles.upgradeSubtitle, { color: colors.primary, opacity: 0.7 }]}>
                 Безлимитные группы, слова и AI-чат
               </Text>
             </View>
-            <Star color={colors.primary} size={18} fill={colors.primary} />
+            <Star color={colors.primary} size={moderateScale(18)} fill={colors.primary} />
           </View>
         )
       ) : (
@@ -300,7 +306,7 @@ export const ProfileScreen = () => {
           onPress={() => navigation.navigate('SignIn', { fromProfile: true })}
           activeOpacity={0.85}
         >
-          <Crown color={colors.primary} size={22} />
+          <Crown color={colors.primary} size={moderateScale(22)} />
           <View style={{ flex: 1 }}>
             <Text style={[styles.upgradeTitle, { color: colors.text }]}>Создайте аккаунт</Text>
             <Text style={[styles.upgradeSubtitle, { color: colors.muted }]}>
@@ -308,7 +314,7 @@ export const ProfileScreen = () => {
             </Text>
           </View>
           <View style={[styles.upgradeArrow, { backgroundColor: colors.primary }]}>
-            <ChevronRight color={colors.background} size={18} />
+            <ChevronRight color={colors.background} size={moderateScale(18)} />
           </View>
         </TouchableOpacity>
       )}
@@ -322,24 +328,24 @@ export const ProfileScreen = () => {
           activeOpacity={0.7}
         >
           <View style={[styles.menuIcon, { backgroundColor: colors.primaryDim }]}>
-            <Headphones color={colors.primary} size={17} />
+            <Headphones color={colors.primary} size={moderateScale(17)} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.menuText, { color: colors.text }]}>Написать в поддержку</Text>
             <Text style={[styles.menuSubText, { color: colors.muted }]}>Мы ответим как можно скорее</Text>
           </View>
-          <ChevronRight color={colors.muted} size={18} />
+          <ChevronRight color={colors.muted} size={moderateScale(18)} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.menuRowLast} onPress={handleDonate} activeOpacity={0.7}>
           <View style={[styles.menuIcon, { backgroundColor: 'rgba(251,113,133,0.15)' }]}>
-            <Heart color={colors.danger} size={17} />
+            <Heart color={colors.danger} size={moderateScale(17)} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={[styles.menuText, { color: colors.text }]}>Поддержать разработчика</Text>
             <Text style={[styles.menuSubText, { color: colors.muted }]}>Помочь развитию SmartWord</Text>
           </View>
-          <ChevronRight color={colors.muted} size={18} />
+          <ChevronRight color={colors.muted} size={moderateScale(18)} />
         </TouchableOpacity>
       </View>
 
@@ -355,12 +361,12 @@ export const ProfileScreen = () => {
               activeOpacity={0.7}
             >
               <View style={[styles.menuIcon, { backgroundColor: 'rgba(251,113,133,0.12)' }]}>
-                <LogOut color={colors.danger} size={17} />
+                <LogOut color={colors.danger} size={moderateScale(17)} />
               </View>
               <Text style={[styles.menuText, { color: colors.danger }]}>
                 {signingOut ? 'Выход...' : 'Выйти из аккаунта'}
               </Text>
-              <ChevronRight color={colors.danger} size={18} />
+              <ChevronRight color={colors.danger} size={moderateScale(18)} />
             </TouchableOpacity>
           </>
         ) : (
@@ -370,10 +376,10 @@ export const ProfileScreen = () => {
             activeOpacity={0.7}
           >
             <View style={[styles.menuIcon, { backgroundColor: colors.primaryDim }]}>
-              <Crown color={colors.primary} size={17} />
+              <Crown color={colors.primary} size={moderateScale(17)} />
             </View>
             <Text style={[styles.menuText, { color: colors.text }]}>Войти или создать аккаунт</Text>
-            <ChevronRight color={colors.muted} size={18} />
+            <ChevronRight color={colors.muted} size={moderateScale(18)} />
           </TouchableOpacity>
         )}
       </View>
@@ -423,7 +429,7 @@ export const ProfileScreen = () => {
                 <Text style={styles.avatarGridEmoji}>{emoji}</Text>
                 {isSelected && (
                   <View style={[styles.avatarSelectedBadge, { backgroundColor: color }]}>
-                    <Check color="#fff" size={10} strokeWidth={3} />
+                    <Check color="#fff" size={moderateScale(10)} strokeWidth={3} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -435,247 +441,263 @@ export const ProfileScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  content: {
-    paddingHorizontal: spacing.lg,
-    gap: spacing.md,
-  },
-  settingsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    width: '100%',
-    marginTop: spacing.xs,
-  },
-  settingsBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroSection: {
-    alignItems: 'center',
-    paddingBottom: spacing.sm,
-    gap: spacing.sm,
-  },
-  avatarCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarEmoji: {
-    fontSize: 46,
-  },
-  avatarEditBadge: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  nickRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  heroTitle: {
-    fontSize: typography.subtitle,
-    fontFamily: fonts.headingBold,
-  },
-  nickEditRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  nickInput: {
-    fontSize: typography.body,
-    fontFamily: fonts.medium,
-    borderWidth: 1.5,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2,
-    minWidth: 160,
-  },
-  nickActionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  premiumBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: 4,
-    borderRadius: radii.full,
-  },
-  premiumBadgeText: {
-    fontSize: typography.small,
-    fontFamily: fonts.bold,
-  },
-  progressCard: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  progressEmpty: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.lg,
-  },
-  progressEmptyText: {
-    fontSize: typography.small,
-    fontFamily: fonts.regular,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  progressTitle: {
-    fontSize: typography.small,
-    fontFamily: fonts.medium,
-  },
-  progressCount: {
-    fontSize: typography.small,
-    fontFamily: fonts.regular,
-  },
-  progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  upgradeCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: radii.md,
-    borderWidth: 1.5,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  upgradeLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    flex: 1,
-  },
-  upgradeTitle: {
-    fontSize: typography.body,
-    fontFamily: fonts.headingBold,
-  },
-  upgradeSubtitle: {
-    fontSize: typography.small,
-    fontFamily: fonts.regular,
-    marginTop: 2,
-  },
-  upgradeArrow: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  premiumActiveCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1.5,
-    padding: spacing.md,
-  },
-  sectionLabel: {
-    fontSize: typography.xs,
-    fontFamily: fonts.bold,
-    letterSpacing: 1.2,
-    marginTop: spacing.sm,
-    marginLeft: spacing.xs,
-  },
-  menuBlock: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    overflow: 'hidden',
-  },
-  menuRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.md,
-    borderBottomWidth: 1,
-  },
-  menuRowLast: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  menuIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  menuText: {
-    fontSize: typography.body,
-    fontFamily: fonts.medium,
-  },
-  menuSubText: {
-    fontSize: typography.small,
-    fontFamily: fonts.regular,
-    marginTop: 1,
-  },
-  versionText: {
-    textAlign: 'center',
-    fontSize: typography.small,
-    fontFamily: fonts.regular,
-    marginTop: spacing.sm,
-  },
-  lastUpdated: {
-    textAlign: 'center',
-    fontSize: typography.xs,
-    fontFamily: fonts.regular,
-    marginTop: spacing.xs,
-  },
-  avatarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  avatarGridItem: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarGridEmoji: {
-    fontSize: 32,
-  },
-  avatarSelectedBadge: {
-    position: 'absolute',
-    bottom: 2,
-    right: 2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
+const useProfileStyles = () => {
+  const { colors } = useTheme();
+  const { isSmall, isLarge, spacing, typography, radii } = useDeviceSize();
+
+  const avatarSize = isSmall ? 80 : isLarge ? 100 : 90;
+  const avatarEmojiSize = isSmall ? 40 : isLarge ? 52 : 46;
+  const editBadgeSize = moderateScale(22);
+  const editPencilSize = moderateScale(10);
+  const nickActionSize = moderateScale(34);
+  const menuIconSize = moderateScale(34);
+  const menuIconInner = moderateScale(17);
+  const gridItemSize = isSmall ? 56 : isLarge ? 72 : 64;
+  const gridEmojiSize = isSmall ? 28 : isLarge ? 36 : 32;
+  const selectedBadgeSize = moderateScale(18);
+
+  return StyleSheet.create({
+    content: {
+      paddingHorizontal: spacing.lg,
+      gap: spacing.md,
+    },
+    settingsContainer: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      width: '100%',
+      marginTop: spacing.xs,
+    },
+    settingsBtn: {
+      width: moderateScale(40),
+      height: moderateScale(40),
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroSection: {
+      alignItems: 'center',
+      paddingBottom: spacing.sm,
+      gap: spacing.sm,
+    },
+    avatarCircle: {
+      width: avatarSize,
+      height: avatarSize,
+      borderRadius: avatarSize / 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarEmoji: {
+      fontSize: avatarEmojiSize,
+    },
+    avatarEditBadge: {
+      position: 'absolute',
+      bottom: 2,
+      right: 2,
+      width: editBadgeSize,
+      height: editBadgeSize,
+      borderRadius: editBadgeSize / 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    nickRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    heroTitle: {
+      fontSize: typography.subtitle,
+      fontFamily: fonts.headingBold,
+    },
+    nickEditRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    nickInput: {
+      fontSize: typography.body,
+      fontFamily: fonts.medium,
+      borderWidth: 1.5,
+      borderRadius: radii.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.xs + 2,
+      minWidth: scale(160),
+    },
+    nickActionBtn: {
+      width: nickActionSize,
+      height: nickActionSize,
+      borderRadius: moderateScale(10),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    premiumBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: spacing.sm + 2,
+      paddingVertical: 4,
+      borderRadius: radii.full,
+    },
+    premiumBadgeText: {
+      fontSize: typography.small,
+      fontFamily: fonts.bold,
+    },
+    progressCard: {
+      borderRadius: radii.md,
+      borderWidth: 1,
+      padding: spacing.md,
+      gap: spacing.sm,
+    },
+    progressEmpty: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      paddingVertical: spacing.lg,
+    },
+    progressEmptyText: {
+      fontSize: typography.small,
+      fontFamily: fonts.regular,
+    },
+    progressHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    progressTitle: {
+      fontSize: typography.small,
+      fontFamily: fonts.medium,
+    },
+    progressCount: {
+      fontSize: typography.small,
+      fontFamily: fonts.regular,
+    },
+    progressTrack: {
+      height: moderateScale(6),
+      borderRadius: moderateScale(3),
+      overflow: 'hidden',
+    },
+    progressFill: {
+      height: '100%',
+      borderRadius: moderateScale(3),
+    },
+    upgradeCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderRadius: radii.md,
+      borderWidth: 1.5,
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    upgradeLeft: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      flex: 1,
+    },
+    upgradeTitle: {
+      fontSize: typography.body,
+      fontFamily: fonts.headingBold,
+    },
+    upgradeSubtitle: {
+      fontSize: typography.small,
+      fontFamily: fonts.regular,
+      marginTop: 2,
+    },
+    upgradeArrow: {
+      width: moderateScale(32),
+      height: moderateScale(32),
+      borderRadius: moderateScale(16),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    premiumActiveCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      borderRadius: radii.md,
+      borderWidth: 1.5,
+      padding: spacing.md,
+    },
+    sectionLabel: {
+      fontSize: typography.xs,
+      fontFamily: fonts.bold,
+      letterSpacing: 1.2,
+      marginTop: spacing.sm,
+      marginLeft: spacing.xs,
+    },
+    menuBlock: {
+      borderRadius: radii.md,
+      borderWidth: 1,
+      overflow: 'hidden',
+    },
+    menuRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: spacing.md,
+      gap: spacing.md,
+      borderBottomWidth: 1,
+    },
+    menuRowLast: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: spacing.md,
+      gap: spacing.md,
+    },
+    menuIcon: {
+      width: menuIconSize,
+      height: menuIconSize,
+      borderRadius: moderateScale(10),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    menuText: {
+      fontSize: typography.body,
+      fontFamily: fonts.medium,
+    },
+    menuSubText: {
+      fontSize: typography.small,
+      fontFamily: fonts.regular,
+      marginTop: 1,
+    },
+    versionText: {
+      textAlign: 'center',
+      fontSize: typography.small,
+      fontFamily: fonts.regular,
+      marginTop: spacing.sm,
+    },
+    lastUpdated: {
+      textAlign: 'center',
+      fontSize: typography.xs,
+      fontFamily: fonts.regular,
+      marginTop: spacing.xs,
+    },
+    avatarGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: spacing.sm,
+    },
+    avatarGridItem: {
+      width: gridItemSize,
+      height: gridItemSize,
+      borderRadius: moderateScale(20),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarGridEmoji: {
+      fontSize: gridEmojiSize,
+    },
+    avatarSelectedBadge: {
+      position: 'absolute',
+      bottom: 2,
+      right: 2,
+      width: selectedBadgeSize,
+      height: selectedBadgeSize,
+      borderRadius: selectedBadgeSize / 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  });
+};

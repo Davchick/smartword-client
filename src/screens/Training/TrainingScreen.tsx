@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, RotateCcw, Dumbbell, Crown } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { SwipeCard } from '../../components/SwipeCard';
-import { useTheme, fonts, spacing, radii, typography } from '../../theme';
+import { useTheme, fonts } from '../../theme';
 import { useProfile } from '../../hooks/useProfile';
 import { useTrainingSession } from '../../hooks/useTrainingSession';
 import { useWeeklyLimit } from '../../hooks/useWeeklyLimit';
@@ -20,6 +20,9 @@ import { PaywallModal } from '../../components/PaywallModal';
 import { useToast } from '../../components/Toast';
 import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
 import { ARCHIVE_THRESHOLD } from '../../constants';
+import { useDeviceSize } from '../../hooks/useDeviceSize';
+import { useResponsiveTypography } from '../../hooks/useResponsiveTypography';
+import { moderateScale, verticalScale } from '../../utils/responsive';
 import type { TrainingScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
 
@@ -31,6 +34,9 @@ type Round = 'initial' | 'retry';
 
 export const TrainingScreen = ({ route, navigation }: Props) => {
   const { colors } = useTheme();
+  const deviceSize = useDeviceSize();
+  const typography = useResponsiveTypography();
+  const styles = useTrainingStyles();
   const params = 'params' in route ? route.params : undefined;
   const groupId = params && 'groupId' in params ? params.groupId : undefined;
   const groupName = params && 'groupName' in params ? params.groupName : 'Все слова';
@@ -267,11 +273,11 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         <View style={styles.header}>
           {navigation.canGoBack() && (
             <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-              <ArrowLeft color={colors.text} size={24} />
+              <ArrowLeft color={colors.text} size={moderateScale(24)} />
             </TouchableOpacity>
           )}
         </View>
-        <Dumbbell color={colors.muted} size={56} strokeWidth={1.5} />
+        <Dumbbell color={colors.muted} size={moderateScale(56)} strokeWidth={1.5} />
         <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет слов для тренировки</Text>
         <Text style={[styles.emptySubtitle, { color: colors.muted }]}>Добавьте слова в словарь, чтобы начать</Text>
       </View>
@@ -313,7 +319,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
             onPress={() => setPaywallVisible(true)}
             activeOpacity={0.85}
           >
-            <Crown color={colors.background} size={20} />
+            <Crown color={colors.background} size={moderateScale(20)} />
             <Text style={[styles.premiumButtonText, { color: colors.background }]}>
               Оформить Premium — учиться без ограничений
             </Text>
@@ -378,7 +384,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
               onPress={() => setPaywallVisible(true)}
               activeOpacity={0.85}
             >
-              <Crown color={colors.background} size={20} />
+              <Crown color={colors.background} size={moderateScale(20)} />
               <Text style={[styles.premiumButtonText, { color: colors.background }]}>
                 Оформить Premium — учиться без ограничений
               </Text>
@@ -466,7 +472,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
               onPress={handleRestart}
               activeOpacity={0.8}
             >
-              <RotateCcw color={colors.background} size={18} />
+              <RotateCcw color={colors.background} size={moderateScale(18)} />
               <Text style={[styles.restartButtonText, { color: colors.background }]}>Ещё раз</Text>
             </TouchableOpacity>
           )}
@@ -474,7 +480,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
           {!profile?.is_premium && (
             <View style={[styles.premiumHintCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
               <View style={styles.premiumHintHeader}>
-                <Crown color={colors.primary} size={18} />
+                <Crown color={colors.primary} size={moderateScale(18)} />
                 <Text style={[styles.premiumHintTitle, { color: colors.text }]}>Тренируйтесь без ограничений</Text>
               </View>
               <Text style={[styles.premiumHintText, { color: colors.muted }]}>
@@ -531,7 +537,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       <View style={styles.header}>
         {canGoBack && (
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <ArrowLeft color={colors.text} size={24} />
+            <ArrowLeft color={colors.text} size={moderateScale(24)} />
           </TouchableOpacity>
         )}
         <View style={styles.headerTitlesAbsolute} pointerEvents="none">
@@ -568,7 +574,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         })}
       </View>
 
-      <View style={[styles.buttonsRow, { paddingBottom: insets.bottom + spacing.lg }]}>
+      <View style={[styles.buttonsRow, { paddingBottom: insets.bottom + deviceSize.spacing.lg }]}>
         <TouchableOpacity
           style={[
             styles.actionButton,
@@ -605,251 +611,257 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  center: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
-  },
-  backButton: {
-    padding: spacing.xs,
-  },
-  headerTitlesAbsolute: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  headerSpacer: { flex: 1 },
-  counterLeft: {
-    fontSize: 22,
-    fontFamily: fonts.black,
-    width: 40,
-    textAlign: 'left',
-  },
-  counterRight: {
-    fontSize: 22,
-    fontFamily: fonts.black,
-    width: 40,
-    textAlign: 'right',
-  },
-  headerTitle: {
-    fontSize: typography.body,
-    fontWeight: '700',
-  },
-  headerSubtitle: {
-    fontSize: typography.small,
-  },
-  progressBar: {
-    height: 3,
-    marginHorizontal: spacing.lg,
-    borderRadius: 2,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  cardsContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  buttonsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.lg,
-  },
-  actionButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-  },
-  actionButtonLeft: {
-    backgroundColor: 'rgba(251, 113, 133, 0.1)',
-  },
-  actionButtonRight: {
-    backgroundColor: 'rgba(52, 211, 153, 0.1)',
-  },
-  actionButtonText: {
-    fontSize: 26,
-    fontWeight: '700',
-  },
-  resultCard: {
-    borderRadius: radii.lg,
-    padding: spacing.xl,
-    marginHorizontal: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.md,
-    borderWidth: 1,
-    width: '88%',
-  },
-  resultEmoji: {
-    fontSize: 52,
-  },
-  resultTitle: {
-    fontSize: typography.subtitle,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  resultSubtitle: {
-    fontSize: typography.small,
-    textAlign: 'center',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: radii.md,
-    padding: spacing.md,
-    width: '100%',
-    marginTop: spacing.sm,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  statValue: {
-    fontSize: typography.title,
-    fontWeight: '800',
-  },
-  statLabel: {
-    fontSize: typography.small,
-  },
-  statDivider: {
-    width: 1,
-    height: 40,
-  },
-  restartButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    marginTop: spacing.sm,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  restartButtonText: {
-    fontWeight: '700',
-    fontSize: typography.body,
-  },
-  successCard: {
-    width: '100%',
-    borderRadius: radii.md,
-    padding: spacing.lg,
-    marginTop: spacing.lg,
-    gap: spacing.sm,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  successTitle: {
-    fontSize: typography.body,
-    fontFamily: fonts.headingBold,
-  },
-  successText: {
-    fontSize: typography.small,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  successSubText: {
-    fontSize: typography.xs,
-    textAlign: 'center',
-  },
-  backToGroupButton: {
-    padding: spacing.sm,
-  },
-  backToGroupText: {
-    fontSize: typography.small,
-  },
-  premiumHintCard: {
-    width: '100%',
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginTop: spacing.lg,
-    gap: spacing.sm,
-    borderWidth: 1,
-  },
-  premiumHintHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  premiumHintTitle: {
-    fontSize: typography.body,
-    fontFamily: fonts.headingBold,
-  },
-  premiumHintText: {
-    fontSize: typography.small,
-    lineHeight: 20,
-  },
-  premiumHintButton: {
-    marginTop: spacing.sm,
-    alignSelf: 'stretch',
-    paddingVertical: spacing.sm,
-    borderRadius: radii.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  premiumHintButtonText: {
-    fontSize: typography.small,
-    fontFamily: fonts.medium,
-  },
-  limitCard: {
-    width: '100%',
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginTop: spacing.lg,
-    gap: spacing.sm,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  limitText: {
-    fontSize: typography.body,
-    fontFamily: fonts.medium,
-    textAlign: 'center',
-  },
-  limitSubText: {
-    fontSize: typography.small,
-    textAlign: 'center',
-  },
-  premiumButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.md,
-    marginTop: spacing.lg,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  premiumButtonText: {
-    fontWeight: '700',
-    fontSize: typography.body,
-  },
-  emptyTitle: {
-    fontSize: typography.subtitle,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontSize: typography.body,
-    textAlign: 'center',
-  },
-});
+const useTrainingStyles = () => {
+  const { isSmall, isLarge, spacing, typography, radii } = useDeviceSize();
+
+  return {
+    ...StyleSheet.create({
+      container: {
+        flex: 1,
+      },
+      center: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.md,
+      },
+      header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.md,
+        gap: spacing.sm,
+      },
+      backButton: {
+        padding: spacing.xs,
+      },
+      headerTitlesAbsolute: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+      },
+      headerSpacer: { flex: 1 },
+      counterLeft: {
+        fontSize: moderateScale(22),
+        fontFamily: fonts.black,
+        width: moderateScale(40),
+        textAlign: 'left',
+      },
+      counterRight: {
+        fontSize: moderateScale(22),
+        fontFamily: fonts.black,
+        width: moderateScale(40),
+        textAlign: 'right',
+      },
+      headerTitle: {
+        fontSize: typography.body,
+        fontWeight: '700',
+      },
+      headerSubtitle: {
+        fontSize: typography.small,
+      },
+      progressBar: {
+        height: moderateScale(3),
+        marginHorizontal: spacing.lg,
+        borderRadius: moderateScale(2),
+      },
+      progressFill: {
+        height: '100%',
+        borderRadius: moderateScale(2),
+      },
+      cardsContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.lg,
+      },
+      buttonsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: spacing.xl,
+        paddingTop: spacing.lg,
+      },
+      actionButton: {
+        width: moderateScale(64),
+        height: moderateScale(64),
+        borderRadius: moderateScale(32),
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: moderateScale(2),
+      },
+      actionButtonLeft: {
+        backgroundColor: 'rgba(251, 113, 133, 0.1)',
+      },
+      actionButtonRight: {
+        backgroundColor: 'rgba(52, 211, 153, 0.1)',
+      },
+      actionButtonText: {
+        fontSize: moderateScale(26),
+        fontWeight: '700',
+      },
+      resultCard: {
+        borderRadius: radii.lg,
+        padding: spacing.xl,
+        marginHorizontal: spacing.lg,
+        alignItems: 'center',
+        gap: spacing.md,
+        borderWidth: 1,
+        width: '88%',
+      },
+      resultEmoji: {
+        fontSize: moderateScale(52),
+      },
+      resultTitle: {
+        fontSize: typography.subtitle,
+        fontWeight: '800',
+        textAlign: 'center',
+      },
+      resultSubtitle: {
+        fontSize: typography.small,
+        textAlign: 'center',
+      },
+      statsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderRadius: radii.md,
+        padding: spacing.md,
+        width: '100%',
+        marginTop: spacing.sm,
+      },
+      statItem: {
+        flex: 1,
+        alignItems: 'center',
+        gap: isSmall ? 3 : 4,
+      },
+      statValue: {
+        fontSize: typography.title,
+        fontWeight: '800',
+      },
+      statLabel: {
+        fontSize: typography.small,
+      },
+      statDivider: {
+        width: 1,
+        height: moderateScale(40),
+      },
+      restartButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        borderRadius: radii.md,
+        paddingHorizontal: spacing.xl,
+        paddingVertical: spacing.md,
+        marginTop: spacing.sm,
+        width: '100%',
+        justifyContent: 'center',
+      },
+      restartButtonText: {
+        fontWeight: '700',
+        fontSize: typography.body,
+      },
+      successCard: {
+        width: '100%',
+        borderRadius: radii.md,
+        padding: spacing.lg,
+        marginTop: spacing.lg,
+        gap: spacing.sm,
+        borderWidth: 1,
+        alignItems: 'center',
+      },
+      successTitle: {
+        fontSize: typography.body,
+        fontFamily: fonts.headingBold,
+      },
+      successText: {
+        fontSize: typography.small,
+        textAlign: 'center',
+        lineHeight: verticalScale(20),
+      },
+      successSubText: {
+        fontSize: typography.xs,
+        textAlign: 'center',
+      },
+      backToGroupButton: {
+        padding: spacing.sm,
+      },
+      backToGroupText: {
+        fontSize: typography.small,
+      },
+      premiumHintCard: {
+        width: '100%',
+        borderRadius: radii.md,
+        padding: spacing.md,
+        marginTop: spacing.lg,
+        gap: spacing.sm,
+        borderWidth: 1,
+      },
+      premiumHintHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+      },
+      premiumHintTitle: {
+        fontSize: typography.body,
+        fontFamily: fonts.headingBold,
+      },
+      premiumHintText: {
+        fontSize: typography.small,
+        lineHeight: verticalScale(20),
+      },
+      premiumHintButton: {
+        marginTop: spacing.sm,
+        alignSelf: 'stretch',
+        paddingVertical: spacing.sm,
+        borderRadius: radii.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      premiumHintButtonText: {
+        fontSize: typography.small,
+        fontFamily: fonts.medium,
+      },
+      limitCard: {
+        width: '100%',
+        borderRadius: radii.md,
+        padding: spacing.md,
+        marginTop: spacing.lg,
+        gap: spacing.sm,
+        borderWidth: 1,
+        alignItems: 'center',
+      },
+      limitText: {
+        fontSize: typography.body,
+        fontFamily: fonts.medium,
+        textAlign: 'center',
+      },
+      limitSubText: {
+        fontSize: typography.small,
+        textAlign: 'center',
+      },
+      premiumButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.sm,
+        borderRadius: radii.md,
+        paddingHorizontal: spacing.xl,
+        paddingVertical: spacing.md,
+        marginTop: spacing.lg,
+        width: '100%',
+        justifyContent: 'center',
+      },
+      premiumButtonText: {
+        fontWeight: '700',
+        fontSize: typography.body,
+      },
+      emptyTitle: {
+        fontSize: typography.subtitle,
+        fontWeight: '700',
+        textAlign: 'center',
+      },
+      emptySubtitle: {
+        fontSize: typography.body,
+        textAlign: 'center',
+      },
+    }),
+  };
+};

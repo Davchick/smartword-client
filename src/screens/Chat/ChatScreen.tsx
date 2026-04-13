@@ -28,12 +28,15 @@ import { queryClient } from '../../lib/queryClient';
 import { queryKey } from '../../lib/queryKeys';
 import { TypingIndicator } from '../../components/TypingIndicator';
 import { PaywallModal } from '../../components/PaywallModal';
-import { useTheme, fonts, spacing, radii, typography } from '../../theme';
+import { useTheme, fonts } from '../../theme';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../../navigation/types';
 import type { ChatMessage } from '../../hooks/useChat';
 import type { WordGroup } from '../../hooks/useGroups';
+import { useDeviceSize } from '../../hooks/useDeviceSize';
+import { useResponsiveTypography } from '../../hooks/useResponsiveTypography';
+import { moderateScale, scale, verticalScale } from '../../utils/responsive';
 
 // Возвращает true если текст содержит не-русские слова (иностранный язык)
 const isForeignText = (text: string): boolean => {
@@ -81,11 +84,14 @@ const playNotificationSound = () => {
 };
 
 export const ChatScreen = () => {
+  const deviceSize = useDeviceSize();
+  const t = useResponsiveTypography();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { profile } = useProfile();
   const { groups } = useGroups();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { spacing, radii } = deviceSize;
 
   const [stage, setStage] = useState<ChatStage>('welcome');
   // selectedGroup/freeMode фиксируются в момент выбора и не меняются до сброса
@@ -186,6 +192,8 @@ export const ChatScreen = () => {
     setTimeout(() => inputRef.current?.focus(), 80);
   }, []);
 
+  const styles = useChatStyles();
+
   const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
     const isUser = item.role === 'user';
     return (
@@ -232,7 +240,7 @@ export const ChatScreen = () => {
                 activeOpacity={0.7}
               >
                 <View style={[styles.dictCardIcon, { backgroundColor: colors.primaryDim }]}>
-                  <BookOpen color={colors.primary} size={18} />
+                  <BookOpen color={colors.primary} size={moderateScale(18)} />
                 </View>
                 <View style={styles.dictCardBody}>
                   <Text style={[styles.dictCardName, { color: colors.text }]} numberOfLines={1}>
@@ -243,7 +251,7 @@ export const ChatScreen = () => {
                     {g.language ? ` · ${g.language}` : ''}
                   </Text>
                 </View>
-                <ChevronRight color={colors.muted} size={18} />
+                <ChevronRight color={colors.muted} size={moderateScale(18)} />
               </TouchableOpacity>
             ))}
           </View>
@@ -263,7 +271,7 @@ export const ChatScreen = () => {
           activeOpacity={0.7}
         >
           <View style={[styles.dictCardIcon, { backgroundColor: colors.primary }]}>
-            <MessageCircle color={colors.background} size={18} />
+            <MessageCircle color={colors.background} size={moderateScale(18)} />
           </View>
           <View style={styles.dictCardBody}>
             <Text style={[styles.dictCardName, { color: colors.primary }]}>
@@ -273,7 +281,7 @@ export const ChatScreen = () => {
               Выберем язык вместе
             </Text>
           </View>
-          <ChevronRight color={colors.primary} size={18} />
+          <ChevronRight color={colors.primary} size={moderateScale(18)} />
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -296,7 +304,7 @@ export const ChatScreen = () => {
       >
         <View style={styles.headerLeft}>
           <View style={[styles.botAvatarLarge, { backgroundColor: colors.primaryDim }]}>
-            <Bot color={colors.primary} size={22} />
+            <Bot color={colors.primary} size={moderateScale(22)} />
           </View>
           <View>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Lexi</Text>
@@ -330,10 +338,10 @@ export const ChatScreen = () => {
           {stage === 'active' && (
             <TouchableOpacity
               onPress={handleReset}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              hitSlop={{ top: spacing.sm, bottom: spacing.sm, left: spacing.sm, right: spacing.sm }}
               style={styles.clearBtn}
             >
-              <RefreshCw color={colors.muted} size={18} />
+              <RefreshCw color={colors.muted} size={moderateScale(18)} />
             </TouchableOpacity>
           )}
         </View>
@@ -348,18 +356,18 @@ export const ChatScreen = () => {
           >
             <View style={styles.welcomeContent}>
               <View style={[styles.featureList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <FeatureRow icon={<MessageCircle color={colors.primary} size={16} />} text="Живой диалог на изучаемом языке" colors={colors} />
+                <FeatureRow icon={<MessageCircle color={colors.primary} size={moderateScale(16)} />} text="Живой диалог на изучаемом языке" colors={colors} />
                 <View style={[styles.featureDivider, { backgroundColor: colors.border }]} />
-                <FeatureRow icon={<BookOpen color={colors.primary} size={16} />} text="Стараюсь использовать слова из вашего словаря." colors={colors} />
+                <FeatureRow icon={<BookOpen color={colors.primary} size={moderateScale(16)} />} text="Стараюсь использовать слова из вашего словаря." colors={colors} />
                 <View style={[styles.featureDivider, { backgroundColor: colors.border }]} />
-                <FeatureRow icon={<Sparkles color={colors.primary} size={16} />} text="Мягко исправляю ошибки, не прерывая разговор" colors={colors} />
+                <FeatureRow icon={<Sparkles color={colors.primary} size={moderateScale(16)} />} text="Мягко исправляю ошибки, не прерывая разговор" colors={colors} />
               </View>
             </View>
           </ScrollView>
 
           <View style={[styles.welcomeBottom, { paddingBottom: insets.bottom + spacing.md, borderTopColor: colors.border }]}>
             <View style={[styles.disclaimer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <AlertCircle color={colors.muted} size={13} style={{ flexShrink: 0 }} />
+              <AlertCircle color={colors.muted} size={moderateScale(13)} style={{ flexShrink: 0 }} />
               <Text style={[styles.disclaimerText, { color: colors.muted }]}>
                 Контент генерирует нейросеть. ИИ может давать неточные ответы. Чат предназначен исключительно для языковой практики.
               </Text>
@@ -375,8 +383,8 @@ export const ChatScreen = () => {
                   Для AI-чата нужен аккаунт.
                 </Text>
                 <View style={styles.guestBannerLogin}>
-                  <Text style={{ color: colors.primary, fontFamily: fonts.medium, fontSize: typography.small }}>Войти</Text>
-                  <LogIn color={colors.primary} size={13} />
+                  <Text style={{ color: colors.primary, fontFamily: fonts.medium, fontSize: t.small }}>Войти</Text>
+                  <LogIn color={colors.primary} size={moderateScale(13)} />
                 </View>
               </TouchableOpacity>
             )}
@@ -389,16 +397,16 @@ export const ChatScreen = () => {
                     {
                       backgroundColor: colors.primary,
                       shadowColor: colors.primary,
-                      shadowOffset: { width: 0, height: 8 },
+                      shadowOffset: { width: 0, height: moderateScale(8) },
                       shadowOpacity: 0.5,
-                      shadowRadius: 16,
+                      shadowRadius: moderateScale(16),
                       elevation: 8,
                     },
                   ]}
                   onPress={handleStartPractice}
                   activeOpacity={0.85}
                 >
-                  <Sparkles color={colors.background} size={18} />
+                  <Sparkles color={colors.background} size={moderateScale(18)} />
                   <Text style={[styles.startBtnText, { color: colors.background }]}>Начать практику</Text>
                 </TouchableOpacity>
               </>
@@ -426,7 +434,7 @@ export const ChatScreen = () => {
           {loading && (
             <View style={styles.typingContainer}>
               <View style={[styles.botAvatar, { backgroundColor: colors.primaryDim }]}>
-                <Bot color={colors.primary} size={14} />
+                <Bot color={colors.primary} size={moderateScale(14)} />
               </View>
               <TypingIndicator />
             </View>
@@ -466,7 +474,7 @@ export const ChatScreen = () => {
             >
               {loading
                 ? <ActivityIndicator color={colors.background} size="small" />
-                : <Send color={colors.background} size={18} />
+                : <Send color={colors.background} size={moderateScale(18)} />
               }
             </TouchableOpacity>
           </View>
@@ -494,6 +502,7 @@ const MessageBubble = ({
   colors: any;
   onInsertHint?: (text: string) => void;
 }) => {
+  const styles = useChatStyles();
   const showActions = !isUser && isForeignText(item.content);
   const [translation, setTranslation] = useState<string | null>(null);
   const [translationOpen, setTranslationOpen] = useState(false);
@@ -503,6 +512,7 @@ const MessageBubble = ({
   const [hintLoading, setHintLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const mountedRef = useRef(true);
+  const hitSlop = { top: moderateScale(6), bottom: moderateScale(6), left: moderateScale(6), right: moderateScale(6) };
 
   // Cleanup при размонтировании — предотвращает setState на unmounted
   useEffect(() => {
@@ -662,11 +672,11 @@ const MessageBubble = ({
                   style={styles.actionIconBtn}
                   onPress={handleTranslate}
                   activeOpacity={0.6}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  hitSlop={hitSlop}
                 >
                   {translating
-                    ? <ActivityIndicator size={14} color={colors.primary} />
-                    : <Languages size={15} color={translationOpen ? colors.primary : colors.muted} />
+                    ? <ActivityIndicator size={moderateScale(14)} color={colors.primary} />
+                    : <Languages size={moderateScale(15)} color={translationOpen ? colors.primary : colors.muted} />
                   }
                 </TouchableOpacity>
 
@@ -674,20 +684,20 @@ const MessageBubble = ({
                   style={styles.actionIconBtn}
                   onPress={handleCopy}
                   activeOpacity={0.6}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  hitSlop={hitSlop}
                 >
-                  <Copy size={15} color={copied ? colors.success : colors.muted} />
+                  <Copy size={moderateScale(15)} color={copied ? colors.success : colors.muted} />
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.actionIconBtn}
                   onPress={handleHint}
                   activeOpacity={0.6}
-                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  hitSlop={hitSlop}
                 >
                   {hintLoading
-                    ? <ActivityIndicator size={14} color={colors.primary} />
-                    : <Lightbulb size={15} color={hintOpen ? colors.primary : colors.muted} />
+                    ? <ActivityIndicator size={moderateScale(14)} color={colors.primary} />
+                    : <Lightbulb size={moderateScale(15)} color={hintOpen ? colors.primary : colors.muted} />
                   }
                 </TouchableOpacity>
               </View>
@@ -699,12 +709,15 @@ const MessageBubble = ({
   );
 };
 
-const FeatureRow = ({ icon, text, colors }: { icon: React.ReactNode; text: string; colors: any }) => (
-  <View style={styles.featureRow}>
-    {icon}
-    <Text style={[styles.featureText, { color: colors.text }]}>{text}</Text>
-  </View>
-);
+const FeatureRow = ({ icon, text, colors }: { icon: React.ReactNode; text: string; colors: any }) => {
+  const styles = useChatStyles();
+  return (
+    <View style={styles.featureRow}>
+      {icon}
+      <Text style={[styles.featureText, { color: colors.text }]}>{text}</Text>
+    </View>
+  );
+};
 
 const wordCountLabel = (n: number) => {
   const mod10 = n % 10;
@@ -715,121 +728,253 @@ const wordCountLabel = (n: number) => {
   return 'слов';
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
+const useChatStyles = () => {
+  const { isSmall, isLarge, spacing, typography, radii } = useDeviceSize();
+  const t = useResponsiveTypography();
 
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
-    borderBottomWidth: 1,
-  },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  botAvatarLarge: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-  botAvatarMed: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  headerTitle: { fontSize: typography.body, fontFamily: fonts.headingBold },
-  headerSubtitle: { fontSize: typography.small, fontFamily: fonts.regular, marginTop: 1 },
-  limitBadge: { borderRadius: radii.sm, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, minWidth: 72 },
-  limitBadgeContent: { gap: 4, alignItems: 'center' },
-  limitProgressTrack: { height: 3, borderRadius: 2, width: 56, overflow: 'hidden' },
-  limitProgressFill: { height: '100%', borderRadius: 2 },
-  limitBadgeText: { fontSize: typography.xs, fontFamily: fonts.bold },
-  clearBtn: { padding: spacing.xs },
+  return StyleSheet.create({
+    container: { flex: 1 },
 
-  // Welcome
-  welcomeOuter: { flex: 1 },
-  welcomeScroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.xl, paddingTop: spacing.xl, paddingBottom: spacing.lg },
-  welcomeContent: { alignItems: 'center', gap: spacing.md },
-  welcomeIconWrap: { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.xs },
-  welcomeTitle: { fontSize: 32, fontFamily: fonts.headingBlack, textAlign: 'center', letterSpacing: -0.5 },
-  welcomeTagline: { fontSize: typography.body, fontFamily: fonts.medium, textAlign: 'center', marginTop: -spacing.xs },
-  welcomeDesc: { fontSize: typography.body, fontFamily: fonts.regular, textAlign: 'center', lineHeight: 24, marginTop: spacing.xs },
-  featureList: { width: '100%', borderRadius: radii.md, borderWidth: 1, overflow: 'hidden', marginTop: spacing.xs },
-  featureRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2 },
-  featureDivider: { height: 1, marginHorizontal: spacing.md },
-  featureText: { fontSize: typography.small, fontFamily: fonts.regular, flex: 1, lineHeight: 20 },
-  welcomeBottom: { paddingTop: spacing.md, paddingHorizontal: spacing.xl, gap: spacing.md, borderTopWidth: 1 },
-  disclaimer: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs + 2, borderRadius: radii.sm, borderWidth: 1, padding: spacing.sm + 2 },
-  disclaimerText: { fontSize: typography.xs, fontFamily: fonts.regular, flex: 1, lineHeight: 18 },
-  guestBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radii.sm, borderWidth: 1, padding: spacing.sm + 2 },
-  guestBannerText: { fontSize: typography.small, fontFamily: fonts.regular, flex: 1 },
-  guestBannerLogin: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  startBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radii.full, paddingVertical: spacing.md, paddingHorizontal: spacing.xl },
-  startBtnText: { fontSize: typography.body, fontFamily: fonts.bold, letterSpacing: 0.2 },
+    // Header
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.md,
+      borderBottomWidth: 0,
+    },
+    headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    headerRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    botAvatarLarge: {
+      width: moderateScale(42),
+      height: moderateScale(42),
+      borderRadius: moderateScale(21),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerTitle: { fontSize: t.body, fontFamily: fonts.headingBold },
+    limitBadge: {
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+      minWidth: scale(72),
+    },
+    limitBadgeContent: { gap: moderateScale(4), alignItems: 'center' },
+    limitProgressTrack: {
+      height: moderateScale(3),
+      borderRadius: moderateScale(2),
+      width: scale(56),
+      overflow: 'hidden',
+    },
+    limitProgressFill: { height: '100%', borderRadius: moderateScale(2) },
+    limitBadgeText: { fontSize: t.xs, fontFamily: fonts.bold },
+    clearBtn: { padding: spacing.xs },
 
-  // Choosing screen
-  choosingScroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.lg },
-  choosingGreeting: {
-    alignItems: 'flex-start',
-  },
-  choosingBubble: {
-    flex: 1,
-    borderRadius: radii.lg,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    padding: spacing.md,
-  },
-  choosingBubbleText: { fontSize: typography.body, fontFamily: fonts.regular, lineHeight: 22 },
-  choosingSection: { gap: spacing.sm },
-  choosingSectionLabel: { fontSize: typography.xs, fontFamily: fonts.bold, letterSpacing: 1.2, paddingLeft: spacing.xs },
-  choosingCards: { gap: spacing.sm },
-  dictCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.md,
-  },
-  freeChatCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1.5,
-    padding: spacing.md,
-  },
-  dictCardIcon: { width: 40, height: 40, borderRadius: radii.sm, alignItems: 'center', justifyContent: 'center' },
-  dictCardBody: { flex: 1 },
-  dictCardName: { fontSize: typography.body, fontFamily: fonts.medium },
-  dictCardMeta: { fontSize: typography.xs, fontFamily: fonts.regular, marginTop: 2 },
+    // Welcome
+    welcomeOuter: { flex: 1 },
+    welcomeScroll: {
+      flexGrow: 1,
+      justifyContent: 'center',
+      paddingHorizontal: spacing.xl,
+      paddingTop: spacing.xl,
+      paddingBottom: spacing.lg,
+    },
+    welcomeContent: { alignItems: 'center', gap: spacing.md },
+    featureList: {
+      width: '100%',
+      borderRadius: radii.md,
+      borderWidth: 1,
+      overflow: 'hidden',
+      marginTop: spacing.xs,
+    },
+    featureRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+    },
+    featureDivider: { height: 1, marginHorizontal: spacing.md },
+    featureText: { fontSize: t.small, fontFamily: fonts.regular, flex: 1, lineHeight: moderateScale(20) },
+    welcomeBottom: {
+      paddingTop: spacing.md,
+      paddingHorizontal: spacing.xl,
+      gap: spacing.md,
+      borderTopWidth: 1,
+    },
+    disclaimer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs + 2,
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      padding: spacing.sm + 2,
+    },
+    disclaimerText: { fontSize: t.xs, fontFamily: fonts.regular, flex: 1, lineHeight: moderateScale(18) },
+    guestBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      borderRadius: radii.sm,
+      borderWidth: 1,
+      padding: spacing.sm + 2,
+    },
+    guestBannerText: { fontSize: t.small, fontFamily: fonts.regular, flex: 1 },
+    guestBannerLogin: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(4) },
+    startBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      borderRadius: radii.full,
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.xl,
+    },
+    startBtnText: { fontSize: t.body, fontFamily: fonts.bold, letterSpacing: moderateScale(0.2) },
 
-  // Messages
-  messagesList: { padding: spacing.md, paddingBottom: spacing.lg, gap: spacing.sm, flexGrow: 1 },
-  messageRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.xs },
-  messageRowUser: { flexDirection: 'row-reverse' },
-  botAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  bubbleWrapper: { maxWidth: '78%', gap: spacing.xs },
-  bubble: { borderRadius: radii.lg, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, borderWidth: 1, borderColor: 'transparent' },
-  bubbleBot: { borderBottomLeftRadius: 4 },
-  bubbleUser: { borderBottomRightRadius: 4, borderWidth: 0 },
-  bubbleText: { fontSize: typography.body, fontFamily: fonts.regular, lineHeight: 22 },
-  messageActions: { flexDirection: 'row', gap: spacing.md },
-  actionIconBtn: { opacity: 0.85 },
-  actionDivider: { height: 1, marginVertical: spacing.sm },
-  expandedLabel: { fontSize: typography.xs, fontFamily: fonts.bold, letterSpacing: 0.5, marginBottom: 4, textTransform: 'uppercase' },
-  expandedText: { fontSize: typography.small, fontFamily: fonts.regular, lineHeight: 20 },
-  hintOptionsContainer: { marginTop: spacing.xs, gap: spacing.xs },
-  hintOption: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-  },
-  hintOptionText: {
-    fontSize: typography.body,
-    fontFamily: fonts.medium,
-    lineHeight: 22,
-  },
-  typingContainer: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
+    // Choosing screen
+    choosingScroll: {
+      paddingHorizontal: spacing.lg,
+      paddingTop: spacing.lg,
+      gap: spacing.lg,
+    },
+    choosingGreeting: { alignItems: 'flex-start' },
+    choosingBubble: {
+      flex: 1,
+      borderRadius: radii.lg,
+      borderBottomLeftRadius: moderateScale(4),
+      borderWidth: 1,
+      padding: spacing.md,
+    },
+    choosingBubbleText: { fontSize: t.body, fontFamily: fonts.regular, lineHeight: moderateScale(22) },
+    choosingSection: { gap: spacing.sm },
+    choosingSectionLabel: {
+      fontSize: t.xs,
+      fontFamily: fonts.bold,
+      letterSpacing: moderateScale(1.2),
+      paddingLeft: spacing.xs,
+    },
+    choosingCards: { gap: spacing.sm },
+    dictCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      padding: spacing.md,
+    },
+    freeChatCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      borderRadius: radii.md,
+      borderWidth: 1.5,
+      padding: spacing.md,
+    },
+    dictCardIcon: {
+      width: moderateScale(40),
+      height: moderateScale(40),
+      borderRadius: radii.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    dictCardBody: { flex: 1 },
+    dictCardName: { fontSize: t.body, fontFamily: fonts.medium },
+    dictCardMeta: { fontSize: t.xs, fontFamily: fonts.regular, marginTop: moderateScale(2) },
 
-  // Input
-  inputContainer: { flexDirection: 'row', alignItems: 'flex-end', paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: spacing.sm, borderTopWidth: 1 },
-  input: { flex: 1, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, fontSize: typography.body, fontFamily: fonts.regular, maxHeight: 120, minHeight: 44 },
-  sendButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  sendButtonDisabled: { opacity: 0.4 },
-});
+    // Messages
+    messagesList: {
+      padding: spacing.md,
+      paddingBottom: spacing.lg,
+      gap: spacing.sm,
+      flexGrow: 1,
+    },
+    messageRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+      marginBottom: spacing.xs,
+    },
+    messageRowUser: { flexDirection: 'row-reverse' },
+    botAvatar: {
+      width: moderateScale(28),
+      height: moderateScale(28),
+      borderRadius: moderateScale(14),
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+    },
+    bubbleWrapper: { maxWidth: '78%', gap: spacing.xs },
+    bubble: {
+      borderRadius: radii.lg,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    bubbleBot: { borderBottomLeftRadius: moderateScale(4) },
+    bubbleUser: { borderBottomRightRadius: moderateScale(4), borderWidth: 0 },
+    bubbleText: { fontSize: t.body, fontFamily: fonts.regular, lineHeight: moderateScale(22) },
+    messageActions: { flexDirection: 'row', gap: spacing.md },
+    actionIconBtn: { opacity: 0.85 },
+    actionDivider: { height: 1, marginVertical: spacing.sm },
+    expandedLabel: {
+      fontSize: t.xs,
+      fontFamily: fonts.bold,
+      letterSpacing: moderateScale(0.5),
+      marginBottom: moderateScale(4),
+      textTransform: 'uppercase',
+    },
+    expandedText: { fontSize: t.small, fontFamily: fonts.regular, lineHeight: moderateScale(20) },
+    hintOptionsContainer: { marginTop: spacing.xs, gap: spacing.xs },
+    hintOption: {
+      borderRadius: radii.md,
+      borderWidth: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+    },
+    hintOptionText: {
+      fontSize: t.body,
+      fontFamily: fonts.medium,
+      lineHeight: moderateScale(22),
+    },
+    typingContainer: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingBottom: spacing.sm,
+    },
+
+    // Input
+    inputContainer: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      gap: spacing.sm,
+      borderTopWidth: 0,
+    },
+    input: {
+      flex: 1,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+      fontSize: t.body,
+      fontFamily: fonts.regular,
+      maxHeight: verticalScale(120),
+      minHeight: moderateScale(44),
+    },
+    sendButton: {
+      width: moderateScale(44),
+      height: moderateScale(44),
+      borderRadius: moderateScale(22),
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sendButtonDisabled: { opacity: 0.4 },
+  });
+};

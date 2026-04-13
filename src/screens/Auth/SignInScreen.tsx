@@ -21,10 +21,13 @@ import { apiPost, setTokens, getBaseUrl } from '../../lib/api';
 import { GoogleSignin, googleSignInAvailable } from '../../lib/googleSignIn';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
-import { useTheme, fonts, spacing, typography, radii } from '../../theme';
+import { useTheme, fonts } from '../../theme';
 import { importGuestDataIfNeeded } from '../../lib/guestImport';
 import type { RootStackParamList } from '../../navigation/types';
 import { Image } from 'react-native';
+import { useDeviceSize } from '../../hooks/useDeviceSize';
+import { useResponsiveTypography } from '../../hooks/useResponsiveTypography';
+import { moderateScale } from '../../utils/responsive';
 
 /** Ник по умолчанию: часть email до @ (makar@gmail.com → makar) */
 const nicknameFromEmail = (email: string) => {
@@ -34,14 +37,210 @@ const nicknameFromEmail = (email: string) => {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'SignIn'>;
 
+/**
+ * Responsive styles для SignInScreen
+ * Автоматически масштабируются под размер экрана
+ */
+const useSignInStyles = () => {
+  const { isSmall, isMedium, isLarge, spacing, typography, radii } = useDeviceSize();
+
+  return {
+    ...StyleSheet.create({
+      container: { flex: 1 },
+      scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.lg },
+      content: { justifyContent: 'center' },
+
+      // Header
+      header: { alignItems: 'center', marginBottom: spacing.xl },
+      title: {},
+      subtitle: {},
+
+      // Form
+      form: { gap: spacing.md },
+
+      // Inputs
+      inputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: spacing.sm,
+        paddingHorizontal: spacing.xs,
+      },
+      inputIcon: {
+        marginRight: spacing.sm,
+      },
+      input: {
+        flex: 1,
+        fontFamily: fonts.regular,
+        paddingVertical: 0,
+        paddingHorizontal: 0,
+        height: isSmall ? 32 : 36,
+        fontSize: typography.body,
+      },
+
+      // Links
+      forgotLink: {
+        alignSelf: 'flex-end',
+        marginTop: -spacing.xs,
+      },
+
+      // Buttons
+      submitBtn: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: radii.md,
+        paddingVertical: spacing.md,
+        marginTop: spacing.sm,
+      },
+
+      // Google button
+      googleBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        borderRadius: radii.md,
+        borderWidth: 1,
+        paddingVertical: spacing.md - 2,
+      },
+      googleIconWrap: {
+        width: spacing.lg,
+        height: spacing.lg,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 4,
+      },
+
+      // Agreement
+      agreementBlock: {
+        marginTop: spacing.xs,
+      },
+      agreementRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: spacing.sm,
+      },
+      checkboxSquare: {
+        width: isSmall ? 16 : 18,
+        height: isSmall ? 16 : 18,
+        borderRadius: 5,
+        borderWidth: 1.5,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        marginTop: 2,
+      },
+      checkmark: {
+        fontSize: isSmall ? 10 : 12,
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+        lineHeight: isSmall ? 10 : 12,
+      },
+      agreementText: {
+        flex: 1,
+        fontFamily: fonts.regular,
+        lineHeight: 18,
+      },
+      linkText: {
+        fontFamily: fonts.bold,
+      },
+
+      // Resend
+      resendBtn: {
+        alignItems: 'center',
+        paddingVertical: spacing.sm,
+      },
+
+      // Toggle
+      toggleBtn: {
+        alignItems: 'center',
+        paddingVertical: spacing.md,
+      },
+
+      // Forgot password
+      forgotActions: {
+        gap: spacing.sm,
+        marginTop: spacing.lg,
+      },
+      forgotBackBtn: {
+        borderRadius: radii.md,
+        borderWidth: 1,
+        paddingVertical: spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      forgotSubmitBtn: {
+        borderRadius: radii.md,
+        paddingVertical: spacing.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+    }),
+    // Back button
+    backBtn: {
+      position: 'absolute' as const,
+      zIndex: 10,
+      width: isSmall ? 32 : 36,
+      height: isSmall ? 32 : 36,
+      borderRadius: isSmall ? 16 : 18,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+    },
+    // Submit button text
+    submitBtnText: {
+      fontSize: typography.body,
+      fontFamily: fonts.bold,
+      color: '#FFFFFF',
+    },
+    // Google button text
+    googleBtnText: {
+      fontSize: typography.body,
+      fontFamily: fonts.medium,
+    },
+    // Forgot link text
+    forgotLinkText: {
+      fontSize: typography.small,
+      fontFamily: fonts.medium,
+    },
+    // Forgot back text
+    forgotBackText: {
+      fontSize: typography.small,
+      fontFamily: fonts.medium,
+    },
+    // Forgot submit text
+    forgotSubmitText: {
+      fontSize: typography.body,
+      fontFamily: fonts.bold,
+      color: '#FFFFFF',
+    },
+    // Resend text
+    resendText: {
+      fontSize: typography.small,
+      fontFamily: fonts.medium,
+    },
+    // Toggle text
+    toggleText: {
+      fontSize: typography.small,
+      fontFamily: fonts.regular,
+    },
+    toggleLinkText: {
+      fontFamily: fonts.bold,
+    },
+    // Spacing access
+    spacing,
+  };
+};
+
 // Google логотип (PNG из assets)
-const GoogleIcon = () => (
-  <Image
-    source={require('../../../assets/google.png')}
-    style={{ width: 20, height: 20 }}
-    resizeMode="contain"
-  />
-);
+const GoogleIcon = () => {
+  const iconSize = moderateScale(20);
+  return (
+    <Image
+      source={require('../../../assets/google.png')}
+      style={{ width: iconSize, height: iconSize }}
+      resizeMode="contain"
+    />
+  );
+};
 
 export const SignInScreen = ({ route, navigation }: Props) => {
   const insets = useSafeAreaInsets();
@@ -49,6 +248,10 @@ export const SignInScreen = ({ route, navigation }: Props) => {
   const { showToast } = useToast();
   const { setUser, setHasAccount, setGuestMode } = useAuth();
   const fromProfile = route.params?.fromProfile ?? false;
+
+  // Responsive hooks
+  const styles = useSignInStyles();
+  const typography = useResponsiveTypography();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -310,17 +513,17 @@ export const SignInScreen = ({ route, navigation }: Props) => {
       keyboardVerticalOffset={insets.top}
     >
       <TouchableOpacity
-          style={[styles.backBtn, { top: insets.top + spacing.md, backgroundColor: isDark ? 'rgba(30,41,59,0.8)' : 'rgba(255,255,255,0.8)' }]}
+          style={[styles.backBtn, { top: insets.top + styles.spacing.md, left: styles.spacing.md, backgroundColor: isDark ? 'rgba(30,41,59,0.8)' : 'rgba(255,255,255,0.8)' }]}
           onPress={() => fromProfile ? navigation.goBack() : navigation.navigate('Welcome')}
           activeOpacity={0.6}
         >
-          <ArrowLeft color={colors.text} size={20} strokeWidth={2} />
+          <ArrowLeft color={colors.text} size={styles.spacing.md} strokeWidth={2} />
         </TouchableOpacity>
 
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: insets.top + 80, paddingBottom: insets.bottom + 40 },
+          { paddingTop: insets.top + 80, paddingBottom: insets.bottom + styles.spacing.xl },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -331,14 +534,14 @@ export const SignInScreen = ({ route, navigation }: Props) => {
         >
           {/* Заголовок */}
           <View style={styles.header}>
-            <Text style={[styles.title, { color: colors.text }]}>
+            <Text style={[styles.title, { fontSize: typography.title, lineHeight: typography.titleLineHeight, color: colors.text }]}>
               {showForgotPassword ? 'Сброс пароля' : isSignUp ? 'Создать аккаунт' : 'Вход'}
             </Text>
-            <Text style={[styles.subtitle, { color: colors.muted }]}>
-              {showForgotPassword 
-                ? 'Отправим ссылку для восстановления' 
-                : isSignUp 
-                  ? 'Начните изучение языков' 
+            <Text style={[styles.subtitle, { fontSize: typography.body, color: colors.muted }]}>
+              {showForgotPassword
+                ? 'Отправим ссылку для восстановления'
+                : isSignUp
+                  ? 'Начните изучение языков'
                   : 'Введите данные для входа'}
             </Text>
           </View>
@@ -349,7 +552,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
               <>
                 {/* Email */}
                 <View style={[styles.inputContainer, { borderBottomWidth: inputBorder(emailFocused).borderBottomWidth, borderBottomColor: inputBorder(emailFocused).borderBottomColor }]}>
-                  <Mail color={emailFocused ? colors.primary : colors.muted} size={18} strokeWidth={1.8} style={styles.inputIcon} />
+                  <Mail color={emailFocused ? colors.primary : colors.muted} size={moderateScale(18)} strokeWidth={1.8} style={styles.inputIcon} />
                   <TextInput
                     ref={emailInputRef}
                     style={[styles.input, { color: colors.text }]}
@@ -369,7 +572,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
 
                 {/* Password */}
                 <View style={[styles.inputContainer, { borderBottomWidth: inputBorder(passwordFocused).borderBottomWidth, borderBottomColor: inputBorder(passwordFocused).borderBottomColor }]}>
-                  <Lock color={passwordFocused ? colors.primary : colors.muted} size={18} strokeWidth={1.8} style={styles.inputIcon} />
+                  <Lock color={passwordFocused ? colors.primary : colors.muted} size={moderateScale(18)} strokeWidth={1.8} style={styles.inputIcon} />
                   <TextInput
                     ref={passwordInputRef}
                     style={[styles.input, { color: colors.text }]}
@@ -385,12 +588,12 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                   />
                   <TouchableOpacity
                     onPress={() => setShowPassword((v) => !v)}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    hitSlop={{ top: moderateScale(12), bottom: moderateScale(12), left: moderateScale(12), right: moderateScale(12) }}
                     activeOpacity={0.6}
                   >
                     {showPassword
-                      ? <EyeOff color={colors.muted} size={18} strokeWidth={1.8} />
-                      : <Eye color={colors.muted} size={18} strokeWidth={1.8} />
+                      ? <EyeOff color={colors.muted} size={moderateScale(18)} strokeWidth={1.8} />
+                      : <Eye color={colors.muted} size={moderateScale(18)} strokeWidth={1.8} />
                     }
                   </TouchableOpacity>
                 </View>
@@ -527,7 +730,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
               <>
                 {/* Forgot password form */}
                 <View style={[styles.inputContainer, { borderBottomWidth: inputBorder(emailFocused).borderBottomWidth, borderBottomColor: inputBorder(emailFocused).borderBottomColor }]}>
-                  <Mail color={emailFocused ? colors.primary : colors.muted} size={18} strokeWidth={1.8} style={styles.inputIcon} />
+                  <Mail color={emailFocused ? colors.primary : colors.muted} size={moderateScale(18)} strokeWidth={1.8} style={styles.inputIcon} />
                   <TextInput
                     style={[styles.input, { color: colors.text }]}
                     placeholder="Email"
@@ -575,189 +778,3 @@ export const SignInScreen = ({ route, navigation }: Props) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  backBtn: {
-    position: 'absolute',
-    top: spacing.md,
-    left: spacing.md,
-    zIndex: 10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing.lg },
-  content: { justifyContent: 'center' },
-  
-  // Header
-  header: { alignItems: 'center', marginBottom: spacing.xl },
-  title: {
-    fontSize: 28,
-    fontFamily: fonts.headingBold,
-    letterSpacing: -0.5,
-    marginBottom: spacing.xs,
-  },
-  subtitle: {
-    fontSize: 15,
-    fontFamily: fonts.regular,
-    textAlign: 'center',
-  },
-
-  // Form
-  form: { gap: spacing.md },
-  
-  // Inputs - Apple стиль: только нижняя граница, компактные
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
-  },
-  inputIcon: {
-    marginRight: spacing.sm,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    fontFamily: fonts.regular,
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-    height: 36,
-  },
-  inputFocused: {},
-  inputFlex: { flex: 1 },
-
-  // Links
-  forgotLink: {
-    alignSelf: 'flex-end',
-    marginTop: -spacing.xs,
-  },
-  forgotLinkText: {
-    fontSize: 14,
-    fontFamily: fonts.medium,
-  },
-
-  // Buttons
-  submitBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    paddingVertical: spacing.md,
-    marginTop: spacing.sm,
-  },
-  submitBtnText: {
-    fontSize: 16,
-    fontFamily: fonts.bold,
-    color: '#FFFFFF',
-  },
-
-  // Google button
-  googleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingVertical: spacing.md - 2,
-  },
-  googleIconWrap: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 4,
-  },
-  googleBtnText: {
-    fontSize: 15,
-    fontFamily: fonts.medium,
-  },
-
-  // Agreement
-  agreementBlock: {
-    marginTop: spacing.xs,
-  },
-  agreementRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-  },
-  checkboxSquare: {
-    width: 18,
-    height: 18,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    marginTop: 2,
-  },
-  checkmark: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-    lineHeight: 12,
-  },
-  agreementText: {
-    flex: 1,
-    fontSize: 13,
-    fontFamily: fonts.regular,
-    lineHeight: 18,
-  },
-  linkText: {
-    fontFamily: fonts.bold,
-  },
-
-  // Resend
-  resendBtn: {
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  resendText: {
-    fontSize: 14,
-    fontFamily: fonts.medium,
-  },
-
-  // Toggle
-  toggleBtn: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontFamily: fonts.regular,
-  },
-  toggleLinkText: {
-    fontFamily: fonts.bold,
-  },
-
-  // Forgot password
-  forgotActions: {
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  forgotBackBtn: {
-    borderRadius: 14,
-    borderWidth: 1,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  forgotBackText: {
-    fontSize: 15,
-    fontFamily: fonts.medium,
-  },
-  forgotSubmitBtn: {
-    borderRadius: 14,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  forgotSubmitText: {
-    fontSize: 16,
-    fontFamily: fonts.bold,
-    color: '#FFFFFF',
-  },
-});

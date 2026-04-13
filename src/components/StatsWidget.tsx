@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { Flame, BookOpen, CheckCircle2 } from 'lucide-react-native';
 import { useTheme, fonts, spacing, radii, typography } from '../theme';
+import { moderateScale } from '../utils/responsive';
 import type { Stats } from '../hooks/useStats';
 import { AnimatedBorderSnake } from './AnimatedBorderSnake';
 
@@ -11,33 +12,68 @@ interface Props {
 
 export const StatsWidget = ({ stats }: Props) => {
   const { colors } = useTheme();
+  const { width: screenWidth } = useWindowDimensions();
+
+  // Адаптивные размеры для дней недели
+  // Начинаем сжимать с 420px
+  const getDaySizes = () => {
+    const baseWidth = 420;
+    const minWrapperSize = 36;
+    const minSquareSize = 32;
+    const maxWrapperSize = 44;
+    const maxSquareSize = 40;
+
+    if (screenWidth >= baseWidth) {
+      return {
+        wrapperSize: maxWrapperSize,
+        squareSize: maxSquareSize,
+        gap: spacing.sm,
+      };
+    }
+
+    const scale = (screenWidth - 320) / (baseWidth - 320);
+    const clampedScale = Math.max(0, Math.min(1, scale));
+
+    return {
+      wrapperSize: Math.round(minWrapperSize + (maxWrapperSize - minWrapperSize) * clampedScale),
+      squareSize: Math.round(minSquareSize + (maxSquareSize - minSquareSize) * clampedScale),
+      gap: spacing.xs + Math.round((spacing.sm - spacing.xs) * clampedScale),
+    };
+  };
+
+  const daySizes = getDaySizes();
+  const animatedSnakeSize = daySizes.squareSize - 4;
+
+  const styles = createStyles(daySizes);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {/* Верхний ряд: метрики */}
       <View style={styles.metricsRow}>
         <MetricItem
-          icon={<BookOpen color={colors.primary} size={16} />}
+          icon={<BookOpen color={colors.primary} size={moderateScale(16)} />}
           value={stats.totalWords}
           label="записано"
           colors={colors}
           compact
+          styles={styles}
         />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <MetricItem
-          icon={<CheckCircle2 color={colors.success} size={16} />}
+          icon={<CheckCircle2 color={colors.success} size={moderateScale(16)} />}
           value={stats.learnedWords}
           label="изучено"
           colors={colors}
           valueColor={colors.success}
           compact
+          styles={styles}
         />
         <View style={[styles.divider, { backgroundColor: colors.border }]} />
         <View style={styles.streakItem}>
           <View style={styles.streakRow}>
             <Text style={[styles.streakValue, { color: colors.primary }]}>{stats.currentStreak}</Text>
             <View style={[styles.streakIconWrapper, { backgroundColor: colors.primaryDim }]}>
-              <Flame color={colors.primary} size={14} fill={colors.primary} />
+              <Flame color={colors.primary} size={moderateScale(14)} fill={colors.primary} />
             </View>
           </View>
           <Text style={[styles.streakLabel, { color: colors.muted }]}>дней подряд</Text>
@@ -46,7 +82,7 @@ export const StatsWidget = ({ stats }: Props) => {
 
       {/* Нижний ряд: неделя активности */}
       <View style={[styles.weekSection, { backgroundColor: colors.background }]}>
-        <View style={styles.weekDays}>
+        <View style={[styles.weekDays, { gap: daySizes.gap }]}>
           {stats.weekActivity.map((day) => {
             const isActive = day.hasActivity;
             const isToday = day.isToday;
@@ -64,10 +100,19 @@ export const StatsWidget = ({ stats }: Props) => {
 
             return (
               <View key={day.date} style={styles.dayItem}>
-                <View style={styles.daySquareWrapper}>
+                <View style={[
+                  styles.daySquareWrapper,
+                  {
+                    width: daySizes.wrapperSize,
+                    height: daySizes.wrapperSize,
+                  }
+                ]}>
                   <View style={[
                     styles.daySquare,
                     {
+                      width: daySizes.squareSize,
+                      height: daySizes.squareSize,
+                      borderRadius: Math.round(daySizes.squareSize * 0.2),
                       backgroundColor: bgColor,
                       borderColor: borderColor,
                       borderWidth: isActive ? 2 : 1.5,
@@ -78,6 +123,7 @@ export const StatsWidget = ({ stats }: Props) => {
                       {
                         color: isActive || isToday ? colors.primary : colors.muted,
                         fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
+                        fontSize: screenWidth < 360 ? 9 : typography.xsmall,
                       },
                     ]}>
                       {day.dayLabel}
@@ -87,6 +133,7 @@ export const StatsWidget = ({ stats }: Props) => {
                       {
                         color: isToday ? colors.primary : (isActive ? colors.primary : colors.text),
                         fontFamily: isToday || isActive ? fonts.bold : fonts.regular,
+                        fontSize: screenWidth < 360 ? 11 : typography.small,
                       },
                     ]}>
                       {dayOfMonth}
@@ -95,9 +142,9 @@ export const StatsWidget = ({ stats }: Props) => {
                   {isToday && (
                     <AnimatedBorderSnake
                       color={colors.primary}
-                      size={40}
+                      size={animatedSnakeSize}
                       strokeWidth={2}
-                      borderRadius={8}
+                      borderRadius={Math.round(daySizes.squareSize * 0.2)}
                     />
                   )}
                 </View>
@@ -110,30 +157,7 @@ export const StatsWidget = ({ stats }: Props) => {
   );
 };
 
-interface MetricItemProps {
-  icon: React.ReactNode;
-  value: number;
-  label: string;
-  colors: any;
-  valueColor?: string;
-  compact?: boolean;
-}
-
-const MetricItem = ({ icon, value, label, colors, valueColor, compact }: MetricItemProps) => (
-  <View style={compact ? styles.metricItemCompact : styles.metricItem}>
-    <View style={compact ? styles.metricRowInner : styles.metricRow}>
-      <Text style={[compact ? styles.metricValueCompact : styles.metricValue, { color: valueColor || colors.text }]}>
-        {value}
-      </Text>
-      {compact && <View style={styles.metricIconWrapperCompact}>{icon}</View>}
-    </View>
-    <Text style={[compact ? styles.metricLabelCompact : styles.metricLabel, { color: colors.muted }]}>
-      {label}
-    </Text>
-  </View>
-);
-
-const styles = StyleSheet.create({
+const createStyles = (daySizes: { wrapperSize: number; squareSize: number; gap: number }) => StyleSheet.create({
   container: {
     marginHorizontal: 0,
     marginTop: 0,
@@ -217,51 +241,34 @@ const styles = StyleSheet.create({
   weekDays: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: spacing.sm,
   },
   dayItem: {
     alignItems: 'center',
   },
   daySquareWrapper: {
-    width: 44,
-    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible',
   },
   daySquare: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
     paddingVertical: 4,
   },
   dayWeekday: {
-    fontSize: typography.xsmall,
     textTransform: 'lowercase',
     fontFamily: fonts.regular,
   },
   dayDate: {
-    fontSize: typography.small,
     fontFamily: fonts.headingBlack,
   },
 
-  // Старые стили (для обратной совместимости)
+  // Стили для MetricItem
   metricItem: {
     flex: 1,
     alignItems: 'center',
     gap: spacing.xs,
-  },
-  metricIconWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(56, 189, 248, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
   },
   metricValue: {
     fontSize: typography.title,
@@ -271,93 +278,28 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     fontFamily: fonts.regular,
   },
-  weekHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-  },
-  weekTitle: {
-    fontSize: typography.small,
-    fontFamily: fonts.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  streakIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.full,
-  },
-  streakIndicatorText: {
-    fontSize: typography.xs,
-    fontFamily: fonts.bold,
-  },
-  contentRow: {
-    flexDirection: 'row',
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  metricsCol: {
-    flex: 1,
-    gap: spacing.sm,
-  },
-  dividerH: {
-    height: 1,
-    marginVertical: spacing.xs,
-  },
-  weekCol: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  dayItemCompact: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  dayCircleCompact: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  dayDotCompact: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  dayLabelCompact: {
-    fontSize: typography.xsmall,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-  },
-  headerTitle: {
-    fontSize: typography.xsmall,
-    fontFamily: fonts.bold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  streakBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radii.full,
-  },
-  streakText: {
-    fontSize: typography.xsmall,
-    fontFamily: fonts.bold,
-  },
 });
+
+interface MetricItemProps {
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+  colors: any;
+  valueColor?: string;
+  compact?: boolean;
+  styles: ReturnType<typeof createStyles>;
+}
+
+const MetricItem = ({ icon, value, label, colors, valueColor, compact, styles }: MetricItemProps) => (
+  <View style={compact ? styles.metricItemCompact : styles.metricItem}>
+    <View style={compact ? styles.metricRowInner : styles.metricRow}>
+      <Text style={[compact ? styles.metricValueCompact : styles.metricValue, { color: valueColor || colors.text }]}>
+        {value}
+      </Text>
+      {compact && <View style={styles.metricIconWrapperCompact}>{icon}</View>}
+    </View>
+    <Text style={[compact ? styles.metricLabelCompact : styles.metricLabel, { color: colors.muted }]}>
+      {label}
+    </Text>
+  </View>
+);
