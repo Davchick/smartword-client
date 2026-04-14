@@ -34,7 +34,6 @@ import { queryClient } from '../../lib/queryClient';
 import { queryKey } from '../../lib/queryKeys';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { useDeviceSize } from '../../hooks/useDeviceSize';
-import { useResponsiveTypography } from '../../hooks/useResponsiveTypography';
 import { moderateScale, scale } from '../../utils/responsive';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -53,7 +52,6 @@ export const ProfileScreen = () => {
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const deviceSize = useDeviceSize();
-  const responsiveTypo = useResponsiveTypography();
   const { signOut } = useAuth();
   const { profile, loading, refetch, avatarId, setAvatarId, nickname, setNickname } = useProfile();
   const { progress: trainingProgress, loading: progressLoading } = useTrainingProgress();
@@ -310,7 +308,7 @@ export const ProfileScreen = () => {
           <View style={{ flex: 1 }}>
             <Text style={[styles.upgradeTitle, { color: colors.text }]}>Создайте аккаунт</Text>
             <Text style={[styles.upgradeSubtitle, { color: colors.muted }]}>
-              Сохраним ваш прогресс в облаке и откроем дополнительные функции.
+              Сохраним прогресс и откроем дополнительные функции.
             </Text>
           </View>
           <View style={[styles.upgradeArrow, { backgroundColor: colors.primary }]}>
@@ -330,7 +328,7 @@ export const ProfileScreen = () => {
           <View style={[styles.menuIcon, { backgroundColor: colors.primaryDim }]}>
             <Headphones color={colors.primary} size={moderateScale(17)} />
           </View>
-          <View style={{ flex: 1 }}>
+          <View style={styles.menuTextWrapper}>
             <Text style={[styles.menuText, { color: colors.text }]}>Написать в поддержку</Text>
             <Text style={[styles.menuSubText, { color: colors.muted }]}>Мы ответим как можно скорее</Text>
           </View>
@@ -341,7 +339,7 @@ export const ProfileScreen = () => {
           <View style={[styles.menuIcon, { backgroundColor: 'rgba(251,113,133,0.15)' }]}>
             <Heart color={colors.danger} size={moderateScale(17)} />
           </View>
-          <View style={{ flex: 1 }}>
+          <View style={styles.menuTextWrapper}>
             <Text style={[styles.menuText, { color: colors.text }]}>Поддержать разработчика</Text>
             <Text style={[styles.menuSubText, { color: colors.muted }]}>Помочь развитию SmartWord</Text>
           </View>
@@ -443,7 +441,7 @@ export const ProfileScreen = () => {
 
 const useProfileStyles = () => {
   const { colors } = useTheme();
-  const { isSmall, isLarge, spacing, typography, radii } = useDeviceSize();
+  const { isSmall, isLarge, spacing, radii, typography: typo } = useDeviceSize();
 
   const avatarSize = isSmall ? 80 : isLarge ? 100 : 90;
   const avatarEmojiSize = isSmall ? 40 : isLarge ? 52 : 46;
@@ -555,7 +553,21 @@ const useProfileStyles = () => {
       gap: spacing.sm,
       paddingVertical: spacing.lg,
     },
-    progressEmptyText: {
+progressEmptyText: {
+      fontSize: typography.small,
+      fontFamily: fonts.regular,
+    },
+
+    progressHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    progressTitle: {
+      fontSize: typography.small,
+      fontFamily: fonts.medium,
+    },
+    progressCount: {
       fontSize: typography.small,
       fontFamily: fonts.regular,
     },
@@ -645,6 +657,9 @@ const useProfileStyles = () => {
       padding: spacing.md,
       gap: spacing.md,
     },
+    menuTextWrapper: {
+      flex: 1,
+    },
     menuIcon: {
       width: menuIconSize,
       height: menuIconSize,
@@ -655,11 +670,12 @@ const useProfileStyles = () => {
     menuText: {
       fontSize: typography.body,
       fontFamily: fonts.medium,
+      lineHeight: typography.body * 1.4,
     },
     menuSubText: {
       fontSize: typography.small,
       fontFamily: fonts.regular,
-      marginTop: 1,
+      lineHeight: typography.small * 1.4,
     },
     versionText: {
       textAlign: 'center',
