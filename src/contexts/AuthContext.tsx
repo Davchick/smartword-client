@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiGet, apiPost, clearTokens, getBaseUrl, getRefreshToken } from '../lib/api';
+import { queryClient } from '../lib/queryClient';
+import { queryKey } from '../lib/queryKeys';
 
 export interface ApiProfile {
   id: string;
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const profile = await apiGet<ApiProfile>('/profile');
       setUserState(profile);
+      queryClient.setQueryData(queryKey.profile.me(), profile);
     } catch (err) {
       // НЕ сбрасываем user при ошибке — временный сбой сети не должен «выкидывать» пользователя.
       // Предыдущее состояние сохраняется, UI продолжит работать с кэшированными данными.
@@ -88,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Игнорируем ошибки — токены всё равно очищаем локально
     }
     await clearTokens();
+    queryClient.removeQueries({ queryKey: queryKey.profile.all });
     setUserState(null);
     setGuestModeState(false);
     // При выходе сохраняем, что у пользователя есть аккаунт
@@ -134,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const profile = await apiGet<ApiProfile>('/profile');
           if (!cancelled) {
             setUserState(profile);
+            queryClient.setQueryData(queryKey.profile.me(), profile);
             await AsyncStorage.setItem(HAS_ACCOUNT_KEY, '1');
           }
         } catch (err) {

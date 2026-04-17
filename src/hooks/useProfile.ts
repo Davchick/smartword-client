@@ -16,6 +16,7 @@ export interface Profile {
   id: string;
   is_premium: boolean;
   ai_messages_used: number;
+  last_ai_message_reset_at?: string; // ISO date string from server
   created_at: string;
   subscription_type?: string | null;
   subscription_expires_at?: string | null;
@@ -29,19 +30,36 @@ const NICKNAME_KEY = 'smartword_nickname';
 // ─── Query function ────────────────────────────────────────────────────
 
 async function fetchProfileQuery(
-  authUser: ReturnType<typeof useAuth>['user']
+  authUser: ReturnType<typeof useAuth>['user'],
+  queryClient: ReturnType<typeof useQueryClient>
 ): Promise<Profile | null> {
-  if (!authUser || !getBaseUrl()) {
-    return authUser
-      ? {
-          id: authUser.id,
-          is_premium: authUser.is_premium,
-          ai_messages_used: authUser.ai_messages_used,
-          created_at: authUser.created_at,
-        }
-      : null;
+  if (!authUser) {
+    return null;
   }
-  return apiGet<Profile>('/profile');
+
+  // Проверяем кэш React Query — AuthContext уже мог загрузить данные
+  const cachedProfile = queryClient.getQueryData<Profile>(queryKey.profile.me());
+  if (cachedProfile) {
+    return cachedProfile;
+  }
+
+  // Кэша нет — нужен серверный запрос, но только если есть baseUrl
+  if (!getBaseUrl()) {
+    // Нет baseUrl — возвращаем fallback из authUser
+    return {
+      id: authUser.id,
+      is_premium: authUser.is_premium,
+      ai_messages_used: authUser.ai_messages_used,
+      last_ai_message_reset_at: undefined,
+      created_at: authUser.created_at,
+    };
+  }
+
+  const profile = await apiGet<Profile>('/profile');
+  return {
+    ...profile,
+    last_ai_message_reset_at: profile.last_ai_message_reset_at,
+  };
 }
 
 // ─── Hook ──────────────────────────────────────────────────────────────
@@ -58,7 +76,7 @@ export const useProfile = () => {
     refetch,
   } = useQuery({
     queryKey: queryKey.profile.me(),
-    queryFn: () => fetchProfileQuery(authUser),
+    queryFn: () => fetchProfileQuery(authUser, queryClient),
     // Профиль — стабильные данные. Refetch только при фокусе экрана.
     staleTime: 10 * 60 * 1000, // 10 мин — профиль меняется крайне редко
     gcTime: 10 * 60 * 1000,
@@ -93,6 +111,7 @@ export const useProfile = () => {
           id: authUser.id,
           is_premium: authUser.is_premium,
           ai_messages_used: authUser.ai_messages_used,
+          last_ai_message_reset_at: undefined,
           created_at: authUser.created_at,
           subscription_type: (authUser as any).subscription_type ?? null,
           subscription_expires_at: (authUser as any).subscription_expires_at ?? null,

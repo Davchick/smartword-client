@@ -39,11 +39,6 @@ export const queryKey = {
     current: () => ['streaks', 'current'] as const,
     history: () => ['streaks', 'history'] as const,
   },
-  achievements: {
-    all: ['achievements'] as const,
-    list: () => ['achievements', 'list'] as const,
-    summary: () => ['achievements', 'summary'] as const,
-  },
   archivedWords: {
     all: ['archivedWords'] as const,
   },
@@ -90,8 +85,4 @@ export function invalidateStats(queryClient: import('@tanstack/react-query').Que
 
 export function invalidateStreaks(queryClient: import('@tanstack/react-query').QueryClient) {
   return queryClient.invalidateQueries({ queryKey: queryKey.streaks.all });
-}
-
-export function invalidateAchievements(queryClient: import('@tanstack/react-query').QueryClient) {
-  return queryClient.invalidateQueries({ queryKey: queryKey.achievements.all });
 }

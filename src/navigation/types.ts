@@ -9,7 +9,6 @@ export type RootStackParamList = {
   Main: undefined;
   ProfileSettings: undefined;
   BillingPayment: undefined;
-  Achievements: undefined;
   Legal: undefined;
 };
 

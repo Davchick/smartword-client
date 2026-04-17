@@ -552,22 +552,8 @@ const useProfileStyles = () => {
       justifyContent: 'center',
       gap: spacing.sm,
       paddingVertical: spacing.lg,
-    },
-progressEmptyText: {
-      fontSize: typography.small,
-      fontFamily: fonts.regular,
-    },
-
-    progressHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    progressTitle: {
-      fontSize: typography.small,
-      fontFamily: fonts.medium,
-    },
-    progressCount: {
+},
+    progressEmptyText: {
       fontSize: typography.small,
       fontFamily: fonts.regular,
     },

@@ -26,8 +26,7 @@ import {
   Info,
   Eye,
   EyeOff,
-  Trophy,
-} from 'lucide-react-native';
+  } from 'lucide-react-native';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { useThemeContext } from '../../theme/ThemeContext';
 import { apiPatch, apiPost, getBaseUrl } from '../../lib/api';
@@ -218,18 +217,6 @@ export const ProfileSettingsScreen = () => {
         {/* Прочее */}
         <Text style={[styles.sectionLabel, { color: colors.muted }]}>ПРОЧЕЕ</Text>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <TouchableOpacity
-            style={[styles.menuRow, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
-            onPress={() => navigation.navigate('Achievements' as never)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.menuIcon, { backgroundColor: colors.primaryDim }]}>
-              <Trophy color={colors.primary} size={17} />
-            </View>
-            <Text style={[styles.menuText, { color: colors.text }]}>Достижения</Text>
-            <ChevronRight color={colors.muted} size={18} />
-          </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.menuRow, { borderBottomWidth: 1, borderBottomColor: colors.border }]}
             onPress={() =>

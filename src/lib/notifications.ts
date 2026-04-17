@@ -150,17 +150,6 @@ export const sendLocalNotification = async (
 };
 
 /**
- * Отправить уведомление о новом достижении
- */
-export const sendAchievementNotification = async (achievementTitle: string) => {
-  await sendLocalNotification(
-    '🏆 Новое достижение!',
-    `Вы получили достижение: ${achievementTitle}`,
-    { type: 'achievement' }
-  );
-};
-
-/**
  * Отправить уведомление о потере streak
  */
 export const sendStreakLostNotification = async (streakDays: number) => {

@@ -98,7 +98,10 @@ export const ChatScreen = () => {
   const [selectedGroup, setSelectedGroup] = useState<WordGroup | null>(null);
   const [freeMode, setFreeMode] = useState(false);
 
-  const { messages, loading, messagesUsed, limitReached, sendMessage, setGroup, clearMessages } = useChat(profile?.ai_messages_used);
+  const { messages, loading, messagesUsed, limitReached, sendMessage, setGroup, clearMessages } = useChat(
+    profile?.ai_messages_used,
+    profile?.last_ai_message_reset_at
+  );
 
   const [inputText, setInputText] = useState('');
   const [paywallVisible, setPaywallVisible] = useState(false);
@@ -162,6 +165,9 @@ export const ChatScreen = () => {
 
   const handleSend = useCallback(async () => {
     if (!inputText.trim() || loading) return;
+    // Сервер НЕ засчитывает первое сообщение (isPremium ? true : currentUsed > 0)
+    // 因此 визуально: 0 означает "первое бесплатное", 1-10 - платные
+    // Блокируем когда messagesUsed >= FREE_MESSAGES_LIMIT (10)
     if (!profile?.is_premium && messagesUsed >= FREE_MESSAGES_LIMIT) {
       setPaywallVisible(true);
       return;
@@ -323,14 +329,14 @@ export const ChatScreen = () => {
                     style={[
                       styles.limitProgressFill,
                       {
-                        width: `${(messagesUsed / FREE_MESSAGES_LIMIT) * 100}%`,
-                        backgroundColor: messagesUsed >= FREE_MESSAGES_LIMIT ? colors.danger : messagesUsed >= FREE_MESSAGES_LIMIT * 0.7 ? '#FBBF24' : colors.primary,
+                        width: `${Math.min(100, Math.max(0, (messagesUsed ?? 0) / FREE_MESSAGES_LIMIT) * 100)}%`,
+                        backgroundColor: (messagesUsed ?? 0) >= FREE_MESSAGES_LIMIT ? colors.danger : (messagesUsed ?? 0) >= FREE_MESSAGES_LIMIT * 0.7 ? '#FBBF24' : colors.primary,
                       },
                     ]}
                   />
                 </View>
                 <Text style={[styles.limitBadgeText, { color: colors.muted }]}>
-                  {messagesUsed}/{FREE_MESSAGES_LIMIT}
+                  {messagesUsed ?? 0}/{FREE_MESSAGES_LIMIT}
                 </Text>
               </View>
             </TouchableOpacity>

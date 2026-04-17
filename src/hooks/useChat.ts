@@ -32,7 +32,19 @@ const getTodayKey = (): string => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 
-export const useChat = (serverMessagesUsed?: number) => {
+// Парсит серверную дату сброса (ISO string) в локальный ключ дня
+const parseServerResetDateKey = (isoDateString?: string): string | null => {
+  if (!isoDateString) return null;
+  try {
+    const date = new Date(isoDateString);
+    if (isNaN(date.getTime())) return null;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  } catch {
+    return null;
+  }
+};
+
+export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string) => {
   const { user: authUser } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -75,9 +87,14 @@ export const useChat = (serverMessagesUsed?: number) => {
 
         if (cancelled) return;
 
-        // Daily reset на клиенте: если последний сброс был не сегодня — обнуляем
+        // Daily reset: используем серверную дату как source of truth
+        // Если серверная дата есть — сверяем с ней, иначе — fallback на локальную
         const todayKey = getTodayKey();
-        const isNewDay = lastResetDateRaw !== todayKey;
+        const serverResetKey = parseServerResetDateKey(serverResetDateIso);
+        
+        // Если есть серверная дата — используем её; иначе — локальную
+        const storedResetKey = lastResetDateRaw || serverResetKey;
+        const isNewDay = storedResetKey !== todayKey;
 
         if (messagesRaw) {
           const parsed: PersistedMessage[] = JSON.parse(messagesRaw);
@@ -101,8 +118,9 @@ export const useChat = (serverMessagesUsed?: number) => {
           // Новый день — сбрасываем локальный лимит
           setLimitReached(false);
           setMessagesUsed(0);
-          // Сохраняем новую дату сброса
-          AsyncStorage.setItem(CHAT_LAST_RESET_DATE_KEY(authUser.id), todayKey).catch(() => {});
+          // Сохраняем новую дату сброса (серверную если есть, иначе локальную)
+          const resetKeyToStore = serverResetKey || todayKey;
+          AsyncStorage.setItem(CHAT_LAST_RESET_DATE_KEY(authUser.id), resetKeyToStore).catch(() => {});
           AsyncStorage.removeItem(CHAT_LIMIT_REACHED_KEY(authUser.id)).catch(() => {});
         } else {
           // Тот же день — восстанавливаем сохранённые значения
@@ -127,7 +145,7 @@ export const useChat = (serverMessagesUsed?: number) => {
 
     loadPersisted();
     return () => { cancelled = true; };
-  }, [authUser?.id]);
+  }, [authUser?.id, serverResetDateIso]);
 
   // ── Сохранение сообщений при каждом изменении ──
   useEffect(() => {
