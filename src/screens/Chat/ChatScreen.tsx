@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Send, Bot, Sparkles, MessageCircle, BookOpen,
   RefreshCw, AlertCircle, LogIn, ChevronRight,
-  Languages, Copy, Lightbulb,
+  Languages, Copy, Lightbulb, RotateCcw,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { apiPostWithRetry, getBaseUrl } from '../../lib/api';
@@ -25,7 +25,7 @@ import { useChat } from '../../hooks/useChat';
 import { useProfile } from '../../hooks/useProfile';
 import { useGroups } from '../../hooks/useGroups';
 import { queryClient } from '../../lib/queryClient';
-import { queryKey } from '../../lib/queryKeys';
+import { queryKey, invalidateProfile } from '../../lib/queryKeys';
 import { TypingIndicator } from '../../components/TypingIndicator';
 import { PaywallModal } from '../../components/PaywallModal';
 import { useTheme, fonts } from '../../theme';
@@ -91,14 +91,14 @@ export const ChatScreen = () => {
   const { profile } = useProfile();
   const { groups } = useGroups();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { spacing, radii } = deviceSize;
+  const { spacing, radii, isSmall } = deviceSize;
 
   const [stage, setStage] = useState<ChatStage>('welcome');
   // selectedGroup/freeMode фиксируются в момент выбора и не меняются до сброса
   const [selectedGroup, setSelectedGroup] = useState<WordGroup | null>(null);
   const [freeMode, setFreeMode] = useState(false);
 
-  const { messages, loading, messagesUsed, limitReached, sendMessage, setGroup, clearMessages } = useChat(
+  const { messages, loading, messagesUsed, limitReached, sendMessage, retryMessage, setGroup, clearMessages } = useChat(
     profile?.ai_messages_used,
     profile?.last_ai_message_reset_at
   );
@@ -147,7 +147,7 @@ export const ChatScreen = () => {
     setFreeMode(false);
     setGroup(group.id, group.name); // устанавливаем группу в ref ДО отправки
     setStage('active');
-    await sendMessage(`Начинаем практику со словарём "${group.name}"`);
+    await sendMessage(`Начинаем практику со словарём "${group.name}"`, true);
     scrollToBottom();
     setTimeout(() => inputRef.current?.focus(), 300);
   }, [sendMessage, setGroup, scrollToBottom]);
@@ -158,16 +158,13 @@ export const ChatScreen = () => {
     setSelectedGroup(null);
     setGroup(undefined, undefined);
     setStage('active');
-    await sendMessage('Свободное общение');
+    await sendMessage('Свободное общение', true);
     scrollToBottom();
     setTimeout(() => inputRef.current?.focus(), 300);
   }, [sendMessage, setGroup, scrollToBottom]);
 
   const handleSend = useCallback(async () => {
     if (!inputText.trim() || loading) return;
-    // Сервер НЕ засчитывает первое сообщение (isPremium ? true : currentUsed > 0)
-    // 因此 визуально: 0 означает "первое бесплатное", 1-10 - платные
-    // Блокируем когда messagesUsed >= FREE_MESSAGES_LIMIT (10)
     if (!profile?.is_premium && messagesUsed >= FREE_MESSAGES_LIMIT) {
       setPaywallVisible(true);
       return;
@@ -177,10 +174,12 @@ export const ChatScreen = () => {
       return;
     }
     const text = inputText;
+    setInputText('');
     const success = await sendMessage(text);
     if (success) {
-      setInputText('');
       scrollToBottom();
+      invalidateProfile(queryClient);
+      queryClient.invalidateQueries({ queryKey: queryKey.profile.all });
     }
   }, [inputText, loading, profile, messagesUsed, limitReached, sendMessage, scrollToBottom]);
 
@@ -208,9 +207,10 @@ export const ChatScreen = () => {
         isUser={isUser}
         colors={colors}
         onInsertHint={handleInsertFromHint}
+        onRetry={retryMessage}
       />
     );
-  }, [colors, handleInsertFromHint]);
+  }, [colors, handleInsertFromHint, retryMessage]);
 
   // ── Экран выбора (choosing) ──────────────────────────────────────────────
   const renderChoosingScreen = () => (
@@ -297,23 +297,24 @@ export const ChatScreen = () => {
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: 'transparent' }]}
       behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
     >
       {/* ── Header ── */}
       <View
         style={[
           styles.header,
           {
-            paddingTop: insets.top + spacing.sm,
+            paddingTop: insets.top + (isSmall ? spacing.xs : spacing.sm),
             borderBottomWidth: 0,
           },
         ]}
       >
         <View style={styles.headerLeft}>
-          <View style={[styles.botAvatarLarge, { backgroundColor: colors.primaryDim }]}>
-            <Bot color={colors.primary} size={moderateScale(22)} />
+          <View style={[styles.botAvatarLarge, { backgroundColor: colors.primaryDim, width: isSmall ? moderateScale(36) : moderateScale(42), height: isSmall ? moderateScale(36) : moderateScale(42), borderRadius: isSmall ? moderateScale(18) : moderateScale(21) }]}>
+            <Bot color={colors.primary} size={isSmall ? moderateScale(18) : moderateScale(22)} />
           </View>
           <View>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>Lexi</Text>
+            <Text style={[styles.headerTitle, { color: colors.text, fontSize: isSmall ? t.body - 2 : t.body }]}>Lexi</Text>
           </View>
         </View>
         <View style={styles.headerRight}>
@@ -362,18 +363,18 @@ export const ChatScreen = () => {
           >
             <View style={styles.welcomeContent}>
               <View style={[styles.featureList, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <FeatureRow icon={<MessageCircle color={colors.primary} size={moderateScale(16)} />} text="Живой диалог на изучаемом языке" colors={colors} />
+                <FeatureRow icon={<MessageCircle color={colors.primary} size={isSmall ? moderateScale(14) : moderateScale(16)} />} text="Живой диалог на изучаемом языке" colors={colors} />
                 <View style={[styles.featureDivider, { backgroundColor: colors.border }]} />
-                <FeatureRow icon={<BookOpen color={colors.primary} size={moderateScale(16)} />} text="Стараюсь использовать слова из вашего словаря." colors={colors} />
+                <FeatureRow icon={<BookOpen color={colors.primary} size={isSmall ? moderateScale(14) : moderateScale(16)} />} text="Стараюсь использовать слова из вашего словаря." colors={colors} />
                 <View style={[styles.featureDivider, { backgroundColor: colors.border }]} />
-                <FeatureRow icon={<Sparkles color={colors.primary} size={moderateScale(16)} />} text="Мягко исправляю ошибки, не прерывая разговор" colors={colors} />
+                <FeatureRow icon={<Sparkles color={colors.primary} size={isSmall ? moderateScale(14) : moderateScale(16)} />} text="Мягко исправляю ошибки, не прерывая разговор" colors={colors} />
               </View>
             </View>
           </ScrollView>
 
-          <View style={[styles.welcomeBottom, { paddingBottom: insets.bottom + spacing.md, borderTopColor: colors.border }]}>
+          <View style={[styles.welcomeBottom, { paddingBottom: insets.bottom + (isSmall ? spacing.sm : spacing.md), borderTopColor: colors.border }]}>
             <View style={[styles.disclaimer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <AlertCircle color={colors.muted} size={moderateScale(13)} style={{ flexShrink: 0 }} />
+              <AlertCircle color={colors.muted} size={isSmall ? moderateScale(11) : moderateScale(13)} style={{ flexShrink: 0 }} />
               <Text style={[styles.disclaimerText, { color: colors.muted }]}>
                 Контент генерирует нейросеть. ИИ может давать неточные ответы. Чат предназначен исключительно для языковой практики.
               </Text>
@@ -389,8 +390,8 @@ export const ChatScreen = () => {
                   Для AI-чата нужен аккаунт.
                 </Text>
                 <View style={styles.guestBannerLogin}>
-                  <Text style={{ color: colors.primary, fontFamily: fonts.medium, fontSize: t.small }}>Войти</Text>
-                  <LogIn color={colors.primary} size={moderateScale(13)} />
+                  <Text style={{ color: colors.primary, fontFamily: fonts.medium, fontSize: isSmall ? t.small - 1 : t.small }}>Войти</Text>
+                  <LogIn color={colors.primary} size={isSmall ? moderateScale(11) : moderateScale(13)} />
                 </View>
               </TouchableOpacity>
             )}
@@ -403,16 +404,16 @@ export const ChatScreen = () => {
                     {
                       backgroundColor: colors.primary,
                       shadowColor: colors.primary,
-                      shadowOffset: { width: 0, height: moderateScale(8) },
+                      shadowOffset: { width: 0, height: moderateScale(isSmall ? 6 : 8) },
                       shadowOpacity: 0.5,
-                      shadowRadius: moderateScale(16),
+                      shadowRadius: moderateScale(isSmall ? 12 : 16),
                       elevation: 8,
                     },
                   ]}
                   onPress={handleStartPractice}
                   activeOpacity={0.85}
                 >
-                  <Sparkles color={colors.background} size={moderateScale(18)} />
+                  <Sparkles color={colors.background} size={isSmall ? moderateScale(16) : moderateScale(18)} />
                   <Text style={[styles.startBtnText, { color: colors.background }]}>Начать практику</Text>
                 </TouchableOpacity>
               </>
@@ -502,14 +503,18 @@ const MessageBubble = ({
   isUser,
   colors,
   onInsertHint,
+  onRetry,
 }: {
   item: ChatMessage;
   isUser: boolean;
   colors: any;
   onInsertHint?: (text: string) => void;
+  onRetry?: (messageId: string) => void;
 }) => {
   const styles = useChatStyles();
   const showActions = !isUser && isForeignText(item.content);
+  const showRetry = isUser && (item.sendStatus === 'failed' || item.sendStatus === 'pending');
+  const [retrying, setRetrying] = useState(false);
   const [translation, setTranslation] = useState<string | null>(null);
   const [translationOpen, setTranslationOpen] = useState(false);
   const [translating, setTranslating] = useState(false);
@@ -529,6 +534,16 @@ const MessageBubble = ({
     const endpoint = action === 'translate' ? '/chat/translate' : '/chat/hint';
     const data = await apiPostWithRetry<{ result?: string }>(endpoint, { text: item.content });
     return data?.result ?? '';
+  };
+
+  const handleRetry = async () => {
+    if (retrying || item.sendStatus !== 'failed') return;
+    setRetrying(true);
+    try {
+      await onRetry?.(item.id);
+    } finally {
+      setRetrying(false);
+    }
   };
 
   const handleTranslate = async () => {
@@ -620,6 +635,21 @@ const MessageBubble = ({
 
   return (
     <View style={[styles.messageRow, isUser && styles.messageRowUser]}>
+      {showRetry && (
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={handleRetry}
+          disabled={retrying || item.sendStatus === 'pending'}
+          activeOpacity={0.7}
+          hitSlop={hitSlop}
+        >
+          {retrying || item.sendStatus === 'pending' ? (
+            <ActivityIndicator size={moderateScale(14)} color={colors.danger} />
+          ) : (
+            <RotateCcw size={moderateScale(16)} color={colors.danger} />
+          )}
+        </TouchableOpacity>
+      )}
       <View style={styles.bubbleWrapper}>
         <View style={[
           styles.bubble,
@@ -738,6 +768,8 @@ const useChatStyles = () => {
   const { isSmall, isLarge, spacing, typography, radii } = useDeviceSize();
   const t = useResponsiveTypography();
 
+  const adaptiveHeaderPadding = isSmall ? spacing.sm : spacing.md;
+
   return StyleSheet.create({
     container: { flex: 1 },
 
@@ -746,8 +778,8 @@ const useChatStyles = () => {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingBottom: spacing.md,
+      paddingHorizontal: isSmall ? spacing.md : spacing.lg,
+      paddingBottom: adaptiveHeaderPadding,
       borderBottomWidth: 0,
     },
     headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -783,11 +815,11 @@ const useChatStyles = () => {
     welcomeScroll: {
       flexGrow: 1,
       justifyContent: 'center',
-      paddingHorizontal: spacing.xl,
-      paddingTop: spacing.xl,
-      paddingBottom: spacing.lg,
+      paddingHorizontal: isSmall ? spacing.md : spacing.xl,
+      paddingTop: isSmall ? spacing.md : spacing.xl,
+      paddingBottom: spacing.sm,
     },
-    welcomeContent: { alignItems: 'center', gap: spacing.md },
+    welcomeContent: { alignItems: 'center', gap: isSmall ? spacing.sm : spacing.md },
     featureList: {
       width: '100%',
       borderRadius: radii.md,
@@ -798,47 +830,47 @@ const useChatStyles = () => {
     featureRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.sm,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm + 2,
+      gap: isSmall ? spacing.xs : spacing.sm,
+      paddingHorizontal: isSmall ? spacing.sm : spacing.md,
+      paddingVertical: isSmall ? spacing.xs + 2 : spacing.sm + 2,
     },
-    featureDivider: { height: 1, marginHorizontal: spacing.md },
-    featureText: { fontSize: t.small, fontFamily: fonts.regular, flex: 1, lineHeight: moderateScale(20) },
+    featureDivider: { height: 1, marginHorizontal: isSmall ? spacing.sm : spacing.md },
+    featureText: { fontSize: isSmall ? t.xs : t.small, fontFamily: fonts.regular, flex: 1, lineHeight: moderateScale(isSmall ? 16 : 20) },
     welcomeBottom: {
-      paddingTop: spacing.md,
-      paddingHorizontal: spacing.xl,
-      gap: spacing.md,
+      paddingTop: isSmall ? spacing.sm : spacing.md,
+      paddingHorizontal: isSmall ? spacing.md : spacing.xl,
+      gap: isSmall ? spacing.sm : spacing.md,
       borderTopWidth: 1,
     },
     disclaimer: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.xs + 2,
+      gap: isSmall ? spacing.xs : spacing.xs + 2,
       borderRadius: radii.sm,
       borderWidth: 1,
-      padding: spacing.sm + 2,
+      padding: isSmall ? spacing.xs : spacing.sm + 2,
     },
-    disclaimerText: { fontSize: t.xs, fontFamily: fonts.regular, flex: 1, lineHeight: moderateScale(18) },
+    disclaimerText: { fontSize: isSmall ? t.xs - 1 : t.xs, fontFamily: fonts.regular, flex: 1, lineHeight: moderateScale(isSmall ? 14 : 18) },
     guestBanner: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.sm,
+      gap: isSmall ? spacing.xs : spacing.sm,
       borderRadius: radii.sm,
       borderWidth: 1,
-      padding: spacing.sm + 2,
+      padding: isSmall ? spacing.xs : spacing.sm + 2,
     },
-    guestBannerText: { fontSize: t.small, fontFamily: fonts.regular, flex: 1 },
+    guestBannerText: { fontSize: isSmall ? t.small - 1 : t.small, fontFamily: fonts.regular, flex: 1 },
     guestBannerLogin: { flexDirection: 'row', alignItems: 'center', gap: moderateScale(4) },
     startBtn: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: spacing.sm,
+      gap: isSmall ? spacing.xs : spacing.sm,
       borderRadius: radii.full,
-      paddingVertical: spacing.md,
-      paddingHorizontal: spacing.xl,
+      paddingVertical: isSmall ? spacing.sm : spacing.md,
+      paddingHorizontal: isSmall ? spacing.lg : spacing.xl,
     },
-    startBtnText: { fontSize: t.body, fontFamily: fonts.bold, letterSpacing: moderateScale(0.2) },
+    startBtnText: { fontSize: isSmall ? t.small : t.body, fontFamily: fonts.bold, letterSpacing: moderateScale(0.2) },
 
     // Choosing screen
     choosingScroll: {
@@ -904,6 +936,17 @@ const useChatStyles = () => {
       marginBottom: spacing.xs,
     },
     messageRowUser: { flexDirection: 'row-reverse' },
+    retryButton: {
+      position: 'absolute',
+      left: -moderateScale(32),
+      top: moderateScale(8),
+      width: moderateScale(28),
+      height: moderateScale(28),
+      borderRadius: moderateScale(14),
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'transparent',
+    },
     botAvatar: {
       width: moderateScale(28),
       height: moderateScale(28),

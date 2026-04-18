@@ -425,7 +425,7 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
       >
         <KeyboardAvoidingView
           style={styles.editOverlay}
-          behavior="padding"
+          behavior={Platform.OS === 'ios' ? 'padding' : 'position'}
         >
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setEditWord(null)} />
           <View style={[styles.editSheet, { backgroundColor: colors.elevated, paddingBottom: insets.bottom + spacing.md }]}>

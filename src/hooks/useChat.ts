@@ -2,12 +2,15 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiPostWithRetry, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { queryClient } from '../lib/queryClient';
+import { queryKey } from '../lib/queryKeys';
 
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  sendStatus?: 'pending' | 'sent' | 'failed';
 }
 
 // Ключи для AsyncStorage — добавляем userId динамически
@@ -190,39 +193,24 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
     }
   }, [authUser?.id]);
 
-  const sendMessage = useCallback(async (text: string): Promise<boolean> => {
-    if (!text.trim()) return false;
-    // Дедупликация — если уже идёт отправка, игнорируем повторный вызов
+  const retryMessage = useCallback(async (messageId: string): Promise<boolean> => {
+    const msg = messagesRef.current.find((m) => m.id === messageId);
+    if (!msg || msg.role !== 'user') return false;
     if (sendingRef.current) return false;
-    if (!authUser || !getBaseUrl()) {
-      const errorMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Необходима авторизация. Войдите в аккаунт.',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMsg]);
-      return false;
-    }
 
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: text.trim(),
-      timestamp: new Date(),
-    };
+    setMessages((prev) =>
+      prev.map((m) => (m.id === messageId ? { ...m, sendStatus: 'pending' as const } : m))
+    );
+    messagesRef.current = messagesRef.current.map((m) =>
+      m.id === messageId ? { ...m, sendStatus: 'pending' as const } : m
+    );
 
-    // Обновляем ref СИНХРОННО перед использованием — гарантируем консистентность
-    messagesRef.current = [...messagesRef.current, userMessage];
-
-    // Отправляем только последние 20 сообщений — AI достаточно контекста,
-    // а экономим трафик и время обработки при длинных чатах
     const MAX_CONTEXT_MESSAGES = 20;
-    const contextMessages = messagesRef.current.slice(-MAX_CONTEXT_MESSAGES);
-    const apiMessages = contextMessages.map((m) => ({ role: m.role, content: m.content }));
+    const otherMessages = messagesRef.current
+      .filter((m) => m.id !== messageId)
+      .slice(-MAX_CONTEXT_MESSAGES);
+    const apiMessages = otherMessages.map((m) => ({ role: m.role, content: m.content }));
 
-    // State обновляем отдельно — не зависит от ref для render
-    setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
     sendingRef.current = true;
 
@@ -231,14 +219,17 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
         messages: apiMessages,
         group_id: groupIdRef.current,
         group_name: groupNameRef.current,
+        isInitialMessage: false,
       });
 
       if (responseData?.error === 'limit_reached') {
         setLimitReached(true);
-        // Сохраняем состояние лимита
         if (authUser?.id) {
           AsyncStorage.setItem(CHAT_LIMIT_REACHED_KEY(authUser.id), 'true').catch(() => {});
         }
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, sendStatus: 'failed' as const } : m))
+        );
         return false;
       }
 
@@ -248,16 +239,29 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
         content: responseData?.reply ?? 'Не удалось получить ответ',
         timestamp: new Date(),
       };
+
+      messagesRef.current = messagesRef.current
+        .filter((m) => !(m.role === 'assistant' && m.id !== assistantMessage.id))
+        .map((m) => (m.id === messageId ? { ...m, sendStatus: 'sent' as const } : m));
       messagesRef.current = [...messagesRef.current, assistantMessage];
-      setMessages((prev) => [...prev, assistantMessage]);
+
+      setMessages((prev) => [
+        ...prev
+          .filter((m) => !(m.role === 'assistant' && m.id !== assistantMessage.id))
+          .map((m) => (m.id === messageId ? { ...m, sendStatus: 'sent' as const } : m)),
+        assistantMessage,
+      ]);
 
       if (typeof responseData?.messages_used === 'number') {
         setMessagesUsed(responseData.messages_used);
-        // Если сервер принял запрос — лимит точно не достигнут
         setLimitReached(false);
         if (authUser?.id) {
           AsyncStorage.removeItem(CHAT_LIMIT_REACHED_KEY(authUser.id)).catch(() => {});
         }
+        queryClient.setQueryData(queryKey.profile.me(), (old) => {
+          if (!old) return old;
+          return { ...old, ai_messages_used: responseData.messages_used };
+        });
       }
       return true;
     } catch (err: unknown) {
@@ -287,8 +291,143 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
         content: errorContent,
         timestamp: new Date(),
       };
+
+      messagesRef.current = messagesRef.current
+        .filter((m) => !(m.role === 'assistant' && m.id !== errorMessage.id))
+        .map((m) => (m.id === messageId ? { ...m, sendStatus: 'failed' as const } : m));
       messagesRef.current = [...messagesRef.current, errorMessage];
-      setMessages((prev) => [...prev, errorMessage]);
+
+      setMessages((prev) => [
+        ...prev
+          .filter((m) => !(m.role === 'assistant' && m.id !== errorMessage.id))
+          .map((m) => (m.id === messageId ? { ...m, sendStatus: 'failed' as const } : m)),
+        errorMessage,
+      ]);
+      return false;
+    } finally {
+      setLoading(false);
+      sendingRef.current = false;
+    }
+  }, [authUser, messagesRef]);
+
+  const sendMessage = useCallback(async (text: string, isInitialMessage?: boolean): Promise<boolean> => {
+    if (!text.trim()) return false;
+    if (sendingRef.current) return false;
+    if (!authUser || !getBaseUrl()) {
+      const errorMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Необходима авторизация. Войдите в аккаунт.',
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMsg]);
+      return false;
+    }
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: text.trim(),
+      timestamp: new Date(),
+      sendStatus: 'pending',
+    };
+
+    messagesRef.current = [...messagesRef.current, userMessage];
+
+    const MAX_CONTEXT_MESSAGES = 20;
+    const contextMessages = messagesRef.current.slice(-MAX_CONTEXT_MESSAGES);
+    const apiMessages = contextMessages.map((m) => ({ role: m.role, content: m.content }));
+
+    setMessages((prev) => [...prev, userMessage]);
+    setLoading(true);
+    sendingRef.current = true;
+
+    try {
+      const responseData = await apiPostWithRetry<{ reply?: string; messages_used?: number; error?: string }>('/chat', {
+        messages: apiMessages,
+        group_id: groupIdRef.current,
+        group_name: groupNameRef.current,
+        isInitialMessage: isInitialMessage ?? false,
+      });
+
+      if (responseData?.error === 'limit_reached') {
+        setLimitReached(true);
+        if (authUser?.id) {
+          AsyncStorage.setItem(CHAT_LIMIT_REACHED_KEY(authUser.id), 'true').catch(() => {});
+        }
+        setMessages((prev) =>
+          prev.map((m) => (m.id === userMessage.id ? { ...m, sendStatus: 'failed' as const } : m))
+        );
+        return false;
+      }
+
+      const assistantMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: responseData?.reply ?? 'Не удалось получить ответ',
+        timestamp: new Date(),
+      };
+      messagesRef.current = [
+        ...messagesRef.current.map((m) =>
+          m.id === userMessage.id ? { ...m, sendStatus: 'sent' as const } : m
+        ),
+        assistantMessage,
+      ];
+      setMessages((prev) => [
+        ...prev
+          .map((m) => (m.id === userMessage.id ? { ...m, sendStatus: 'sent' as const } : m)),
+        assistantMessage,
+      ]);
+
+      if (typeof responseData?.messages_used === 'number') {
+        setMessagesUsed(responseData.messages_used);
+        setLimitReached(false);
+        if (authUser?.id) {
+          AsyncStorage.removeItem(CHAT_LIMIT_REACHED_KEY(authUser.id)).catch(() => {});
+        }
+        queryClient.setQueryData(queryKey.profile.me(), (old) => {
+          if (!old) return old;
+          return { ...old, ai_messages_used: responseData.messages_used };
+        });
+      }
+      return true;
+    } catch (err: unknown) {
+      const e = err as { status?: number; body?: { error?: string } };
+      let errorContent = 'Ошибка соединения. Попробуйте позже.';
+
+      if (e?.body?.error === 'limit_reached') {
+        setLimitReached(true);
+        errorContent = 'Лимит сообщений исчерпан.';
+      } else if (e?.body?.error === 'No OpenRouter API keys configured') {
+        errorContent = 'AI сервис не настроен.';
+      } else if (e?.body?.error === 'All OpenRouter API keys exhausted') {
+        errorContent = 'Превышен лимит запросов. Попробуйте через минуту.';
+      } else if (e?.status === 401) {
+        errorContent = 'Необходима авторизация.';
+      } else if (e?.status === 403) {
+        errorContent = 'Лимит сообщений исчерпан.';
+      } else if (e?.status === 502) {
+        errorContent = 'AI сервис временно недоступен.';
+      } else if (typeof e?.body?.error === 'string') {
+        errorContent = e.body.error;
+      }
+
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: errorContent,
+        timestamp: new Date(),
+      };
+      messagesRef.current = [
+        ...messagesRef.current.map((m) =>
+          m.id === userMessage.id ? { ...m, sendStatus: 'failed' as const } : m
+        ),
+        errorMessage,
+      ];
+      setMessages((prev) => [
+        ...prev.map((m) => (m.id === userMessage.id ? { ...m, sendStatus: 'failed' as const } : m)),
+        errorMessage,
+      ]);
       return false;
     } finally {
       setLoading(false);
@@ -318,5 +457,5 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
     }
   }, [authUser?.id]);
 
-  return { messages, loading, messagesUsed, limitReached, sendMessage, setGroup, clearMessages };
+  return { messages, loading, messagesUsed, limitReached, sendMessage, retryMessage, setGroup, clearMessages };
 };

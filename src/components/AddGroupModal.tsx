@@ -51,8 +51,7 @@ export const AddGroupModal = ({ visible, onClose, onSubmit }: Props) => {
       <Pressable style={[styles.overlay, { backgroundColor: 'rgba(0,0,0,0.6)' }]} onPress={handleClose}>
         <KeyboardAvoidingView
           style={styles.container}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'position'}
         >
           <View 
             style={[styles.sheet, { backgroundColor: colors.elevated }]}

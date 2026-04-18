@@ -341,7 +341,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
       >
         <KeyboardAvoidingView
           style={styles.editOverlay}
-          behavior="padding"
+          behavior={Platform.OS === 'ios' ? 'padding' : 'position'}
         >
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setRenameGroup(null)} />
           <View style={[styles.editSheet, { backgroundColor: colors.elevated, paddingBottom: insets.bottom + spacing.md }]}>

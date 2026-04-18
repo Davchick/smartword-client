@@ -57,7 +57,7 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
       <Pressable style={styles.overlay} onPress={handleClose}>
         <KeyboardAvoidingView
           style={styles.container}
-          behavior="padding"
+          behavior={Platform.OS === 'ios' ? 'padding' : 'position'}
         >
           <View style={[styles.sheet, { backgroundColor: colors.elevated }]} onStartShouldSetResponder={() => true}>
             <View style={styles.header}>
