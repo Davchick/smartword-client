@@ -26,6 +26,7 @@ import { SearchFilterBar } from '../../components/SearchFilterBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
 import { useDebounceValue } from '../../hooks/useDebounceValue';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { pluralizeRu } from '../../lib/pluralizeRu';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -53,12 +54,10 @@ export const ArchiveScreen = ({ navigation }: Props) => {
   const [sortBy, setSortBy] = useState<'count' | 'name' | 'score'>('count');
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const handleRefresh = useCallback(async () => {
-    await refetch();
-    setLastUpdated(new Date());
-  }, [refetch]);
+  const { refreshing: localRefreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+    onRefresh: () => refetch(),
+  });
 
   // Слова приходят уже отфильтрованными по search query с сервера
   const archivedWordsList = words;
@@ -243,7 +242,7 @@ export const ArchiveScreen = ({ navigation }: Props) => {
         refreshControl={
           user ? (
             <RefreshControl
-              refreshing={refreshing}
+              refreshing={localRefreshing}
               onRefresh={handleRefresh}
               tintColor={colors.primary}
               colors={[colors.primary]}

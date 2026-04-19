@@ -5,12 +5,12 @@
  * avatarId/nickname — локальное UI-состояние → AsyncStorage (без изменений).
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet, getBaseUrl } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { queryKey, invalidateProfile } from '../lib/queryKeys';
+import { queryKey } from '../lib/queryKeys';
 
 export interface Profile {
   id: string;
@@ -30,22 +30,13 @@ const NICKNAME_KEY = 'smartword_nickname';
 // ─── Query function ────────────────────────────────────────────────────
 
 async function fetchProfileQuery(
-  authUser: ReturnType<typeof useAuth>['user'],
-  queryClient: ReturnType<typeof useQueryClient>
+  authUser: ReturnType<typeof useAuth>['user']
 ): Promise<Profile | null> {
   if (!authUser) {
     return null;
   }
 
-  // Проверяем кэш React Query — AuthContext уже мог загрузить данные
-  const cachedProfile = queryClient.getQueryData<Profile>(queryKey.profile.me());
-  if (cachedProfile) {
-    return cachedProfile;
-  }
-
-  // Кэша нет — нужен серверный запрос, но только если есть baseUrl
   if (!getBaseUrl()) {
-    // Нет baseUrl — возвращаем fallback из authUser
     return {
       id: authUser.id,
       is_premium: authUser.is_premium,
@@ -73,14 +64,16 @@ export const useProfile = () => {
   const {
     data: serverProfile,
     isLoading: loading,
+    isFetching,
     refetch,
+    dataUpdatedAt,
   } = useQuery({
     queryKey: queryKey.profile.me(),
-    queryFn: () => fetchProfileQuery(authUser, queryClient),
-    // Профиль — стабильные данные. Refetch только при фокусе экрана.
-    staleTime: 10 * 60 * 1000, // 10 мин — профиль меняется крайне редко
+    queryFn: () => fetchProfileQuery(authUser),
+    staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
     enabled: !!authUser,
+    notifyOnChangeProps: ['data', 'isLoading'],
   });
 
   // Загрузка локального UI-состояния
@@ -118,13 +111,18 @@ export const useProfile = () => {
         }
       : null);
 
+  const handleRefresh = useCallback(async () => {
+    await queryClient.refetchQueries({ queryKey: queryKey.profile.me() });
+    await queryClient.refetchQueries({ queryKey: queryKey.stats.overview() });
+    await queryClient.refetchQueries({ queryKey: queryKey.stats.trainingProgress() });
+    await queryClient.refetchQueries({ queryKey: queryKey.streaks.current() });
+  }, [queryClient]);
+
   return {
     profile: profileOrFromAuth,
     loading,
-    refetch: () => {
-      invalidateProfile(queryClient);
-      return refetch();
-    },
+    isFetching,
+    refetch: handleRefresh,
     avatarId,
     setAvatarId,
     nickname,

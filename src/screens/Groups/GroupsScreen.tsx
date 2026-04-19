@@ -20,6 +20,7 @@ import { useGroups } from '../../hooks/useGroups';
 import { useProfile } from '../../hooks/useProfile';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApiError } from '../../hooks/useApiError';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { AddGroupModal } from '../../components/AddGroupModal';
 import { PaywallModal } from '../../components/PaywallModal';
 import { BottomSheet } from '../../components/ui/BottomSheet';
@@ -45,16 +46,10 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
 
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [paywallVisible, setPaywallVisible] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    // Инвалидируем только groups — stats обновится по staleTime (60s)
-    await queryClient.invalidateQueries({ queryKey: queryKey.groups.list() });
-    setLastUpdated(new Date());
-    setRefreshing(false);
-  }, []);
+  const { refreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+    onRefresh: () => queryClient.refetchQueries({ queryKey: queryKey.groups.list() }),
+  });
 
   // Количество неархивных слов берём прямо из learned_count группы
   // learned_count = слова с correct_count >= 5 (архивные)

@@ -21,6 +21,7 @@ import { useWords } from '../../hooks/useWords';
 import { useProfile } from '../../hooks/useProfile';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApiError } from '../../hooks/useApiError';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { AddWordModal } from '../../components/AddWordModal';
 import { SearchFilterBar } from '../../components/SearchFilterBar';
 import { BottomSheet } from '../../components/ui/BottomSheet';
@@ -56,15 +57,10 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
   const { handleApiError } = useApiError();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await refetch();
-    setLastUpdated(new Date());
-    setRefreshing(false);
-  }, [refetch]);
+  const { refreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+    onRefresh: () => refetch(),
+  });
 
   // Search & sort
   const [searchQuery, setSearchQuery] = useState('');

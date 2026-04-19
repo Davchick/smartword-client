@@ -13,11 +13,12 @@ import WebView from 'react-native-webview';
 import { useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Crown, ChevronLeft, Zap, MessageCircle, BookOpen, Sparkles, CreditCard, ExternalLink, FileText, Shield, Check, ArrowRight, RotateCcw, X } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import { useToast } from '../../components/Toast';
 import { useProfile } from '../../hooks/useProfile';
+import { useAuth } from '../../contexts/AuthContext';
 import { createSubscriptionPayment, getSubscriptionStatus, type PlanId, type PaymentMethod } from '../../lib/billing';
 import { queryKey, invalidateProfile } from '../../lib/queryKeys';
 import type { RootStackParamList } from '../../navigation/types';
@@ -83,9 +84,11 @@ const BENEFITS = [
 export const PaymentScreen = () => {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const { profile } = useProfile();
+  const { profile, refetch: refetchProfile } = useProfile();
   const { showToast } = useToast();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { user, setUser } = useAuth();
+  const queryClient = useQueryClient();
 
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('year');
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('card');
@@ -94,8 +97,6 @@ export const PaymentScreen = () => {
   const [webViewUrl, setWebViewUrl] = useState<string | null>(null);
   const [isWebViewVisible, setIsWebViewVisible] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'confirmed' | 'timeout'>('idle');
-
-  const queryClient = useQueryClient();
 
   // Анимация scale для выбранного тарифа
   const [planScales, setPlanScales] = useState<Record<PlanId, Animated.Value>>(() => ({
@@ -157,7 +158,7 @@ export const PaymentScreen = () => {
     return { isSuccess, isCancel };
   }, []);
 
-  const startPolling = useCallback(async () => {
+  const startPolling = useCallback(async (url?: string) => {
     setPaymentStatus('processing');
     let attempts = 0;
     const maxAttempts = 20;
@@ -173,8 +174,19 @@ export const PaymentScreen = () => {
             pollingRef.current = null;
           }
           invalidateProfile(queryClient);
+          await refetchProfile();
+          if (status.subscription_type && status.subscription_expires_at) {
+            setUser({
+              ...user!,
+              is_premium: true,
+            });
+          }
           setPaymentStatus('confirmed');
           showToast('Подписка активирована', 'success');
+          if (url) {
+            setIsWebViewVisible(false);
+            setWebViewUrl(null);
+          }
         } else if (attempts >= maxAttempts) {
           if (pollingRef.current) {
             clearInterval(pollingRef.current);
@@ -193,13 +205,13 @@ export const PaymentScreen = () => {
         }
       }
     }, pollInterval);
-  }, [queryClient, showToast]);
+  }, [queryClient, showToast, refetchProfile, setUser, user]);
 
-  const handleWebViewClose = useCallback((wasSuccess?: boolean, shouldPoll?: boolean) => {
+  const handleWebViewClose = useCallback((wasSuccess?: boolean, shouldPoll?: boolean, pollingUrl?: string) => {
     setIsWebViewVisible(false);
     setWebViewUrl(null);
     if (shouldPoll !== false && wasSuccess) {
-      startPolling();
+      startPolling(pollingUrl);
     }
   }, [startPolling]);
 
@@ -537,7 +549,7 @@ export const PaymentScreen = () => {
             <TouchableOpacity
               onPress={() => {
                 showToast('Проверяем статус оплаты...', 'info');
-                handleWebViewClose(false, true);
+                handleWebViewClose(false, true, webViewUrl || undefined);
               }}
               style={styles.webViewCloseBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}

@@ -30,6 +30,7 @@ import { useTrainingProgress } from '../../hooks/useTrainingProgress';
 import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { useStreak } from '../../hooks/useStreak';
+import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { queryClient } from '../../lib/queryClient';
 import { queryKey } from '../../lib/queryKeys';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
@@ -53,7 +54,7 @@ export const ProfileScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const deviceSize = useDeviceSize();
   const { signOut } = useAuth();
-  const { profile, loading, refetch, avatarId, setAvatarId, nickname, setNickname } = useProfile();
+  const { profile, loading, isFetching: profileFetching, refetch, avatarId, setAvatarId, nickname, setNickname } = useProfile();
   const { progress: trainingProgress, loading: progressLoading } = useTrainingProgress();
   const { streak } = useStreak();
 
@@ -61,16 +62,14 @@ export const ProfileScreen = () => {
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [editingNick, setEditingNick] = useState(false);
   const [nickDraft, setNickDraft] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    // Инвалидируем только profile — stats и streaks обновятся по staleTime
-    await queryClient.invalidateQueries({ queryKey: queryKey.profile.me() });
-    setLastUpdated(new Date());
-    setRefreshing(false);
-  }, []);
+  const { refreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+    onRefresh: async () => {
+      await refetch();
+    },
+  });
+
+  
 
   const handleSignOut = () => {
     Alert.alert('Выйти из аккаунта?', 'Вы уверены?', [
@@ -382,17 +381,6 @@ export const ProfileScreen = () => {
         )}
       </View>
 
-      {lastUpdated && (
-        <Text 
-          style={[styles.lastUpdated, { color: colors.muted }]}
-          accessibilityRole="text"
-          accessibilityLabel={`Последнее обновление: ${lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`}
-          accessibilityLiveRegion="polite"
-        >
-          Обновлено: {lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-        </Text>
-      )}
-
       <Text style={[styles.versionText, { color: colors.muted }]}>SmartWord v1.0.0</Text>
 
       {/* Модальное окно выбора аватарки */}
@@ -668,12 +656,6 @@ const useProfileStyles = () => {
       fontSize: typography.small,
       fontFamily: fonts.regular,
       marginTop: spacing.sm,
-    },
-    lastUpdated: {
-      textAlign: 'center',
-      fontSize: typography.xs,
-      fontFamily: fonts.regular,
-      marginTop: spacing.xs,
     },
     avatarGrid: {
       flexDirection: 'row',
