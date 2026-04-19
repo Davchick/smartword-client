@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -7,12 +7,16 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
-  Alert,
   Dimensions,
 } from 'react-native';
+import WebView from 'react-native-webview';
 import { LinearGradient } from 'expo-linear-gradient';
 import { X, Crown, Zap, MessageCircle, BookOpen, Check, ArrowRight, Sparkles } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography, fonts } from '../theme';
+import { createSubscriptionPayment, getSubscriptionStatus } from '../lib/billing';
+import { useToast } from './Toast';
+import { invalidateProfile } from '../lib/queryKeys';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface Props {
   visible: boolean;
@@ -20,6 +24,9 @@ interface Props {
   reason: 'groups' | 'words' | 'chat';
   onPurchaseSuccess?: () => void;
 }
+
+type LocalPlanId = 'month' | 'half_year' | 'year';
+type LocalPaymentMethod = 'card';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,7 +43,7 @@ const FEATURES = [
   { icon: Sparkles, text: 'Ранний доступ к новым функциям' },
 ];
 
-const PLANS = [
+const PLANS: { id: LocalPlanId; title: string; price: string; badge: string | null }[] = [
   { id: 'month', title: '1 мес', price: '299 ₽', badge: null },
   { id: 'half_year', title: '6 мес', price: '1 699 ₽', badge: '-5%' },
   { id: 'year', title: '12 мес', price: '3 169 ₽', badge: '🔥 Выгодно' },
@@ -44,8 +51,14 @@ const PLANS = [
 
 export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Props) => {
   const { colors, isDark } = useTheme();
-  const [selectedPlan, setSelectedPlan] = useState('year');
+  const { showToast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [selectedPlan, setSelectedPlan] = useState<LocalPlanId>('year');
   const [purchasing, setPurchasing] = useState(false);
+  const [webViewUrl, setWebViewUrl] = useState<string | null>(null);
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'confirmed' | 'timeout'>('idle');
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const selectedPlanData = PLANS.find((p) => p.id === selectedPlan)!;
 
@@ -53,22 +66,93 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
     ? ['#0EA5E9', '#6366F1', '#8B5CF6']
     : ['#0284C7', '#4F46E5', '#7C3AED'];
 
+  const resolvePaymentState = useCallback((url: string) => {
+    const normalizedUrl = url.toLowerCase();
+    const isSuccess = normalizedUrl.includes('/payment/success') || normalizedUrl.includes('checkorder') || normalizedUrl.includes('success=true');
+    const isCancel = normalizedUrl.includes('cancel=true') || normalizedUrl.includes('reject') || normalizedUrl.includes('failed');
+    return { isSuccess, isCancel };
+  }, []);
+
+  const startPolling = useCallback(async () => {
+    setPaymentStatus('processing');
+    const maxAttempts = 20;
+    const pollInterval = 2000;
+    let attemptsRef = { current: 0 };
+
+    const checkStatus = async () => {
+      attemptsRef.current += 1;
+      try {
+        const status = await getSubscriptionStatus();
+        if (status.is_premium) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          invalidateProfile(queryClient);
+          setPaymentStatus('confirmed');
+          showToast('Подписка активирована', 'success');
+          onPurchaseSuccess?.();
+        } else if (attemptsRef.current >= maxAttempts) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          setPaymentStatus('timeout');
+          showToast('Оплата обрабатывается. Проверьте статус через несколько минут.', 'info');
+        }
+      } catch (e) {
+        if (attemptsRef.current >= maxAttempts) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          setPaymentStatus('timeout');
+        }
+      }
+    };
+
+    pollingRef.current = setInterval(checkStatus, pollInterval);
+  }, [queryClient, showToast, onPurchaseSuccess]);
+
+  const handleWebViewClose = useCallback((wasSuccess?: boolean, shouldPoll?: boolean) => {
+    setWebViewUrl(null);
+    if (shouldPoll !== false && wasSuccess) {
+      startPolling();
+    }
+  }, [startPolling]);
+
+  const handleNavigationStateChange = useCallback((navState: { url?: string }) => {
+    const url = navState.url || '';
+    if (!url) return;
+    const { isSuccess, isCancel } = resolvePaymentState(url);
+    if (isSuccess) {
+      handleWebViewClose(true);
+    } else if (isCancel) {
+      handleWebViewClose(false);
+      showToast('Оплата отменена. Попробуйте ещё раз.', 'info');
+    }
+  }, [handleWebViewClose, resolvePaymentState, showToast]);
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
+
   const handlePurchase = async () => {
     setPurchasing(true);
     try {
-      // TODO: Интеграция с ЮKassa — здесь будет:
-      // 1. Вызов createSubscriptionPayment(selectedProduct, method) из lib/billing
-      // 2. Получение confirmation_url от ЮKassa
-      // 3. Открытие web-страницы оплаты
-      // 4. Обработка returnUrl и подтверждение оплаты
-      // 5. Вызов onPurchaseSuccess() при успешной оплате
-      Alert.alert(
-        'Premium скоро будет доступен',
-        'Оплата через ЮKassa находится в разработке. Следите за обновлениями!',
-        [{ text: 'OK', onPress: onClose }]
-      );
+      const { confirmation_url } = await createSubscriptionPayment(selectedPlan, 'card');
+      if (confirmation_url) {
+        setWebViewUrl(confirmation_url);
+      } else {
+        showToast('Не удалось получить ссылку на оплату. Попробуйте позже.', 'error');
+      }
     } catch (err) {
       console.error('[Paywall] Purchase error:', err);
+      showToast('Ошибка при создании платежа. Проверьте интернет и попробуйте ещё раз.', 'error');
     } finally {
       setPurchasing(false);
     }
@@ -188,6 +272,116 @@ export const PaywallModal = ({ visible, onClose, reason, onPurchaseSuccess }: Pr
           </ScrollView>
         </View>
       </View>
+
+      {webViewUrl && (
+        <View style={styleswebView.container}>
+          <View style={styleswebView.header}>
+            <Text style={styleswebView.title}>Оплата</Text>
+            <TouchableOpacity
+              onPress={() => {
+                showToast('Проверяем статус оплаты...', 'info');
+                handleWebViewClose(false, true);
+              }}
+              style={styleswebView.closeBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X color={colors.text} size={22} />
+            </TouchableOpacity>
+          </View>
+          <WebView
+            source={{ uri: webViewUrl }}
+            style={styleswebView.webView}
+            onNavigationStateChange={handleNavigationStateChange}
+            onShouldStartWithLoadRequest={(request: { url?: string }) => {
+              const url = request.url || '';
+              if (url) {
+                handleNavigationStateChange({ url });
+              }
+              return true;
+            }}
+            startInLoadingState={true}
+            renderLoading={() => (
+              <View style={styleswebView.loading}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styleswebView.loadingText}>Загрузка...</Text>
+              </View>
+            )}
+            injectedJavaScript={`
+              (function() {
+                var originalPushState = window.history.pushState;
+                window.history.pushState = function() {
+                  originalPushState.apply(this, arguments);
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'url_change', url: window.location.href }));
+                };
+                window.addEventListener('hashchange', function() {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'url_change', url: window.location.href }));
+                });
+              })();
+              true;
+            `}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                if (data.type === 'url_change' && data.url) {
+                  handleNavigationStateChange({ url: data.url });
+                }
+              } catch {}
+            }}
+          />
+        </View>
+      )}
+
+      {(paymentStatus === 'processing' || paymentStatus === 'confirmed' || paymentStatus === 'timeout') && (
+        <View style={stylesWaiting.overlay}>
+          <View style={stylesWaiting.content}>
+            {paymentStatus === 'processing' && (
+              <>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[stylesWaiting.title, { color: colors.text }]}>Ожидание подтверждения</Text>
+                <Text style={[stylesWaiting.desc, { color: colors.muted }]}>
+                  Платёж обрабатывается. Это может занять до 40 секунд.
+                </Text>
+              </>
+            )}
+            {paymentStatus === 'confirmed' && (
+              <>
+                <View style={[stylesWaiting.successIcon, { backgroundColor: colors.primary }]}>
+                  <Check color="#fff" size={32} strokeWidth={3} />
+                </View>
+                <Text style={[stylesWaiting.title, { color: colors.text }]}>Оплата успешна!</Text>
+                <TouchableOpacity
+                  style={[stylesWaiting.button, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    onClose();
+                    onPurchaseSuccess?.();
+                  }}
+                >
+                  <Text style={stylesWaiting.buttonText}>Продолжить</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {paymentStatus === 'timeout' && (
+              <>
+                <View style={[stylesWaiting.successIcon, { backgroundColor: colors.muted }]}>
+                  <Crown color="#fff" size={32} />
+                </View>
+                <Text style={[stylesWaiting.title, { color: colors.text }]}>Оплата в обработке</Text>
+                <Text style={[stylesWaiting.desc, { color: colors.muted }]}>
+                  Информация о платеже поступит в течение нескольких минут.
+                </Text>
+                <TouchableOpacity
+                  style={[stylesWaiting.button, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    onClose();
+                  }}
+                >
+                  <Text style={stylesWaiting.buttonText}>Понятно</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      )}
     </Modal>
   );
 };
@@ -378,5 +572,94 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontFamily: fonts.black,
     color: '#fff',
+  },
+});
+
+const styleswebView = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    zIndex: 1000,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    backgroundColor: '#1E293B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  title: {
+    fontSize: typography.body,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    color: '#fff',
+  },
+  closeBtn: {
+    padding: spacing.xs,
+  },
+  webView: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  loading: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.body,
+    color: '#94A3B8',
+  },
+});
+
+const stylesWaiting = StyleSheet.create({
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1001,
+    backgroundColor: 'rgba(2,6,23,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  content: {
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  title: {
+    fontSize: typography.subtitle,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
+  desc: {
+    fontSize: typography.body,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  successIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  button: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radii.full,
+    marginTop: spacing.md,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: typography.body,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
   },
 });

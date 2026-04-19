@@ -14,6 +14,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../../navigation/types';
 import {
   ArrowLeft,
   Sun,
@@ -26,6 +28,7 @@ import {
   Info,
   Eye,
   EyeOff,
+  User,
   } from 'lucide-react-native';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { useThemeContext } from '../../theme/ThemeContext';
@@ -43,7 +46,7 @@ const THEME_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
 
 export const ProfileSettingsScreen = () => {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { colors } = useTheme();
   const { themeMode, setThemeMode } = useThemeContext();
   const { showToast } = useToast();
@@ -209,6 +212,26 @@ export const ProfileSettingsScreen = () => {
               {!canChangePassword && (
                 <Text style={[styles.menuMeta, { color: colors.muted }]}>Доступно только в аккаунте</Text>
               )}
+            </View>
+            <ChevronRight color={colors.muted} size={18} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => {
+              if (!canChangePassword) {
+                showToast('Войдите в аккаунт', 'error');
+                return;
+              }
+              navigation.navigate('ProfileAccount');
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.menuIcon, { backgroundColor: colors.primaryDim }]}>
+              <User color={colors.primary} size={17} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuText, { color: colors.text }]}>Аккаунт</Text>
             </View>
             <ChevronRight color={colors.muted} size={18} />
           </TouchableOpacity>
@@ -400,6 +423,7 @@ const styles = StyleSheet.create({
   card: { borderRadius: radii.md, borderWidth: 1, overflow: 'hidden' },
   themeRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
   menuRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
+  accountInfoRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, gap: spacing.md },
   menuIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   menuText: { fontSize: typography.body, fontFamily: fonts.medium },
   menuMeta: { fontSize: typography.small, fontFamily: fonts.regular },

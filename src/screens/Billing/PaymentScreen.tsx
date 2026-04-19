@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,17 +6,20 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Linking,
   Animated,
+  Linking,
 } from 'react-native';
+import WebView from 'react-native-webview';
+import { useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { Crown, ChevronLeft, Zap, MessageCircle, BookOpen, Sparkles, CreditCard, ExternalLink, FileText, Shield, Check, ArrowRight, RotateCcw, Info } from 'lucide-react-native';
+import { Crown, ChevronLeft, Zap, MessageCircle, BookOpen, Sparkles, CreditCard, ExternalLink, FileText, Shield, Check, ArrowRight, RotateCcw, X } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import { useToast } from '../../components/Toast';
 import { useProfile } from '../../hooks/useProfile';
-import { createSubscriptionPayment, type PlanId, type PaymentMethod } from '../../lib/billing';
+import { createSubscriptionPayment, getSubscriptionStatus, type PlanId, type PaymentMethod } from '../../lib/billing';
+import { queryKey, invalidateProfile } from '../../lib/queryKeys';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -88,6 +91,11 @@ export const PaymentScreen = () => {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>('card');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [webViewUrl, setWebViewUrl] = useState<string | null>(null);
+  const [isWebViewVisible, setIsWebViewVisible] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'confirmed' | 'timeout'>('idle');
+
+  const queryClient = useQueryClient();
 
   // Анимация scale для выбранного тарифа
   const [planScales, setPlanScales] = useState<Record<PlanId, Animated.Value>>(() => ({
@@ -95,6 +103,8 @@ export const PaymentScreen = () => {
     half_year: new Animated.Value(1),
     year: new Animated.Value(1),
   }));
+
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const selectedPlanData = PLANS.find((p) => p.id === selectedPlan)!;
   const isPremiumActive = profile?.is_premium;
@@ -128,7 +138,8 @@ export const PaymentScreen = () => {
     try {
       const { confirmation_url } = await createSubscriptionPayment(selectedPlan, selectedMethod);
       if (confirmation_url) {
-        await Linking.openURL(confirmation_url);
+        setWebViewUrl(confirmation_url);
+        setIsWebViewVisible(true);
       } else {
         setError('Не удалось получить ссылку на оплату. Попробуйте позже.');
       }
@@ -138,6 +149,91 @@ export const PaymentScreen = () => {
       setLoading(false);
     }
   };
+
+  const resolvePaymentState = useCallback((url: string) => {
+    const normalizedUrl = url.toLowerCase();
+    const isSuccess = normalizedUrl.includes('/payment/success') || normalizedUrl.includes('checkorder') || normalizedUrl.includes('success=true');
+    const isCancel = normalizedUrl.includes('cancel=true') || normalizedUrl.includes('reject') || normalizedUrl.includes('failed');
+    return { isSuccess, isCancel };
+  }, []);
+
+  const startPolling = useCallback(async () => {
+    setPaymentStatus('processing');
+    let attempts = 0;
+    const maxAttempts = 20;
+    const pollInterval = 2000;
+
+    pollingRef.current = setInterval(async () => {
+      attempts++;
+      try {
+        const status = await getSubscriptionStatus();
+        if (status.is_premium) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          invalidateProfile(queryClient);
+          setPaymentStatus('confirmed');
+          showToast('Подписка активирована', 'success');
+        } else if (attempts >= maxAttempts) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          setPaymentStatus('timeout');
+          showToast('Оплата обрабатывается. Проверьте статус через несколько минут.', 'info');
+        }
+      } catch (e) {
+        if (attempts >= maxAttempts) {
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          setPaymentStatus('timeout');
+        }
+      }
+    }, pollInterval);
+  }, [queryClient, showToast]);
+
+  const handleWebViewClose = useCallback((wasSuccess?: boolean, shouldPoll?: boolean) => {
+    setIsWebViewVisible(false);
+    setWebViewUrl(null);
+    if (shouldPoll !== false && wasSuccess) {
+      startPolling();
+    }
+  }, [startPolling]);
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
+
+  const handleGoToMain = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Main');
+    }
+  }, [navigation]);
+
+  const handleNavigationStateChange = useCallback((navState: { url?: string }) => {
+    const url = navState.url || '';
+    if (!url) return;
+    const { isSuccess, isCancel } = resolvePaymentState(url);
+    if (isSuccess) {
+      handleWebViewClose(true);
+    } else if (isCancel) {
+      handleWebViewClose(false);
+      showToast('Оплата отменена. Попробуйте ещё раз.', 'info');
+    }
+  }, [handleWebViewClose, resolvePaymentState, showToast]);
 
   const handleGoBack = () => {
     if (navigation.canGoBack()) {
@@ -297,7 +393,7 @@ export const PaymentScreen = () => {
                           <Text style={styles.planBadgeText}>🔥 Лучший выбор</Text>
                         </View>
                       )}
-                      {plan.savings && !plan.highlight && (
+{plan.savings && !plan.highlight && (
                         <View style={[styles.planBadge, styles.planBadgeSecondary]}>
                           <Text style={styles.planBadgeText}>{plan.savings} экономия</Text>
                         </View>
@@ -433,6 +529,116 @@ export const PaymentScreen = () => {
           </View>
         )}
       </ScrollView>
+
+      {isWebViewVisible && webViewUrl && (
+        <View style={[styles.webViewContainer, { paddingTop: insets.top }]}>
+          <View style={[styles.webViewHeader, { backgroundColor: colors.card }]}>
+            <Text style={[styles.webViewTitle, { color: colors.text }]}>Оплата</Text>
+            <TouchableOpacity
+              onPress={() => {
+                showToast('Проверяем статус оплаты...', 'info');
+                handleWebViewClose(false, true);
+              }}
+              style={styles.webViewCloseBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X color={colors.muted} size={22} />
+            </TouchableOpacity>
+          </View>
+          <WebView
+            source={{ uri: webViewUrl }}
+            style={styles.webView}
+            onNavigationStateChange={handleNavigationStateChange}
+            onShouldStartWithLoadRequest={(request: { url?: string }) => {
+              const url = request.url || '';
+              if (url) {
+                handleNavigationStateChange({ url });
+              }
+              return true;
+            }}
+            startInLoadingState={true}
+            renderLoading={() => (
+              <View style={styles.webViewLoading}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.webViewLoadingText, { color: colors.muted }]}>
+                  Загрузка...
+                </Text>
+              </View>
+            )}
+            injectedJavaScript={`
+              (function() {
+                var originalPushState = window.history.pushState;
+                window.history.pushState = function() {
+                  originalPushState.apply(this, arguments);
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'url_change', url: window.location.href }));
+                };
+                window.addEventListener('hashchange', function() {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'url_change', url: window.location.href }));
+                });
+              })();
+              true;
+            `}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                if (data.type === 'url_change' && data.url) {
+                  handleNavigationStateChange({ url: data.url });
+                }
+              } catch {}
+            }}
+          />
+        </View>
+      )}
+
+      {(paymentStatus === 'processing' || paymentStatus === 'confirmed' || paymentStatus === 'timeout') && (
+        <View style={[styles.waitingOverlay, { backgroundColor: colors.background }]}>
+          <View style={styles.waitingContent}>
+            {paymentStatus === 'processing' && (
+              <>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.waitingTitle, { color: colors.text }]}>Ожидание подтверждения</Text>
+                <Text style={[styles.waitingDesc, { color: colors.muted }]}>
+                  Платёж обрабатывается. Это может занять до 40 секунд.
+                </Text>
+              </>
+            )}
+            {paymentStatus === 'confirmed' && (
+              <>
+                <View style={[styles.successIcon, { backgroundColor: colors.primary }]}>
+                  <Check color="#fff" size={32} strokeWidth={3} />
+                </View>
+                <Text style={[styles.waitingTitle, { color: colors.text }]}>Оплата успешна!</Text>
+                <Text style={[styles.waitingDesc, { color: colors.muted }]}>
+                  Спасибо за поддержку. Premium активирован.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.waitingButton, { backgroundColor: colors.primary }]}
+                  onPress={handleGoToMain}
+                >
+                  <Text style={styles.waitingButtonText}>Продолжить</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {paymentStatus === 'timeout' && (
+              <>
+                <View style={[styles.successIcon, { backgroundColor: colors.muted }]}>
+                  <Crown color="#fff" size={32} />
+                </View>
+                <Text style={[styles.waitingTitle, { color: colors.text }]}>Оплата в обработке</Text>
+                <Text style={[styles.waitingDesc, { color: colors.muted }]}>
+                  Информация о платеже поступит в течение нескольких минут. Если Premium не активируется, обратитесь в поддержку.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.waitingButton, { backgroundColor: colors.primary }]}
+                  onPress={handleGoToMain}
+                >
+                  <Text style={styles.waitingButtonText}>Понятно</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      )}
 
       {/* ===== STICKY CTA КНОПКА (улучшенный дизайн) ===== */}
       {!isPremiumActive && (
@@ -910,5 +1116,89 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontFamily: fonts.black,
     color: '#fff',
+  },
+
+  webViewContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    zIndex: 1000,
+  },
+  webViewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    backgroundColor: '#1E293B',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  webViewTitle: {
+    fontSize: typography.body,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    color: '#fff',
+  },
+  webViewCloseBtn: {
+    padding: spacing.xs,
+  },
+  webView: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  webViewLoading: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  webViewLoadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.body,
+    color: '#94A3B8',
+  },
+
+  waitingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1001,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  waitingContent: {
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  waitingTitle: {
+    fontSize: typography.subtitle,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
+  waitingDesc: {
+    fontSize: typography.body,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  successIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  waitingButton: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderRadius: radii.full,
+    marginTop: spacing.md,
+  },
+  waitingButtonText: {
+    color: '#fff',
+    fontSize: typography.body,
+    fontWeight: '700',
+    fontFamily: fonts.bold,
   },
 });

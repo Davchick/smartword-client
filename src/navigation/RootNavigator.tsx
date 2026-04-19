@@ -7,6 +7,7 @@ import { SignInScreen } from '../screens/Auth/SignInScreen';
 import { WelcomeScreen } from '../screens/Auth/WelcomeScreen';
 import { TabNavigator } from './TabNavigator';
 import { ProfileSettingsScreen } from '../screens/Profile/ProfileSettingsScreen';
+import { ProfileAccountScreen } from '../screens/Profile/ProfileAccountScreen';
 
 import { PaymentScreen } from '../screens/Billing/PaymentScreen';
 import { useTheme } from '../theme';
@@ -96,6 +97,7 @@ export const RootNavigator = () => {
           <Stack.Screen name="SignIn" component={SignInScreen} />
           <Stack.Screen name="Main" component={TabNavigator} />
           <Stack.Screen name="ProfileSettings" component={ProfileSettingsScreen} />
+          <Stack.Screen name="ProfileAccount" component={ProfileAccountScreen} />
           <Stack.Screen name="BillingPayment" component={PaymentScreen} />
         </Stack.Navigator>
       </NavigationContainer>

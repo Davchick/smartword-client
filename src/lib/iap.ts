@@ -31,7 +31,11 @@ export const initIAP = async (): Promise<any[]> => {
         if (responseCode === IAP.IAPResponseCode.OK && results) {
           for (const purchase of results) {
             if (!purchase.acknowledged) {
-              await IAP.finishTransactionAsync(purchase, false);
+              try {
+                await IAP.finishTransactionAsync(purchase, false);
+              } catch (err) {
+                console.error('[IAP] finishTransaction failed:', err);
+              }
             }
           }
         }
@@ -40,7 +44,8 @@ export const initIAP = async (): Promise<any[]> => {
 
     const { results } = await IAP.getProductsAsync(Object.values(PRODUCT_IDS));
     return results ?? [];
-  } catch {
+  } catch (err) {
+    console.error('[IAP] init failed:', err);
     return [];
   }
 };

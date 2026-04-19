@@ -8,6 +8,7 @@ export type RootStackParamList = {
   SignIn: { fromProfile?: boolean } | undefined;
   Main: undefined;
   ProfileSettings: undefined;
+  ProfileAccount: undefined;
   BillingPayment: undefined;
   Legal: undefined;
 };
