@@ -11,7 +11,9 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CompositeNavigationProp } from '@react-navigation/native';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import type { MainTabParamList, RootStackParamList } from '../../navigation/types';
 import {
   Crown,
   LogOut,
@@ -36,8 +38,6 @@ import { queryKey } from '../../lib/queryKeys';
 import { useTheme, fonts, spacing, radii, typography } from '../../theme';
 import { useDeviceSize } from '../../hooks/useDeviceSize';
 import { moderateScale, scale } from '../../utils/responsive';
-import type { RootStackParamList } from '../../navigation/types';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ProgressChart } from '../../components/ProgressChart';
 import { StreakCounter } from '../../components/StreakCounter';
 
@@ -258,7 +258,7 @@ export const ProfileScreen = () => {
           <View style={[styles.upgradeCard, { borderColor: colors.primary, backgroundColor: colors.card }]}>
             <TouchableOpacity
               style={styles.upgradeLeft}
-              onPress={() => navigation.navigate('BillingPayment')}
+              onPress={() => navigation.getParent()?.navigate('BillingPayment')}
               activeOpacity={0.85}
             >
               <Crown color={colors.primary} size={moderateScale(26)} />

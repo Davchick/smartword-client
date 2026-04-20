@@ -27,7 +27,6 @@ import { useGroups } from '../../hooks/useGroups';
 import { queryClient } from '../../lib/queryClient';
 import { queryKey, invalidateProfile } from '../../lib/queryKeys';
 import { TypingIndicator } from '../../components/TypingIndicator';
-import { PaywallModal } from '../../components/PaywallModal';
 import { useTheme, fonts } from '../../theme';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -104,7 +103,6 @@ export const ChatScreen = () => {
   );
 
   const [inputText, setInputText] = useState('');
-  const [paywallVisible, setPaywallVisible] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const inputRef = useRef<TextInput>(null);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -166,12 +164,9 @@ export const ChatScreen = () => {
   const handleSend = useCallback(async () => {
     if (!inputText.trim() || loading) return;
     if (!profile?.is_premium && messagesUsed >= FREE_MESSAGES_LIMIT) {
-      setPaywallVisible(true);
       return;
     }
     if (limitReached) {
-      setPaywallVisible(true);
-      return;
     }
     const text = inputText;
     setInputText('');
@@ -321,7 +316,6 @@ export const ChatScreen = () => {
           {!profile?.is_premium && stage === 'active' && (
             <TouchableOpacity
               style={[styles.limitBadge, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => setPaywallVisible(true)}
               activeOpacity={0.7}
             >
               <View style={styles.limitBadgeContent}>
@@ -487,13 +481,6 @@ export const ChatScreen = () => {
           </View>
         </>
       )}
-
-      <PaywallModal
-        visible={paywallVisible}
-        onClose={() => setPaywallVisible(false)}
-        reason="chat"
-        onPurchaseSuccess={() => queryClient.invalidateQueries({ queryKey: queryKey.profile.all })}
-      />
     </KeyboardAvoidingView>
   );
 };

@@ -19,7 +19,6 @@ import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import { useTrainingSession } from '../../hooks/useTrainingSession';
 import { useProfile } from '../../hooks/useProfile';
 import { useWeeklyLimit } from '../../hooks/useWeeklyLimit';
-import { PaywallModal } from '../../components/PaywallModal';
 import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
 import { ARCHIVE_THRESHOLD } from '../../constants';
 import type { TrainingWriteScreenProps } from '../../navigation/types';
@@ -74,7 +73,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
   const [hintCount, setHintCount] = useState(0);
   const [sessionHints, setSessionHints] = useState(0);
   const [skipped, setSkipped] = useState(false);
-  const [paywallVisible, setPaywallVisible] = useState(false);
   const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
 
   // Отслеживаем достижение лимита во время сессии
@@ -419,7 +417,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
                 elevation: 8,
               },
             ]}
-            onPress={() => setPaywallVisible(true)}
             activeOpacity={0.85}
           >
             <Crown color={colors.background} size={20} />
@@ -436,11 +433,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
           </TouchableOpacity>
         </View>
 
-        <PaywallModal
-          visible={paywallVisible}
-          onClose={() => setPaywallVisible(false)}
-          reason="words"
-        />
       </View>
     );
   }
@@ -480,7 +472,6 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
                   elevation: 8,
                 },
               ]}
-              onPress={() => setPaywallVisible(true)}
               activeOpacity={0.85}
             >
               <Crown color={colors.background} size={20} />
@@ -497,11 +488,7 @@ export const WritingTrainingScreen = ({ route, navigation }: TrainingWriteScreen
             </TouchableOpacity>
           </View>
 
-          <PaywallModal
-            visible={paywallVisible}
-            onClose={() => setPaywallVisible(false)}
-            reason="words"
-          />
+         
         </View>
       );
     }

@@ -16,7 +16,6 @@ import { useTheme, fonts } from '../../theme';
 import { useProfile } from '../../hooks/useProfile';
 import { useTrainingSession } from '../../hooks/useTrainingSession';
 import { useWeeklyLimit } from '../../hooks/useWeeklyLimit';
-import { PaywallModal } from '../../components/PaywallModal';
 import { useToast } from '../../components/Toast';
 import { SkeletonScreen } from '../../components/ui/SkeletonScreen';
 import { ARCHIVE_THRESHOLD } from '../../constants';
@@ -60,7 +59,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const [stats, setStats] = useState({ knew: 0, didntKnow: 0 });
   const [initialTotal, setInitialTotal] = useState(0);
   const [finished, setFinished] = useState(false);
-  const [paywallVisible, setPaywallVisible] = useState(false);
   const [round, setRound] = useState<Round>('initial');
   const initialWrongIdsRef = useRef<Set<string>>(new Set());
   const retryTotalRef = useRef(0);
@@ -316,7 +314,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
                 elevation: 8,
               },
             ]}
-            onPress={() => setPaywallVisible(true)}
             activeOpacity={0.85}
           >
             <Crown color={colors.background} size={moderateScale(20)} />
@@ -333,11 +330,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
           </TouchableOpacity>
         </View>
 
-        <PaywallModal
-          visible={paywallVisible}
-          onClose={() => setPaywallVisible(false)}
-          reason="words"
-        />
+  
       </View>
     );
   }
@@ -381,7 +374,6 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
                   elevation: 8,
                 },
               ]}
-              onPress={() => setPaywallVisible(true)}
               activeOpacity={0.85}
             >
               <Crown color={colors.background} size={moderateScale(20)} />
@@ -398,11 +390,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
             </TouchableOpacity>
           </View>
 
-          <PaywallModal
-            visible={paywallVisible}
-            onClose={() => setPaywallVisible(false)}
-            reason="words"
-          />
+          
         </View>
       );
     }
@@ -498,7 +486,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
                     elevation: 8,
                   },
                 ]}
-                onPress={() => setPaywallVisible(true)}
+                
                 activeOpacity={0.85}
               >
                 <Text style={[styles.premiumHintButtonText, { color: colors.background }]}>Узнать о Premium</Text>
@@ -514,11 +502,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
           </TouchableOpacity>
         </View>
 
-        <PaywallModal
-          visible={paywallVisible}
-          onClose={() => setPaywallVisible(false)}
-          reason="words"
-        />
+        
       </View>
     );
   }

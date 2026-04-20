@@ -22,7 +22,6 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useApiError } from '../../hooks/useApiError';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { AddGroupModal } from '../../components/AddGroupModal';
-import { PaywallModal } from '../../components/PaywallModal';
 import { BottomSheet } from '../../components/ui/BottomSheet';
 import { StatsWidget } from '../../components/StatsWidget';
 import { useStats } from '../../hooks/useStats';
@@ -45,7 +44,6 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
   const { handleApiError } = useApiError();
 
   const [addModalVisible, setAddModalVisible] = useState(false);
-  const [paywallVisible, setPaywallVisible] = useState(false);
 
   const { refreshing, handleRefresh, lastUpdated } = usePullToRefresh({
     onRefresh: () => queryClient.refetchQueries({ queryKey: queryKey.groups.list() }),
@@ -74,8 +72,6 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
 
   const handleAddPress = () => {
     if (!profile?.is_premium && groups.length >= FREE_GROUPS_LIMIT) {
-      setPaywallVisible(true);
-      return;
     }
     setAddModalVisible(true);
   };
@@ -392,11 +388,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
           // Модал закроется внутри AddGroupModal при успехе
         }}
       />
-      <PaywallModal
-        visible={paywallVisible}
-        onClose={() => setPaywallVisible(false)}
-        reason="groups"
-      />
+      
     </View>
   );
 };
