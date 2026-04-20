@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Animated,
   Linking,
+  AppState,
 } from 'react-native';
 import WebView from 'react-native-webview';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,7 +21,7 @@ import { useToast } from '../../components/Toast';
 import { useProfile } from '../../hooks/useProfile';
 import { useAuth } from '../../contexts/AuthContext';
 import type { ApiProfile } from '../../contexts/AuthContext';
-import { createSubscriptionPayment, getSubscriptionStatus, type PlanId, type PaymentMethod } from '../../lib/billing';
+import { createSubscriptionPayment, getPaymentStatus, type PlanId, type PaymentMethod } from '../../lib/billing';
 import { queryKey, invalidateGroups, invalidateProfile, invalidateStats, invalidateStreaks, invalidateWords } from '../../lib/queryKeys';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -96,14 +97,22 @@ export const PaymentScreen = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [webViewUrl, setWebViewUrl] = useState<string | null>(null);
+  const [activePaymentId, setActivePaymentId] = useState<string | null>(null);
   const [isWebViewVisible, setIsWebViewVisible] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'timeout'>('idle');
   const paymentFinalizedRef = useRef(false);
+  const paymentStatusRef = useRef<'idle' | 'processing' | 'timeout'>('idle');
+  const activePaymentIdRef = useRef<string | null>(null);
+  const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollAttemptRef = useRef(0);
+  const pollStartedAtRef = useRef(0);
+  const isPollingRef = useRef(false);
   const goToProfileWithThankYou = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
     }
+    isPollingRef.current = false;
 
     // Гарантированно закрываем paywall-экран и открываем профиль + экран благодарности
     navigation.dispatch(
@@ -128,7 +137,13 @@ export const PaymentScreen = () => {
     year: new Animated.Value(1),
   }));
 
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    paymentStatusRef.current = paymentStatus;
+  }, [paymentStatus]);
+  useEffect(() => {
+    activePaymentIdRef.current = activePaymentId;
+  }, [activePaymentId]);
+
 
   const selectedPlanData = PLANS.find((p) => p.id === selectedPlan)!;
   const isPremiumActive = profile?.is_premium;
@@ -160,13 +175,15 @@ export const PaymentScreen = () => {
     if (paymentFinalizedRef.current) return;
     paymentFinalizedRef.current = true;
 
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
     }
+    isPollingRef.current = false;
 
     setIsWebViewVisible(false);
     setWebViewUrl(null);
+    setActivePaymentId(null);
 
     // Мгновенно меняем состояние приложения на Premium даже до refetch.
     queryClient.setQueryData(queryKey.profile.me(), (prev: any) =>
@@ -202,15 +219,48 @@ export const PaymentScreen = () => {
     setLoading(true);
     paymentFinalizedRef.current = false;
     try {
-      const { confirmation_url } = await createSubscriptionPayment(selectedPlan, selectedMethod);
+      const {
+        payment_id,
+        confirmation_url,
+        payment_method_type,
+        requested_payment_method_type,
+      } = await createSubscriptionPayment(selectedPlan, selectedMethod);
+
+      const expectedMethodType = selectedMethod === 'card' ? 'bank_card' : requested_payment_method_type;
+      const hasMismatch =
+        !!expectedMethodType &&
+        expectedMethodType !== 'bank_card' &&
+        !!payment_method_type &&
+        payment_method_type !== expectedMethodType;
+
+      if (hasMismatch) {
+        setError('Выбранный способ оплаты сейчас недоступен. Попробуйте другой вариант.');
+        showToast('Способ оплаты временно недоступен', 'info');
+        return;
+      }
+
       if (confirmation_url) {
+        // Все методы обрабатываем внутри приложения через WebView.
+        setActivePaymentId(payment_id);
+        pollAttemptRef.current = 0;
+        pollStartedAtRef.current = 0;
+        setPaymentStatus('idle');
         setWebViewUrl(confirmation_url);
         setIsWebViewVisible(true);
       } else {
         setError('Не удалось получить ссылку на оплату. Попробуйте позже.');
       }
     } catch (e) {
-      setError('Ошибка при создании платежа. Проверьте интернет и попробуйте ещё раз.');
+      const message =
+        e &&
+        typeof e === 'object' &&
+        'body' in e &&
+        (e as any).body &&
+        typeof (e as any).body === 'object' &&
+        (e as any).body.error === 'payment_method_unavailable'
+          ? 'Этот способ оплаты сейчас недоступен. Выберите другой и попробуйте снова.'
+          : 'Ошибка при создании платежа. Проверьте интернет и попробуйте ещё раз.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -237,69 +287,148 @@ export const PaymentScreen = () => {
     }
   }, []);
 
-  const startPolling = useCallback(async () => {
-    setPaymentStatus('processing');
-    let attempts = 0;
-    const maxAttempts = 20;
-    const pollInterval = 2000;
+  const stopPolling = useCallback(() => {
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
+    isPollingRef.current = false;
+  }, []);
 
-    pollingRef.current = setInterval(async () => {
-      attempts++;
-      try {
-        const status = await getSubscriptionStatus();
-        if (status.is_premium) {
-          await finalizeSuccessfulPayment();
-        } else if (attempts >= maxAttempts) {
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = null;
-          }
-          setPaymentStatus('timeout');
-          showToast('Оплата обрабатывается. Проверьте статус через несколько минут.', 'info');
-        }
-      } catch (e) {
-        if (attempts >= maxAttempts) {
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = null;
-          }
-          setPaymentStatus('timeout');
-        }
+  const scheduleNextPoll = useCallback((delayMs: number, run: () => Promise<void>) => {
+    if (pollingTimeoutRef.current) {
+      clearTimeout(pollingTimeoutRef.current);
+      pollingTimeoutRef.current = null;
+    }
+    pollingTimeoutRef.current = setTimeout(() => {
+      run().catch(() => {
+        // Ошибки обрабатываются внутри poller, чтобы не ронять UI.
+      });
+    }, delayMs);
+  }, []);
+
+  const runPaymentPolling = useCallback(async () => {
+    const paymentId = activePaymentIdRef.current;
+    if (!paymentId || paymentFinalizedRef.current) {
+      stopPolling();
+      return;
+    }
+
+    if (!isPollingRef.current) return;
+
+    const maxAttempts = 8;
+    const maxDurationMs = 90_000;
+    const backoffMs = [1200, 2000, 3000, 5000, 8000, 12000, 15000, 18000];
+
+    if (!pollStartedAtRef.current) {
+      pollStartedAtRef.current = Date.now();
+    }
+
+    const elapsed = Date.now() - pollStartedAtRef.current;
+    if (pollAttemptRef.current >= maxAttempts || elapsed > maxDurationMs) {
+      stopPolling();
+      setPaymentStatus('timeout');
+      showToast('Оплата обрабатывается. Проверьте статус через несколько минут.', 'info');
+      return;
+    }
+
+    pollAttemptRef.current += 1;
+    setPaymentStatus('processing');
+
+    try {
+      const payment = await getPaymentStatus(paymentId);
+      if (payment.status === 'succeeded' || payment.is_premium) {
+        await finalizeSuccessfulPayment();
+        return;
       }
-    }, pollInterval);
-  }, [showToast, finalizeSuccessfulPayment]);
+      if (payment.status === 'canceled') {
+        stopPolling();
+        setPaymentStatus('idle');
+        showToast('Оплата отменена. Попробуйте ещё раз.', 'info');
+        return;
+      }
+    } catch {
+      // Сетевые ошибки не прерывают опрос, продолжаем с backoff.
+    }
+
+    const nextDelay = backoffMs[Math.min(pollAttemptRef.current, backoffMs.length - 1)] ?? 18000;
+    scheduleNextPoll(nextDelay, runPaymentPolling);
+  }, [finalizeSuccessfulPayment, scheduleNextPoll, showToast, stopPolling]);
+
+  const startPolling = useCallback((reason: 'return' | 'deeplink' | 'foreground') => {
+    if (paymentFinalizedRef.current || !activePaymentIdRef.current) return;
+    if (reason === 'return') {
+      pollAttemptRef.current = 0;
+      pollStartedAtRef.current = Date.now();
+    }
+    if (isPollingRef.current) return;
+    isPollingRef.current = true;
+    runPaymentPolling().catch(() => {
+      stopPolling();
+      setPaymentStatus('timeout');
+    });
+  }, [runPaymentPolling, stopPolling]);
+
+  const handleWebViewRequest = useCallback((request: { url?: string }) => {
+    const url = request.url || '';
+    if (!url) return true;
+
+    const lower = url.toLowerCase();
+    const isHttp = lower.startsWith('http://') || lower.startsWith('https://');
+    if (isHttp) return true;
+
+    // Android WebView часто отдаёт deeplink в intent://... с fallback внутри параметра.
+    if (lower.startsWith('intent://')) {
+      const fallbackMatch = url.match(/[?&]browser_fallback_url=([^&]+)/i);
+      const encodedFallback = fallbackMatch?.[1];
+      const fallbackUrl = encodedFallback ? decodeURIComponent(encodedFallback) : null;
+      if (fallbackUrl && /^https?:\/\//i.test(fallbackUrl)) {
+        setWebViewUrl(fallbackUrl);
+        return false;
+      }
+    }
+
+    // Обрабатываем банковские deep links без открытия браузера.
+    Linking.openURL(url).catch(() => {
+      showToast('Не удалось открыть банковское приложение', 'info');
+    });
+    startPolling('deeplink');
+    return false;
+  }, [showToast, startPolling]);
 
   const handleWebViewClose = useCallback((wasSuccess?: boolean, shouldPoll?: boolean) => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
     setIsWebViewVisible(false);
     setWebViewUrl(null);
     if (shouldPoll === true && wasSuccess) {
-      startPolling();
+      startPolling('return');
     }
   }, [startPolling]);
 
   useEffect(() => {
     return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-      }
+      stopPolling();
     };
-  }, []);
+  }, [stopPolling]);
+
+  // Когда пользователь возвращается в приложение после внешней оплаты (SBP/SberPay/T-Pay),
+  // сразу делаем проверку статуса и при необходимости поднимаем polling.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (state) => {
+      if (state !== 'active' || paymentFinalizedRef.current) return;
+      if (paymentStatusRef.current !== 'processing') return;
+      startPolling('foreground');
+    });
+    return () => sub.remove();
+  }, [startPolling]);
 
   const handleGoToMain = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
+    stopPolling();
     if (navigation.canGoBack()) {
       navigation.goBack();
     } else {
       navigation.navigate('Main');
     }
-  }, [navigation]);
+  }, [navigation, stopPolling]);
 
   const handleNavigationStateChange = useCallback((navState: { url?: string }) => {
     const url = navState.url || '';
@@ -313,40 +442,6 @@ export const PaymentScreen = () => {
       showToast('Оплата отменена. Попробуйте ещё раз.', 'info');
     }
   }, [handleWebViewClose, resolvePaymentState, showToast]);
-
-  // Fail-safe: пока открыт WebView, периодически сверяем статус подписки с сервером.
-  // Это закрывает кейсы, когда платёж успешен, но success URL не был распознан WebView.
-  useEffect(() => {
-    if (!isWebViewVisible || !webViewUrl) return;
-    if (paymentFinalizedRef.current) return;
-
-    let cancelled = false;
-    const startedAt = Date.now();
-    const maxMs = 4 * 60 * 1000; // даём пользователю спокойно завершить оплату
-
-    const tick = async () => {
-      if (cancelled || paymentFinalizedRef.current) return;
-      try {
-        const status = await getSubscriptionStatus();
-        if (status.is_premium) {
-          await finalizeSuccessfulPayment();
-          return;
-        }
-      } catch {
-        // Сетевые сбои здесь не критичны — продолжаем polling.
-      }
-
-      if (!cancelled && Date.now() - startedAt < maxMs) {
-        setTimeout(tick, 3000);
-      }
-    };
-
-    const timer = setTimeout(tick, 1200);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [isWebViewVisible, webViewUrl, finalizeSuccessfulPayment]);
 
   const handleGoBack = () => {
     if (navigation.canGoBack()) {
@@ -661,7 +756,7 @@ export const PaymentScreen = () => {
             source={{ uri: webViewUrl }}
             style={styles.webView}
             onNavigationStateChange={handleNavigationStateChange}
-            onShouldStartWithLoadRequest={() => true}
+            onShouldStartWithLoadRequest={handleWebViewRequest}
             onLoadStart={() => setLoading(true)}
             onLoadEnd={() => setLoading(false)}
             allowsBackForwardNavigationGestures={false}
