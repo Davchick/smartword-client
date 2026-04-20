@@ -20,14 +20,16 @@ export const WEEKLY_LIMIT = 50;
 export const useWeeklyLimit = () => {
   const { profile } = useProfile();
   const [weeklyLimitReached, setWeeklyLimitReached] = useState(false);
-  const [wordsLearnedThisWeek, setWordsLearnedThisWeek] = useState(0);
+  const [localWordsLearnedThisWeek, setLocalWordsLearnedThisWeek] = useState(0);
 
   const weeklyLimitReachedRef = useRef(weeklyLimitReached);
-  const wordsLearnedThisWeekRef = useRef(wordsLearnedThisWeek);
+  const localWordsLearnedThisWeekRef = useRef(localWordsLearnedThisWeek);
+  const serverWordsLearnedThisWeek = profile?.words_learned_this_week ?? 0;
+  const totalWordsLearnedThisWeek = serverWordsLearnedThisWeek + localWordsLearnedThisWeek;
 
   useEffect(() => {
     weeklyLimitReachedRef.current = weeklyLimitReached;
-    wordsLearnedThisWeekRef.current = wordsLearnedThisWeek;
+    localWordsLearnedThisWeekRef.current = localWordsLearnedThisWeek;
   });
 
   // ── Загрузка и сброс недели ──
@@ -54,7 +56,7 @@ export const useWeeklyLimit = () => {
           ]);
           if (mounted) {
             setWeeklyLimitReached(false);
-            setWordsLearnedThisWeek(0);
+            setLocalWordsLearnedThisWeek(0);
           }
         } else {
           // Текущая неделя — загружаем сохранённые значения
@@ -69,7 +71,7 @@ export const useWeeklyLimit = () => {
               setWeeklyLimitReached(JSON.parse(lr));
             }
             if (ln !== null && ln !== undefined) {
-              setWordsLearnedThisWeek(JSON.parse(ln));
+              setLocalWordsLearnedThisWeek(JSON.parse(ln));
             }
           }
         }
@@ -108,42 +110,42 @@ export const useWeeklyLimit = () => {
    */
   const incrementAndCheck = useCallback(
     (count = 1): { limitReached: boolean } => {
-      const newLearned = wordsLearnedThisWeekRef.current + count;
+      const newLocalLearned = localWordsLearnedThisWeekRef.current + count;
+      const totalLearned = serverWordsLearnedThisWeek + newLocalLearned;
       const isPremium = !!profile?.is_premium;
-      const reached = !isPremium && newLearned >= WEEKLY_LIMIT;
+      const reached = !isPremium && totalLearned >= WEEKLY_LIMIT;
 
-      setWordsLearnedThisWeek(newLearned);
+      setLocalWordsLearnedThisWeek(newLocalLearned);
       if (reached) setWeeklyLimitReached(true);
 
-      scheduleSave(reached, newLearned);
+      scheduleSave(reached, newLocalLearned);
       return { limitReached: reached };
     },
-    [profile?.is_premium, scheduleSave]
+    [profile?.is_premium, scheduleSave, serverWordsLearnedThisWeek]
   );
 
   /**
    * Проверить лимит без увеличения (например при рестарте).
    */
   const checkLimit = useCallback((): boolean => {
-    const serverLearned = profile?.words_learned_this_week ?? 0;
-    const localLearned = wordsLearnedThisWeekRef.current;
-    const total = serverLearned + localLearned;
+    const localLearned = localWordsLearnedThisWeekRef.current;
+    const total = serverWordsLearnedThisWeek + localLearned;
     const isPremium = !!profile?.is_premium;
 
     if (!isPremium && total >= WEEKLY_LIMIT) {
       setWeeklyLimitReached(true);
-      setWordsLearnedThisWeek(total);
-      scheduleSave(true, total);
+      // Локально храним только дельту текущей сессии, чтобы не дублировать серверный счётчик.
+      scheduleSave(true, localLearned);
       return true;
     }
     return false;
-  }, [profile?.words_learned_this_week, profile?.is_premium, scheduleSave]);
+  }, [serverWordsLearnedThisWeek, profile?.is_premium, scheduleSave]);
 
   /**
    * Сбросить локальный счётчик (например при restart тренировки).
    */
   const resetLocal = useCallback(() => {
-    setWordsLearnedThisWeek(0);
+    setLocalWordsLearnedThisWeek(0);
     setWeeklyLimitReached(false);
     scheduleSave(false, 0);
   }, [scheduleSave]);
@@ -159,7 +161,7 @@ export const useWeeklyLimit = () => {
 
   return {
     weeklyLimitReached,
-    wordsLearnedThisWeek,
+    wordsLearnedThisWeek: totalWordsLearnedThisWeek,
     weeklyLimit: WEEKLY_LIMIT,
     incrementAndCheck,
     checkLimit,

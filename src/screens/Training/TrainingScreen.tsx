@@ -73,6 +73,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
   // Ref для предотвращения повторной инициализации при ре-рендере
   const initializedRef = useRef(false);
+  const availableTrainingWords = getTrainingWords();
 
   // Отслеживаем достижение лимита во время сессии
   useEffect(() => {
@@ -83,7 +84,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
 
   // Инициализация тренировки — вызывается один раз при загрузке слов
   const initTraining = useCallback(() => {
-    const tw = getTrainingWords();
+    const tw = availableTrainingWords;
     setTrainingWords(tw);
     setInitialTotal(tw.length);
     setCurrentIndex(0);
@@ -94,11 +95,11 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     retryTotalRef.current = 0;
     initializedRef.current = true;
     startSession(groupId, groupName);
-  }, [getTrainingWords, groupId, groupName, startSession]);
+  }, [availableTrainingWords, groupId, groupName, startSession]);
 
   // Проверяем лимит и инициализируем тренировку при загрузке данных
   useEffect(() => {
-    if (loading || words.length === 0) {
+    if (loading || words.length === 0 || availableTrainingWords.length === 0) {
       initializedRef.current = false;
       return;
     }
@@ -115,7 +116,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
     if (!initializedRef.current) {
       initTraining();
     }
-  }, [loading, words.length, weeklyLimitReached, checkLimit, initTraining]);
+  }, [loading, words.length, availableTrainingWords.length, weeklyLimitReached, checkLimit, initTraining]);
 
   // Завершаем тренировку когда retry-опустел
   useEffect(() => {
@@ -208,6 +209,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         });
         setCurrentIndex(0);
         setIsProcessing(false);
+        processingRef.current = false;
         return;
       }
 
@@ -220,6 +222,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
             setCurrentIndex(0);
             setRound('retry');
             setIsProcessing(false);
+            processingRef.current = false;
             return;
           }
         }
@@ -278,6 +281,26 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         <Dumbbell color={colors.muted} size={moderateScale(56)} strokeWidth={1.5} />
         <Text style={[styles.emptyTitle, { color: colors.text }]}>Нет слов для тренировки</Text>
         <Text style={[styles.emptySubtitle, { color: colors.muted }]}>Добавьте слова в словарь, чтобы начать</Text>
+      </View>
+    );
+  }
+
+  // ─── Render: All words learned / nothing to train ───
+  if (availableTrainingWords.length === 0 && !finished) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
+        <View style={styles.header}>
+          {navigation.canGoBack() && (
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <ArrowLeft color={colors.text} size={moderateScale(24)} />
+            </TouchableOpacity>
+          )}
+        </View>
+        <Text style={styles.resultEmoji}>🎓</Text>
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>Все слова выучены</Text>
+        <Text style={[styles.emptySubtitle, { color: colors.muted }]}>
+          В этом словаре пока нет активных слов для повторения.
+        </Text>
       </View>
     );
   }
