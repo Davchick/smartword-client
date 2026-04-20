@@ -45,7 +45,7 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
 
   const [addModalVisible, setAddModalVisible] = useState(false);
 
-  const { refreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+  const { refreshing, handleRefresh } = usePullToRefresh({
     onRefresh: () => queryClient.refetchQueries({ queryKey: queryKey.groups.list() }),
   });
 
@@ -180,16 +180,6 @@ export const GroupsScreen = ({ navigation }: GroupsScreenProps) => {
         ListHeaderComponent={
           <View style={{ gap: spacing.sm }}>
             <StatsWidget stats={stats} />
-            {lastUpdated && (
-              <Text 
-                style={[styles.lastUpdated, { color: colors.muted }]}
-                accessibilityRole="text"
-                accessibilityLabel={`Последнее обновление: ${lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`}
-                accessibilityLiveRegion="polite"
-              >
-                Обновлено: {lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-              </Text>
-            )}
           </View>
         }
         ListHeaderComponentStyle={{ marginBottom: 0 }}
@@ -444,12 +434,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
-  },
-  lastUpdated: {
-    fontSize: typography.xs,
-    fontFamily: fonts.regular,
-    textAlign: 'center',
-    paddingHorizontal: spacing.md,
   },
   listEmpty: {
     paddingTop: spacing.xl,

@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Animated,
+  Easing,
   Clipboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -500,8 +501,9 @@ const MessageBubble = ({
 }) => {
   const styles = useChatStyles();
   const showActions = !isUser && isForeignText(item.content);
-  const showRetry = isUser && (item.sendStatus === 'failed' || item.sendStatus === 'pending');
+  const showRetry = isUser && item.sendStatus === 'failed';
   const [retrying, setRetrying] = useState(false);
+  const retryPulse = useRef(new Animated.Value(1)).current;
   const [translation, setTranslation] = useState<string | null>(null);
   const [translationOpen, setTranslationOpen] = useState(false);
   const [translating, setTranslating] = useState(false);
@@ -516,6 +518,33 @@ const MessageBubble = ({
   useEffect(() => {
     return () => { mountedRef.current = false; };
   }, []);
+
+  useEffect(() => {
+    if (!showRetry || retrying) {
+      retryPulse.setValue(1);
+      return;
+    }
+
+    const pulseAnim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(retryPulse, {
+          toValue: 1.08,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(retryPulse, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseAnim.start();
+
+    return () => pulseAnim.stop();
+  }, [retrying, retryPulse, showRetry]);
 
   const callAction = async (action: 'translate' | 'hint'): Promise<string> => {
     const endpoint = action === 'translate' ? '/chat/translate' : '/chat/hint';
@@ -623,19 +652,32 @@ const MessageBubble = ({
   return (
     <View style={[styles.messageRow, isUser && styles.messageRowUser]}>
       {showRetry && (
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={handleRetry}
-          disabled={retrying || item.sendStatus === 'pending'}
-          activeOpacity={0.7}
-          hitSlop={hitSlop}
+        <Animated.View
+          style={[
+            styles.retryButtonWrap,
+            { transform: [{ scale: retryPulse }], opacity: retrying ? 0.8 : 1 },
+          ]}
         >
-          {retrying || item.sendStatus === 'pending' ? (
-            <ActivityIndicator size={moderateScale(14)} color={colors.danger} />
-          ) : (
-            <RotateCcw size={moderateScale(16)} color={colors.danger} />
-          )}
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.retryButton,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+            onPress={handleRetry}
+            disabled={retrying}
+            activeOpacity={0.75}
+            hitSlop={hitSlop}
+          >
+            {retrying ? (
+              <ActivityIndicator size={moderateScale(12)} color={colors.danger} />
+            ) : (
+              <RotateCcw size={moderateScale(12)} color={colors.danger} />
+            )}
+          </TouchableOpacity>
+        </Animated.View>
       )}
       <View style={styles.bubbleWrapper}>
         <View style={[
@@ -922,17 +964,18 @@ const useChatStyles = () => {
       gap: spacing.sm,
       marginBottom: spacing.xs,
     },
-    messageRowUser: { flexDirection: 'row-reverse' },
+    messageRowUser: { justifyContent: 'flex-end' },
+    retryButtonWrap: {
+      alignSelf: 'center',
+      marginTop: moderateScale(6),
+    },
     retryButton: {
-      position: 'absolute',
-      left: -moderateScale(32),
-      top: moderateScale(8),
-      width: moderateScale(28),
-      height: moderateScale(28),
-      borderRadius: moderateScale(14),
+      width: moderateScale(22),
+      height: moderateScale(22),
+      borderRadius: moderateScale(11),
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: 'transparent',
+      borderWidth: 1,
     },
     botAvatar: {
       width: moderateScale(28),

@@ -63,7 +63,7 @@ export const ProfileScreen = () => {
   const [editingNick, setEditingNick] = useState(false);
   const [nickDraft, setNickDraft] = useState('');
 
-  const { refreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+  const { refreshing, handleRefresh } = usePullToRefresh({
     onRefresh: async () => {
       await refetch();
     },

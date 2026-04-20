@@ -135,8 +135,8 @@ export const StatsWidget = ({ stats }: Props) => {
       <View style={[styles.weekSection, { backgroundColor: colors.background, paddingLeft: weekSectionPadding.paddingLeft, paddingRight: weekSectionPadding.paddingRight }]}>
         <View style={[styles.weekDays, { gap: daySizes.gap }]}>
           {stats.weekActivity.map((day) => {
-            const isActive = day.hasActivity;
             const isToday = day.isToday;
+            const isActive = day.hasActivity && !isToday;
 
             const bgColor = isActive
               ? colors.primaryDim

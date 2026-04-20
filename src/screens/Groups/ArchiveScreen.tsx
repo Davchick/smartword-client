@@ -55,7 +55,7 @@ export const ArchiveScreen = ({ navigation }: Props) => {
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  const { refreshing: localRefreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+  const { refreshing: localRefreshing, handleRefresh } = usePullToRefresh({
     onRefresh: () => refetch(),
   });
 
@@ -188,16 +188,6 @@ export const ArchiveScreen = ({ navigation }: Props) => {
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Архив</Text>
           <Text style={[styles.headerSubtitle, { color: colors.muted }]}>Выученные слова</Text>
-          {lastUpdated && (
-            <Text 
-              style={[styles.lastUpdated, { color: colors.muted }]}
-              accessibilityRole="text"
-              accessibilityLabel={`Последнее обновление: ${lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`}
-              accessibilityLiveRegion="polite"
-            >
-              Обновлено: {lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-          )}
         </View>
       </View>
       <View style={[styles.headerContent, { paddingHorizontal: spacing.md, paddingTop: spacing.md }]}>
@@ -421,11 +411,6 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: typography.small,
     fontFamily: fonts.regular,
-  },
-  lastUpdated: {
-    fontSize: typography.xs,
-    fontFamily: fonts.regular,
-    marginTop: 2,
   },
   list: {
     padding: spacing.md,

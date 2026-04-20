@@ -58,7 +58,7 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
 
   const [addModalVisible, setAddModalVisible] = useState(false);
 
-  const { refreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+  const { refreshing, handleRefresh } = usePullToRefresh({
     onRefresh: () => refetch(),
   });
 
@@ -222,16 +222,6 @@ export const GroupDetailScreen = ({ route, navigation }: GroupDetailScreenProps)
         <View style={styles.headerCenter}>
           <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>{groupName}</Text>
           <Text style={[styles.wordCount, { color: colors.muted }]}>{activeCountLabel}</Text>
-          {lastUpdated && (
-            <Text 
-              style={[styles.lastUpdated, { color: colors.muted }]}
-              accessibilityRole="text"
-              accessibilityLabel={`Последнее обновление: ${lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`}
-              accessibilityLiveRegion="polite"
-            >
-              Обновлено: {lastUpdated.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-          )}
         </View>
 
         <TouchableOpacity
@@ -626,11 +616,6 @@ const styles = StyleSheet.create({
   },
   wordCount: {
     fontSize: typography.small,
-  },
-  lastUpdated: {
-    fontSize: typography.xs,
-    fontFamily: fonts.regular,
-    marginTop: 2,
   },
   trainButton: {
     flexDirection: 'row',

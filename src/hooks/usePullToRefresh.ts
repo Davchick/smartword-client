@@ -10,7 +10,7 @@
  * - Rate limiting (8 requests per minute, silent drop)
  *
  * Usage:
- *   const { refreshing, handleRefresh, lastUpdated } = usePullToRefresh({
+ *   const { refreshing, handleRefresh } = usePullToRefresh({
  *     onRefresh: () => queryClient.refetchQueries({ queryKey }),
  *     timeout: 10000,
  *   });
@@ -31,7 +31,6 @@ interface UsePullToRefreshOptions {
 interface UsePullToRefreshResult {
   refreshing: boolean;
   handleRefresh: () => Promise<void>;
-  lastUpdated: Date | null;
 }
 
 export function usePullToRefresh({ onRefresh, timeout = DEFAULT_TIMEOUT }: UsePullToRefreshOptions): UsePullToRefreshResult {
@@ -39,7 +38,6 @@ export function usePullToRefresh({ onRefresh, timeout = DEFAULT_TIMEOUT }: UsePu
 
   const refreshingRef = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const mountedRef = useRef(true);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rateLimitTimestampsRef = useRef<number[]>([]);
@@ -96,10 +94,9 @@ export function usePullToRefresh({ onRefresh, timeout = DEFAULT_TIMEOUT }: UsePu
       if (mountedRef.current) {
         refreshingRef.current = false;
         setRefreshing(false);
-        setLastUpdated(new Date());
       }
     }
   }, [onRefresh, handleApiError, timeout]);
 
-  return { refreshing, handleRefresh, lastUpdated };
+  return { refreshing, handleRefresh };
 }
