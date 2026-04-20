@@ -65,6 +65,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const canGoBack = navigation.canGoBack();
   const [isProcessing, setIsProcessing] = useState(false);
   const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
+  const [retryRenderNonce, setRetryRenderNonce] = useState(0);
 
   // Отслеживаем достижение лимита во время сессии
   const [hitLimitThisSession, setHitLimitThisSession] = useState(false);
@@ -201,12 +202,16 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       }
 
       if (round === 'retry') {
+        const shouldForceRemountTopCard = !knew && trainingWords.length === 1;
         setTrainingWords((prev) => {
           if (prev.length === 0) return prev;
           const head = prev[0]!;
           const tail = prev.slice(1);
           return knew ? tail : [...tail, head];
         });
+        if (shouldForceRemountTopCard) {
+          setRetryRenderNonce((prev) => prev + 1);
+        }
         setCurrentIndex(0);
         setIsProcessing(false);
         processingRef.current = false;
@@ -418,114 +423,134 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       );
     }
 
+    const performanceTone =
+      allWordsArchived
+        ? 'Легендарно'
+        : percent >= 85
+          ? 'Супер фокус'
+          : percent >= 60
+            ? 'Хороший темп'
+            : 'Разгон набран';
+
     return (
-      <View style={[styles.container, styles.center, { paddingTop: insets.top, backgroundColor: colors.background }]}>
-        <View style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={styles.resultEmoji}>{allWordsArchived ? '🎓' : percent >= 80 ? '🎉' : percent >= 50 ? '💪' : '📚'}</Text>
-          <Text style={[styles.resultTitle, { color: colors.text }]}>
-            {allWordsArchived ? 'Все слова выучены!' : 'Тренировка завершена!'}
-          </Text>
-          <Text style={[styles.resultSubtitle, { color: colors.muted }]}>{groupName}</Text>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.finishLayout,
+            {
+              paddingTop: insets.top + deviceSize.spacing.sm,
+              paddingBottom: insets.bottom + deviceSize.spacing.md,
+            },
+          ]}
+        >
+          <View style={styles.finishContent}>
+            <View style={[styles.finishHeroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={[styles.finishOrbTop, { backgroundColor: colors.primaryDim }]} />
+              <View style={[styles.finishOrbBottom, { backgroundColor: colors.elevated }]} />
 
-          {!allWordsArchived && (
-            <View style={[styles.statsRow, { backgroundColor: colors.elevated }]}>
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: colors.success }]}>{formatScore(stats.knew)}</Text>
-                <Text style={[styles.statLabel, { color: colors.muted }]}>Знаю</Text>
+              <View style={[styles.finishBadge, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+                <Text style={[styles.finishBadgeText, { color: colors.primary }]}>{performanceTone}</Text>
               </View>
-              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: colors.danger }]}>{stats.didntKnow}</Text>
-                <Text style={[styles.statLabel, { color: colors.muted }]}>Не знаю</Text>
-              </View>
-              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
-              <View style={styles.statItem}>
-                <Text style={[styles.statValue, { color: colors.primary }]}>{percent}%</Text>
-                <Text style={[styles.statLabel, { color: colors.muted }]}>Результат</Text>
-              </View>
-            </View>
-          )}
 
-          {allWordsArchived ? (
-            <View style={[styles.successCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
-              <Text style={[styles.successTitle, { color: colors.success }]}>
-                🎉 Отличная работа!
+              <View style={[styles.finishEmojiWrap, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+                <Text style={styles.resultEmoji}>{allWordsArchived ? '👑' : percent >= 80 ? '🚀' : percent >= 50 ? '🎯' : '🔥'}</Text>
+              </View>
+
+              <Text style={[styles.finishTitle, { color: colors.text }]}>
+                {allWordsArchived ? 'Словарь закрыт на 100%' : 'Тренировка завершена'}
               </Text>
-              <Text style={[styles.successText, { color: colors.muted }]}>
-                Все слова из этого словаря выучены и отправлены в архив.
-              </Text>
-              <Text style={[styles.successSubText, { color: colors.muted }]}>
-                Вы можете вернуться к словарю и добавить новые слова для продолжения тренировок.
-              </Text>
+              <Text style={[styles.finishSubtitle, { color: colors.muted }]}>{groupName}</Text>
+
+              <View style={styles.finishPillsRow}>
+                <View style={[styles.finishPill, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+                  <Text style={[styles.finishPillValue, { color: colors.primary }]}>{total}</Text>
+                  <Text style={[styles.finishPillLabel, { color: colors.muted }]}>Карточек</Text>
+                </View>
+                <View style={[styles.finishPill, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+                  <Text style={[styles.finishPillValue, { color: colors.success }]}>{percent}%</Text>
+                  <Text style={[styles.finishPillLabel, { color: colors.muted }]}>Точность</Text>
+                </View>
+              </View>
             </View>
-          ) : weeklyLimitReached && !profile?.is_premium ? (
-            <View style={[styles.successCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
-              <Text style={[styles.successTitle, { color: colors.muted }]}>
-                🔒 Лимит на этой неделе исчерпан
-              </Text>
-              <Text style={[styles.successText, { color: colors.muted }]}>
-                Вы выучили {weeklyLimit} слов. Возвращайтесь в понедельник для продолжения тренировок!
-              </Text>
+
+            <View style={styles.finishMetricsGrid}>
+              <View style={[styles.finishMetricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.finishMetricValue, { color: colors.success }]}>{formatScore(stats.knew)}</Text>
+                <Text style={[styles.finishMetricLabel, { color: colors.muted }]}>Знаю</Text>
+              </View>
+              <View style={[styles.finishMetricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.finishMetricValue, { color: colors.danger }]}>{stats.didntKnow}</Text>
+                <Text style={[styles.finishMetricLabel, { color: colors.muted }]}>Не знаю</Text>
+              </View>
+              <View style={[styles.finishMetricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.finishMetricValue, { color: colors.primary }]}>{wordsLearnedInSession}</Text>
+                <Text style={[styles.finishMetricLabel, { color: colors.muted }]}>Выучено за сессию</Text>
+              </View>
             </View>
-          ) : (
+
+            {!profile?.is_premium && (
+              <View style={[styles.finishPremiumCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.finishPremiumBadge, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
+                  <View style={styles.finishInlineIconBox}>
+                    <Crown color={colors.primary} size={moderateScale(16)} />
+                  </View>
+                  <Text style={[styles.finishPremiumBadgeText, { color: colors.text }]}>Premium</Text>
+                </View>
+                <Text style={[styles.finishPremiumTitle, { color: colors.text }]}>
+                  Ускорьте прогресс без ограничений
+                </Text>
+                <Text style={[styles.finishPremiumText, { color: colors.muted }]}>
+                  Неограниченные тренировки, больше слов и быстрый рост словарного запаса.
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.finishPremiumButton,
+                    {
+                      backgroundColor: colors.primary,
+                      shadowColor: colors.primary,
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: 0.35,
+                      shadowRadius: 16,
+                      elevation: 8,
+                    },
+                  ]}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.finishPremiumButtonText, { color: colors.background }]}>
+                    Открыть Premium
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.finishActions}>
             <TouchableOpacity
               style={[
-                styles.restartButton,
+                styles.finishPrimaryButton,
                 {
                   backgroundColor: colors.primary,
                   shadowColor: colors.primary,
                   shadowOffset: { width: 0, height: 8 },
-                  shadowOpacity: 0.5,
+                  shadowOpacity: 0.35,
                   shadowRadius: 16,
                   elevation: 8,
                 },
               ]}
               onPress={handleRestart}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
+            <View style={styles.finishInlineIconBox}>
               <RotateCcw color={colors.background} size={moderateScale(18)} />
-              <Text style={[styles.restartButtonText, { color: colors.background }]}>Ещё раз</Text>
-            </TouchableOpacity>
-          )}
-
-          {!profile?.is_premium && (
-            <View style={[styles.premiumHintCard, { backgroundColor: colors.elevated, borderColor: colors.border }]}>
-              <View style={styles.premiumHintHeader}>
-                <Crown color={colors.primary} size={moderateScale(18)} />
-                <Text style={[styles.premiumHintTitle, { color: colors.text }]}>Тренируйтесь без ограничений</Text>
-              </View>
-              <Text style={[styles.premiumHintText, { color: colors.muted }]}>
-                Откройте все словари, больше слов и неограниченные тренировки с SmartWord Premium.
-              </Text>
-              <TouchableOpacity
-                style={[
-                  styles.premiumHintButton,
-                  {
-                    backgroundColor: colors.primary,
-                    shadowColor: colors.primary,
-                    shadowOffset: { width: 0, height: 8 },
-                    shadowOpacity: 0.5,
-                    shadowRadius: 16,
-                    elevation: 8,
-                  },
-                ]}
-                
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.premiumHintButtonText, { color: colors.background }]}>Узнать о Premium</Text>
-              </TouchableOpacity>
             </View>
-          )}
+              <Text style={[styles.finishPrimaryButtonText, { color: colors.background }]}>Новый раунд</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.backToGroupButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={[styles.backToGroupText, { color: colors.muted }]}>Назад к словарю</Text>
-          </TouchableOpacity>
+            <TouchableOpacity style={styles.finishSecondaryButton} onPress={() => navigation.goBack()}>
+              <Text style={[styles.finishSecondaryButtonText, { color: colors.muted }]}>Вернуться к словарю</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-
-        
       </View>
     );
   }
@@ -567,9 +592,13 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       <View style={styles.cardsContainer}>
         {[...visibleCards].reverse().map((word, reversedIndex) => {
           const stackIndex = visibleCards.length - 1 - reversedIndex;
+          const retryKeySuffix =
+            round === 'retry' && trainingWords.length === 1 && stackIndex === 0
+              ? `-retry-${retryRenderNonce}`
+              : '';
           return (
             <SwipeCard
-              key={word.id}
+              key={`${word.id}${retryKeySuffix}`}
               word={word}
               isTop={stackIndex === 0}
               stackIndex={stackIndex}
@@ -713,7 +742,25 @@ const useTrainingStyles = () => {
         alignItems: 'center',
         gap: spacing.md,
         borderWidth: 1,
-        width: '88%',
+        width: '92%',
+        maxWidth: moderateScale(560),
+        overflow: 'hidden',
+      },
+      resultGlow: {
+        position: 'absolute',
+        top: -moderateScale(100),
+        width: moderateScale(240),
+        height: moderateScale(240),
+        borderRadius: moderateScale(120),
+        opacity: 0.35,
+      },
+      resultEmojiWrap: {
+        width: moderateScale(96),
+        height: moderateScale(96),
+        borderRadius: moderateScale(48),
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
       },
       resultEmoji: {
         fontSize: moderateScale(52),
@@ -734,6 +781,22 @@ const useTrainingStyles = () => {
         padding: spacing.md,
         width: '100%',
         marginTop: spacing.sm,
+      },
+      statsGrid: {
+        width: '100%',
+        flexDirection: 'row',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+      },
+      statCard: {
+        flex: 1,
+        minHeight: moderateScale(92),
+        borderRadius: radii.md,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.md,
       },
       statItem: {
         flex: 1,
@@ -765,6 +828,8 @@ const useTrainingStyles = () => {
       restartButtonText: {
         fontWeight: '700',
         fontSize: typography.body,
+        includeFontPadding: false,
+        lineHeight: verticalScale(22),
       },
       successCard: {
         width: '100%',
@@ -810,6 +875,7 @@ const useTrainingStyles = () => {
       premiumHintTitle: {
         fontSize: typography.body,
         fontFamily: fonts.headingBold,
+        flexShrink: 1,
       },
       premiumHintText: {
         fontSize: typography.small,
@@ -859,6 +925,198 @@ const useTrainingStyles = () => {
       premiumButtonText: {
         fontWeight: '700',
         fontSize: typography.body,
+        includeFontPadding: false,
+        lineHeight: verticalScale(22),
+      },
+      finishLayout: {
+        flex: 1,
+        paddingHorizontal: spacing.md,
+        gap: spacing.sm,
+        justifyContent: 'space-between',
+      },
+      finishContent: {
+        flex: 1,
+        gap: spacing.sm,
+        justifyContent: 'space-evenly',
+      },
+      finishActions: {
+        marginTop: spacing.xs,
+      },
+      finishScrollContent: {
+        paddingHorizontal: spacing.md,
+        gap: spacing.md,
+      },
+      finishHeroCard: {
+        borderRadius: radii.lg,
+        borderWidth: 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.md,
+        alignItems: 'center',
+        overflow: 'hidden',
+        gap: spacing.xs,
+      },
+      finishOrbTop: {
+        position: 'absolute',
+        width: moderateScale(160),
+        height: moderateScale(160),
+        borderRadius: moderateScale(80),
+        top: -moderateScale(110),
+        right: -moderateScale(70),
+        opacity: 0.25,
+      },
+      finishOrbBottom: {
+        position: 'absolute',
+        width: moderateScale(130),
+        height: moderateScale(130),
+        borderRadius: moderateScale(65),
+        bottom: -moderateScale(90),
+        left: -moderateScale(55),
+        opacity: 0.22,
+      },
+      finishBadge: {
+        borderRadius: radii.full,
+        borderWidth: 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.xs,
+        marginBottom: spacing.xs,
+      },
+      finishBadgeText: {
+        fontSize: typography.small,
+        fontFamily: fonts.headingBold,
+      },
+      finishEmojiWrap: {
+        width: moderateScale(78),
+        height: moderateScale(78),
+        borderRadius: moderateScale(39),
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      finishTitle: {
+        fontSize: typography.subtitle,
+        fontFamily: fonts.headingBold,
+        textAlign: 'center',
+        marginTop: spacing.xs,
+      },
+      finishSubtitle: {
+        fontSize: typography.small,
+        textAlign: 'center',
+      },
+      finishPillsRow: {
+        width: '100%',
+        flexDirection: 'row',
+        gap: spacing.sm,
+        marginTop: spacing.xs,
+      },
+      finishPill: {
+        flex: 1,
+        borderWidth: 1,
+        borderRadius: radii.md,
+        paddingVertical: spacing.xs,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      finishPillValue: {
+        fontSize: typography.subtitle,
+        fontFamily: fonts.headingBold,
+      },
+      finishPillLabel: {
+        fontSize: typography.xs,
+      },
+      finishMetricsGrid: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+        width: '100%',
+      },
+      finishMetricCard: {
+        flex: 1,
+        borderRadius: radii.md,
+        borderWidth: 1,
+        minHeight: moderateScale(76),
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: spacing.sm,
+      },
+      finishMetricValue: {
+        fontSize: typography.body,
+        fontFamily: fonts.headingBold,
+      },
+      finishMetricLabel: {
+        marginTop: spacing.xs,
+        fontSize: typography.xs,
+        textAlign: 'center',
+      },
+      finishPremiumCard: {
+        borderWidth: 1,
+        borderRadius: radii.md,
+        padding: spacing.md,
+        gap: spacing.xs,
+        width: '100%',
+      },
+      finishPremiumBadge: {
+        alignSelf: 'flex-start',
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: spacing.xs,
+        borderWidth: 1,
+        borderRadius: radii.full,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+      },
+      finishInlineIconBox: {
+        width: moderateScale(18),
+        height: moderateScale(18),
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      finishPremiumBadgeText: {
+        fontSize: typography.small,
+        fontFamily: fonts.medium,
+        includeFontPadding: false,
+        lineHeight: verticalScale(18),
+      },
+      finishPremiumTitle: {
+        fontSize: typography.small,
+        fontFamily: fonts.headingBold,
+      },
+      finishPremiumText: {
+        fontSize: typography.xs,
+        lineHeight: verticalScale(18),
+      },
+      finishPremiumButton: {
+        marginTop: spacing.xs,
+        borderRadius: radii.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: spacing.sm,
+      },
+      finishPremiumButtonText: {
+        fontSize: typography.small,
+        fontFamily: fonts.headingBold,
+        includeFontPadding: false,
+        lineHeight: verticalScale(18),
+      },
+      finishPrimaryButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: spacing.sm,
+        borderRadius: radii.md,
+        paddingVertical: spacing.sm,
+        marginTop: spacing.xs,
+      },
+      finishPrimaryButtonText: {
+        fontSize: typography.body,
+        fontFamily: fonts.headingBold,
+        includeFontPadding: false,
+        lineHeight: verticalScale(22),
+      },
+      finishSecondaryButton: {
+        paddingVertical: spacing.sm,
+        alignItems: 'center',
+      },
+      finishSecondaryButtonText: {
+        fontSize: typography.small,
       },
       emptyTitle: {
         fontSize: typography.subtitle,
