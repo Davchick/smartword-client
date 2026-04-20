@@ -152,13 +152,20 @@ export const PaymentScreen = () => {
   };
 
   const resolvePaymentState = useCallback((url: string) => {
-    const normalizedUrl = url.toLowerCase();
-    const isSuccess = normalizedUrl.includes('/payment/success') || normalizedUrl.includes('checkorder') || normalizedUrl.includes('success=true');
-    const isCancel = normalizedUrl.includes('cancel=true') || normalizedUrl.includes('reject') || normalizedUrl.includes('failed');
-    return { isSuccess, isCancel };
+    try {
+      const parsed = new URL(url.toLowerCase());
+      const hash = parsed.hash;
+
+      const isSuccess = hash === '#/payment/success' || hash === '#/payment/success/' || parsed.searchParams.get('result') === 'success' || parsed.searchParams.get('status') === 'succeeded';
+      const isCancel = parsed.searchParams.get('cancel') === 'true' || parsed.searchParams.get('result') === 'cancel' || parsed.searchParams.get('result') === 'failed';
+
+      return { isSuccess, isCancel };
+    } catch {
+      return { isSuccess: false, isCancel: false };
+    }
   }, []);
 
-  const startPolling = useCallback(async (url?: string) => {
+  const startPolling = useCallback(async () => {
     setPaymentStatus('processing');
     let attempts = 0;
     const maxAttempts = 20;
@@ -175,18 +182,15 @@ export const PaymentScreen = () => {
           }
           invalidateProfile(queryClient);
           await refetchProfile();
-          if (status.subscription_type && status.subscription_expires_at) {
+          const freshProfile = queryClient.getQueryData<ApiProfile>(queryKey.profile.me());
+          if (freshProfile) {
             setUser({
-              ...user!,
+              ...freshProfile,
               is_premium: true,
             });
           }
           setPaymentStatus('confirmed');
           showToast('Подписка активирована', 'success');
-          if (url) {
-            setIsWebViewVisible(false);
-            setWebViewUrl(null);
-          }
         } else if (attempts >= maxAttempts) {
           if (pollingRef.current) {
             clearInterval(pollingRef.current);
@@ -205,13 +209,17 @@ export const PaymentScreen = () => {
         }
       }
     }, pollInterval);
-  }, [queryClient, showToast, refetchProfile, setUser, user]);
+  }, [queryClient, showToast, refetchProfile, setUser]);
 
-  const handleWebViewClose = useCallback((wasSuccess?: boolean, shouldPoll?: boolean, pollingUrl?: string) => {
+  const handleWebViewClose = useCallback((wasSuccess?: boolean, shouldPoll?: boolean) => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
     setIsWebViewVisible(false);
     setWebViewUrl(null);
-    if (shouldPoll !== false && wasSuccess) {
-      startPolling(pollingUrl);
+    if (shouldPoll === true && wasSuccess) {
+      startPolling();
     }
   }, [startPolling]);
 
@@ -240,9 +248,9 @@ export const PaymentScreen = () => {
     if (!url) return;
     const { isSuccess, isCancel } = resolvePaymentState(url);
     if (isSuccess) {
-      handleWebViewClose(true);
+      handleWebViewClose(true, true);
     } else if (isCancel) {
-      handleWebViewClose(false);
+      handleWebViewClose(false, false);
       showToast('Оплата отменена. Попробуйте ещё раз.', 'info');
     }
   }, [handleWebViewClose, resolvePaymentState, showToast]);
@@ -548,8 +556,7 @@ export const PaymentScreen = () => {
             <Text style={[styles.webViewTitle, { color: colors.text }]}>Оплата</Text>
             <TouchableOpacity
               onPress={() => {
-                showToast('Проверяем статус оплаты...', 'info');
-                handleWebViewClose(false, true, webViewUrl || undefined);
+                handleWebViewClose(false, false);
               }}
               style={styles.webViewCloseBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -561,31 +568,38 @@ export const PaymentScreen = () => {
             source={{ uri: webViewUrl }}
             style={styles.webView}
             onNavigationStateChange={handleNavigationStateChange}
-            onShouldStartWithLoadRequest={(request: { url?: string }) => {
-              const url = request.url || '';
-              if (url) {
-                handleNavigationStateChange({ url });
-              }
-              return true;
-            }}
-            startInLoadingState={true}
-            renderLoading={() => (
-              <View style={styles.webViewLoading}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={[styles.webViewLoadingText, { color: colors.muted }]}>
-                  Загрузка...
-                </Text>
-              </View>
-            )}
+            onShouldStartWithLoadRequest={() => true}
+            onLoadStart={() => setLoading(true)}
+            onLoadEnd={() => setLoading(false)}
+            allowsBackForwardNavigationGestures={false}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={false}
+            cacheEnabled={true}
+            allowFileAccess={false}
             injectedJavaScript={`
               (function() {
-                var originalPushState = window.history.pushState;
-                window.history.pushState = function() {
-                  originalPushState.apply(this, arguments);
-                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'url_change', url: window.location.href }));
-                };
+                var lastUrl = window.location.href;
+
+                function notify(url) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'url_change', url: url }));
+                }
+
+                var pollInterval = setInterval(function() {
+                  if (window.location.href !== lastUrl) {
+                    lastUrl = window.location.href;
+                    notify(lastUrl);
+                    clearInterval(pollInterval);
+                  }
+                }, 100);
+
                 window.addEventListener('hashchange', function() {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'url_change', url: window.location.href }));
+                  var newUrl = window.location.href;
+                  if (newUrl !== lastUrl) {
+                    lastUrl = newUrl;
+                    notify(newUrl);
+                    clearInterval(pollInterval);
+                  }
                 });
               })();
               true;
@@ -596,7 +610,11 @@ export const PaymentScreen = () => {
                 if (data.type === 'url_change' && data.url) {
                   handleNavigationStateChange({ url: data.url });
                 }
-              } catch {}
+              } catch (e) {
+                if (__DEV__) {
+                  console.warn('[PaymentScreen] WebView message parse error:', e);
+                }
+              }
             }}
           />
         </View>
