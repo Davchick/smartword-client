@@ -13,14 +13,15 @@ import WebView from 'react-native-webview';
 import { useQueryClient } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { Crown, ChevronLeft, Zap, MessageCircle, BookOpen, Sparkles, CreditCard, ExternalLink, FileText, Shield, Check, ArrowRight, RotateCcw, X } from 'lucide-react-native';
 import { useTheme, spacing, radii, typography, fonts } from '../../theme';
 import { useToast } from '../../components/Toast';
 import { useProfile } from '../../hooks/useProfile';
 import { useAuth } from '../../contexts/AuthContext';
+import type { ApiProfile } from '../../contexts/AuthContext';
 import { createSubscriptionPayment, getSubscriptionStatus, type PlanId, type PaymentMethod } from '../../lib/billing';
-import { queryKey, invalidateProfile } from '../../lib/queryKeys';
+import { queryKey, invalidateGroups, invalidateProfile, invalidateStats, invalidateStreaks, invalidateWords } from '../../lib/queryKeys';
 import type { RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -96,7 +97,29 @@ export const PaymentScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [webViewUrl, setWebViewUrl] = useState<string | null>(null);
   const [isWebViewVisible, setIsWebViewVisible] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'confirmed' | 'timeout'>('idle');
+  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'timeout'>('idle');
+  const paymentFinalizedRef = useRef(false);
+  const goToProfileWithThankYou = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    // Гарантированно закрываем paywall-экран и открываем профиль + экран благодарности
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 1,
+        routes: [
+          {
+            name: 'Main',
+            params: { screen: 'ProfileTab' },
+          },
+          { name: 'PremiumThankYou' },
+        ],
+      }),
+    );
+  }, [navigation]);
+
 
   // Анимация scale для выбранного тарифа
   const [planScales, setPlanScales] = useState<Record<PlanId, Animated.Value>>(() => ({
@@ -133,9 +156,51 @@ export const PaymentScreen = () => {
     setSelectedPlan(planId);
   };
 
+  const finalizeSuccessfulPayment = useCallback(async () => {
+    if (paymentFinalizedRef.current) return;
+    paymentFinalizedRef.current = true;
+
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    setIsWebViewVisible(false);
+    setWebViewUrl(null);
+
+    // Мгновенно меняем состояние приложения на Premium даже до refetch.
+    queryClient.setQueryData(queryKey.profile.me(), (prev: any) =>
+      prev ? { ...prev, is_premium: true } : prev,
+    );
+    const freshProfile = queryClient.getQueryData<ApiProfile>(queryKey.profile.me());
+    if (freshProfile) {
+      setUser({ ...freshProfile, is_premium: true });
+    } else if (user) {
+      setUser({ ...user, is_premium: true });
+    }
+
+    // ВАЖНО для UX: сначала уходим с этого экрана, чтобы не показывать
+    // промежуточный "Premium активен" блок из PaymentScreen.
+    goToProfileWithThankYou();
+
+    Promise.allSettled([
+      invalidateProfile(queryClient),
+      invalidateWords(queryClient),
+      invalidateGroups(queryClient),
+      invalidateStats(queryClient),
+      invalidateStreaks(queryClient),
+      refetchProfile(),
+    ]).catch(() => {
+      // Фоновая синхронизация не должна ломать навигационный флоу после оплаты.
+    });
+
+    showToast('Подписка активирована', 'success');
+  }, [goToProfileWithThankYou, queryClient, refetchProfile, setUser, showToast, user]);
+
   const handleActivate = async () => {
     setError(null);
     setLoading(true);
+    paymentFinalizedRef.current = false;
     try {
       const { confirmation_url } = await createSubscriptionPayment(selectedPlan, selectedMethod);
       if (confirmation_url) {
@@ -155,8 +220,15 @@ export const PaymentScreen = () => {
     try {
       const parsed = new URL(url.toLowerCase());
       const hash = parsed.hash;
+      const pathname = parsed.pathname || '';
 
-      const isSuccess = hash === '#/payment/success' || hash === '#/payment/success/' || parsed.searchParams.get('result') === 'success' || parsed.searchParams.get('status') === 'succeeded';
+      const isSuccess =
+        hash === '#/payment/success' ||
+        hash === '#/payment/success/' ||
+        pathname.endsWith('/payment/success') ||
+        pathname.endsWith('/payment/success/') ||
+        parsed.searchParams.get('result') === 'success' ||
+        parsed.searchParams.get('status') === 'succeeded';
       const isCancel = parsed.searchParams.get('cancel') === 'true' || parsed.searchParams.get('result') === 'cancel' || parsed.searchParams.get('result') === 'failed';
 
       return { isSuccess, isCancel };
@@ -176,21 +248,7 @@ export const PaymentScreen = () => {
       try {
         const status = await getSubscriptionStatus();
         if (status.is_premium) {
-          if (pollingRef.current) {
-            clearInterval(pollingRef.current);
-            pollingRef.current = null;
-          }
-          invalidateProfile(queryClient);
-          await refetchProfile();
-          const freshProfile = queryClient.getQueryData<ApiProfile>(queryKey.profile.me());
-          if (freshProfile) {
-            setUser({
-              ...freshProfile,
-              is_premium: true,
-            });
-          }
-          setPaymentStatus('confirmed');
-          showToast('Подписка активирована', 'success');
+          await finalizeSuccessfulPayment();
         } else if (attempts >= maxAttempts) {
           if (pollingRef.current) {
             clearInterval(pollingRef.current);
@@ -209,7 +267,7 @@ export const PaymentScreen = () => {
         }
       }
     }, pollInterval);
-  }, [queryClient, showToast, refetchProfile, setUser]);
+  }, [showToast, finalizeSuccessfulPayment]);
 
   const handleWebViewClose = useCallback((wasSuccess?: boolean, shouldPoll?: boolean) => {
     if (pollingRef.current) {
@@ -248,12 +306,47 @@ export const PaymentScreen = () => {
     if (!url) return;
     const { isSuccess, isCancel } = resolvePaymentState(url);
     if (isSuccess) {
+      // Всегда закрываем WebView сразу, даже если URL распознался раньше webhook.
       handleWebViewClose(true, true);
     } else if (isCancel) {
       handleWebViewClose(false, false);
       showToast('Оплата отменена. Попробуйте ещё раз.', 'info');
     }
   }, [handleWebViewClose, resolvePaymentState, showToast]);
+
+  // Fail-safe: пока открыт WebView, периодически сверяем статус подписки с сервером.
+  // Это закрывает кейсы, когда платёж успешен, но success URL не был распознан WebView.
+  useEffect(() => {
+    if (!isWebViewVisible || !webViewUrl) return;
+    if (paymentFinalizedRef.current) return;
+
+    let cancelled = false;
+    const startedAt = Date.now();
+    const maxMs = 4 * 60 * 1000; // даём пользователю спокойно завершить оплату
+
+    const tick = async () => {
+      if (cancelled || paymentFinalizedRef.current) return;
+      try {
+        const status = await getSubscriptionStatus();
+        if (status.is_premium) {
+          await finalizeSuccessfulPayment();
+          return;
+        }
+      } catch {
+        // Сетевые сбои здесь не критичны — продолжаем polling.
+      }
+
+      if (!cancelled && Date.now() - startedAt < maxMs) {
+        setTimeout(tick, 3000);
+      }
+    };
+
+    const timer = setTimeout(tick, 1200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isWebViewVisible, webViewUrl, finalizeSuccessfulPayment]);
 
   const handleGoBack = () => {
     if (navigation.canGoBack()) {
@@ -620,7 +713,7 @@ export const PaymentScreen = () => {
         </View>
       )}
 
-      {(paymentStatus === 'processing' || paymentStatus === 'confirmed' || paymentStatus === 'timeout') && (
+      {(paymentStatus === 'processing' || paymentStatus === 'timeout') && (
         <View style={[styles.waitingOverlay, { backgroundColor: colors.background }]}>
           <View style={styles.waitingContent}>
             {paymentStatus === 'processing' && (
@@ -630,23 +723,6 @@ export const PaymentScreen = () => {
                 <Text style={[styles.waitingDesc, { color: colors.muted }]}>
                   Платёж обрабатывается. Это может занять до 40 секунд.
                 </Text>
-              </>
-            )}
-            {paymentStatus === 'confirmed' && (
-              <>
-                <View style={[styles.successIcon, { backgroundColor: colors.primary }]}>
-                  <Check color="#fff" size={32} strokeWidth={3} />
-                </View>
-                <Text style={[styles.waitingTitle, { color: colors.text }]}>Оплата успешна!</Text>
-                <Text style={[styles.waitingDesc, { color: colors.muted }]}>
-                  Спасибо за поддержку. Premium активирован.
-                </Text>
-                <TouchableOpacity
-                  style={[styles.waitingButton, { backgroundColor: colors.primary }]}
-                  onPress={handleGoToMain}
-                >
-                  <Text style={styles.waitingButtonText}>Продолжить</Text>
-                </TouchableOpacity>
               </>
             )}
             {paymentStatus === 'timeout' && (

@@ -14,6 +14,7 @@ import { TabNavigator } from "./TabNavigator";
 import { ProfileSettingsScreen } from "../screens/Profile/ProfileSettingsScreen";
 import { ProfileAccountScreen } from "../screens/Profile/ProfileAccountScreen";
 import { PaymentScreen } from "../screens/Billing/PaymentScreen";
+import { PremiumThankYouScreen } from "../screens/Billing/PremiumThankYouScreen";
 
 import { useTheme } from "../theme";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -137,6 +138,7 @@ export const RootNavigator = () => {
             component={ProfileAccountScreen}
           />
           <Stack.Screen name="BillingPayment" component={PaymentScreen} />
+          <Stack.Screen name="PremiumThankYou" component={PremiumThankYouScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </ErrorBoundary>

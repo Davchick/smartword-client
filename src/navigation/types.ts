@@ -1,15 +1,16 @@
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import type { CompositeScreenProps } from '@react-navigation/native';
+import type { CompositeScreenProps, NavigatorScreenParams } from '@react-navigation/native';
 
 // --- Root Stack ---
 export type RootStackParamList = {
   Welcome: undefined;
   SignIn: { fromProfile?: boolean } | undefined;
-  Main: undefined;
+  Main: NavigatorScreenParams<MainTabParamList> | undefined;
   ProfileSettings: undefined;
   ProfileAccount: undefined;
   BillingPayment: undefined;
+  PremiumThankYou: undefined;
   Legal: undefined;
 };
 
