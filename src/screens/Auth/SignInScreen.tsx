@@ -264,6 +264,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
   const [resendLoading, setResendLoading] = useState(false);
   const [emailNotVerifiedShown, setEmailNotVerifiedShown] = useState(false);
   const [agreementChecked, setAgreementChecked] = useState(false);
+  const [personalDataConsentChecked, setPersonalDataConsentChecked] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
 
@@ -298,8 +299,8 @@ export const SignInScreen = ({ route, navigation }: Props) => {
       showToast('Пароль минимум 6 символов', 'error');
       return;
     }
-    if (isSignUp && !agreementChecked) {
-      showToast('Примите соглашение и политику', 'error');
+    if (isSignUp && (!agreementChecked || !personalDataConsentChecked)) {
+      showToast('Примите все обязательные согласия', 'error');
       return;
     }
 
@@ -651,7 +652,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                   </TouchableOpacity>
                 )}
 
-                {/* Agreement checkbox */}
+                {/* Agreement checkboxes */}
                 {isSignUp && (
                   <View style={styles.agreementBlock}>
                     <TouchableOpacity
@@ -671,7 +672,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                         {agreementChecked && <Text style={styles.checkmark}>✓</Text>}
                       </View>
                       <Text style={[styles.agreementText, { color: colors.text }]}>
-                        Принимаю{' '}
+                        Я принимаю{' '}
                         <Text
                           style={[styles.linkText, { color: colors.primary }]}
                           onPress={(e) => {
@@ -679,7 +680,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                             Linking.openURL('https://smart-word.ru/privacy');
                           }}
                         >
-                          политику конфиденциальности
+                          Политику конфиденциальности
                         </Text>
                         {' '}и{' '}
                         <Text
@@ -689,7 +690,38 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                             Linking.openURL('https://smart-word.ru/terms');
                           }}
                         >
-                          условия использования
+                          Условия использования
+                        </Text>
+                        .
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.agreementRow}
+                      onPress={() => setPersonalDataConsentChecked(!personalDataConsentChecked)}
+                      activeOpacity={0.7}
+                    >
+                      <View
+                        style={[
+                          styles.checkboxSquare,
+                          {
+                            backgroundColor: personalDataConsentChecked ? colors.primary : 'transparent',
+                            borderColor: personalDataConsentChecked ? colors.primary : isDark ? 'rgba(148,163,184,0.3)' : 'rgba(148,163,184,0.4)',
+                          },
+                        ]}
+                      >
+                        {personalDataConsentChecked && <Text style={styles.checkmark}>✓</Text>}
+                      </View>
+                      <Text style={[styles.agreementText, { color: colors.text }]}>
+                        Я даю{' '}
+                        <Text
+                          style={[styles.linkText, { color: colors.primary }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Linking.openURL('https://smart-word.ru/consent');
+                          }}
+                        >
+                          Согласие на обработку моих персональных данных
                         </Text>
                       </Text>
                     </TouchableOpacity>
@@ -715,7 +747,13 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                 {/* Toggle sign in/up */}
                 <TouchableOpacity 
                   style={styles.toggleBtn} 
-                  onPress={() => { setIsSignUp((v) => !v); setShowForgotPassword(false); setEmailNotVerifiedShown(false); }}
+                  onPress={() => {
+                    setIsSignUp((v) => !v);
+                    setShowForgotPassword(false);
+                    setEmailNotVerifiedShown(false);
+                    setAgreementChecked(false);
+                    setPersonalDataConsentChecked(false);
+                  }}
                   activeOpacity={0.6}
                 >
                   <Text style={[styles.toggleText, { color: colors.muted }]}>
