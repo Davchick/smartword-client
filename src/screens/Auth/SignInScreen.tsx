@@ -119,6 +119,9 @@ const useSignInStyles = () => {
         alignItems: 'flex-start',
         gap: spacing.sm,
       },
+      agreementRowSecondary: {
+        marginTop: spacing.xs,
+      },
       checkboxSquare: {
         width: isSmall ? 16 : 18,
         height: isSmall ? 16 : 18,
@@ -697,7 +700,7 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.agreementRow}
+                      style={[styles.agreementRow, styles.agreementRowSecondary]}
                       onPress={() => setPersonalDataConsentChecked(!personalDataConsentChecked)}
                       activeOpacity={0.7}
                     >

@@ -16,11 +16,16 @@ export interface ChatMessage {
 // Ключи для AsyncStorage — добавляем userId динамически
 const CHAT_MESSAGES_KEY = (userId: string) => `chat:messages:${userId}`;
 const CHAT_GROUP_KEY = (userId: string) => `chat:group:${userId}`;
+const CHAT_CONTEXT_KEY = (userId: string) => `chat:context:${userId}`;
 const CHAT_LIMIT_REACHED_KEY = (userId: string) => `chat:limitReached:${userId}`;
 const CHAT_MESSAGES_USED_KEY = (userId: string) => `chat:messagesUsed:${userId}`;
 const CHAT_LAST_RESET_DATE_KEY = (userId: string) => `chat:lastResetDate:${userId}`;
 // Максимум сообщений для сохранения — предотвращаем разрастание
 const MAX_PERSISTED_MESSAGES = 100;
+
+export type ChatContext =
+  | { type: 'free' }
+  | { type: 'group'; id: string; name?: string };
 
 interface PersistedMessage {
   id: string;
@@ -54,6 +59,7 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
   const [messagesUsed, setMessagesUsed] = useState(serverMessagesUsed ?? 0);
   const [limitReached, setLimitReached] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const desiredContextRef = useRef<ChatContext | undefined>(undefined);
 
   // Синхронизация с сервером — когда профиль загрузился или обновился
   useEffect(() => {
@@ -68,6 +74,20 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
   // Ref для дедупликации — предотвращает одновременные запросы при быстрых кликах
   const sendingRef = useRef(false);
 
+  const setDesiredContext = useCallback((ctx?: ChatContext) => {
+    desiredContextRef.current = ctx;
+  }, []);
+
+  const doesContextMatch = (stored?: ChatContext | null, desired?: ChatContext): boolean => {
+    if (!desired) return true; // если контекст не задан — восстанавливаем как раньше
+    if (!stored) return false;
+    if (stored.type !== desired.type) return false;
+    if (stored.type === 'group' && desired.type === 'group') {
+      return stored.id === desired.id;
+    }
+    return true;
+  };
+
   // ── Загрузка сообщений из AsyncStorage при монтировании / смене пользователя ──
   useEffect(() => {
     if (!authUser?.id) {
@@ -80,15 +100,28 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
 
     const loadPersisted = async () => {
       try {
-        const [messagesRaw, groupRaw, limitReachedRaw, messagesUsedRaw, lastResetDateRaw] = await Promise.all([
+        const [messagesRaw, groupRaw, contextRaw, limitReachedRaw, messagesUsedRaw, lastResetDateRaw] = await Promise.all([
           AsyncStorage.getItem(CHAT_MESSAGES_KEY(authUser.id)),
           AsyncStorage.getItem(CHAT_GROUP_KEY(authUser.id)),
+          AsyncStorage.getItem(CHAT_CONTEXT_KEY(authUser.id)),
           AsyncStorage.getItem(CHAT_LIMIT_REACHED_KEY(authUser.id)),
           AsyncStorage.getItem(CHAT_MESSAGES_USED_KEY(authUser.id)),
           AsyncStorage.getItem(CHAT_LAST_RESET_DATE_KEY(authUser.id)),
         ]);
 
         if (cancelled) return;
+
+        let storedContext: ChatContext | null = null;
+        if (contextRaw) {
+          try {
+            storedContext = JSON.parse(contextRaw) as ChatContext;
+          } catch {
+            storedContext = null;
+          }
+        }
+
+        const desiredContext = desiredContextRef.current;
+        const contextOk = doesContextMatch(storedContext, desiredContext);
 
         // Daily reset: используем серверную дату как source of truth
         // Если серверная дата есть — сверяем с ней, иначе — fallback на локальную
@@ -99,7 +132,7 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
         const storedResetKey = lastResetDateRaw || serverResetKey;
         const isNewDay = storedResetKey !== todayKey;
 
-        if (messagesRaw) {
+        if (messagesRaw && contextOk) {
           const parsed: PersistedMessage[] = JSON.parse(messagesRaw);
           const restored: ChatMessage[] = parsed.map((m) => ({
             ...m,
@@ -109,12 +142,23 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
           const trimmed = restored.slice(-MAX_PERSISTED_MESSAGES);
           setMessages(trimmed);
           messagesRef.current = trimmed;
+        } else {
+          setMessages([]);
+          messagesRef.current = [];
         }
 
-        if (groupRaw) {
-          const { id, name } = JSON.parse(groupRaw);
-          groupIdRef.current = id;
-          groupNameRef.current = name;
+        if (groupRaw && contextOk) {
+          try {
+            const { id, name } = JSON.parse(groupRaw);
+            groupIdRef.current = id;
+            groupNameRef.current = name;
+          } catch {
+            groupIdRef.current = undefined;
+            groupNameRef.current = undefined;
+          }
+        } else {
+          groupIdRef.current = undefined;
+          groupNameRef.current = undefined;
         }
 
         if (isNewDay) {
@@ -187,9 +231,29 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
     if (authUser?.id) {
       if (id) {
         AsyncStorage.setItem(CHAT_GROUP_KEY(authUser.id), JSON.stringify({ id, name })).catch(() => {});
+        AsyncStorage.setItem(CHAT_CONTEXT_KEY(authUser.id), JSON.stringify({ type: 'group', id, name })).catch(() => {});
       } else {
         AsyncStorage.removeItem(CHAT_GROUP_KEY(authUser.id)).catch(() => {});
+        AsyncStorage.setItem(CHAT_CONTEXT_KEY(authUser.id), JSON.stringify({ type: 'free' })).catch(() => {});
       }
+    }
+  }, [authUser?.id]);
+
+  const clearConversation = useCallback(() => {
+    setMessages([]);
+    messagesRef.current = [];
+    groupIdRef.current = undefined;
+    groupNameRef.current = undefined;
+
+    // Очищаем только историю и выбранную группу (лимиты не трогаем)
+    if (authUser?.id) {
+      AsyncStorage.multiRemove([
+        CHAT_MESSAGES_KEY(authUser.id),
+        CHAT_GROUP_KEY(authUser.id),
+        CHAT_CONTEXT_KEY(authUser.id),
+      ]).catch((err) => {
+        console.error('[useChat] Failed to clear persisted conversation:', err);
+      });
     }
   }, [authUser?.id]);
 
@@ -435,27 +499,51 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
     }
   }, [authUser]);
 
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-    messagesRef.current = [];
-    setLimitReached(false);
-    setMessagesUsed(0);
-    groupIdRef.current = undefined;
-    groupNameRef.current = undefined;
+  const clearMessages = useCallback(
+    (options?: { resetUsage?: boolean }) => {
+      const resetUsage = options?.resetUsage ?? true;
+      setMessages([]);
+      messagesRef.current = [];
+      groupIdRef.current = undefined;
+      groupNameRef.current = undefined;
 
-    // Очищаем AsyncStorage для текущего пользователя
-    if (authUser?.id) {
-      AsyncStorage.multiRemove([
-        CHAT_MESSAGES_KEY(authUser.id),
-        CHAT_GROUP_KEY(authUser.id),
-        CHAT_LIMIT_REACHED_KEY(authUser.id),
-        CHAT_MESSAGES_USED_KEY(authUser.id),
-        CHAT_LAST_RESET_DATE_KEY(authUser.id),
-      ]).catch((err) => {
-        console.error('[useChat] Failed to clear persisted chat:', err);
-      });
-    }
-  }, [authUser?.id]);
+      if (resetUsage) {
+        setLimitReached(false);
+        setMessagesUsed(0);
+      }
 
-  return { messages, loading, messagesUsed, limitReached, sendMessage, retryMessage, setGroup, clearMessages };
+      // Очищаем AsyncStorage для текущего пользователя
+      if (authUser?.id) {
+        const keysToRemove = [
+          CHAT_MESSAGES_KEY(authUser.id),
+          CHAT_GROUP_KEY(authUser.id),
+          CHAT_CONTEXT_KEY(authUser.id),
+        ];
+        if (resetUsage) {
+          keysToRemove.push(
+            CHAT_LIMIT_REACHED_KEY(authUser.id),
+            CHAT_MESSAGES_USED_KEY(authUser.id),
+            CHAT_LAST_RESET_DATE_KEY(authUser.id)
+          );
+        }
+        AsyncStorage.multiRemove(keysToRemove).catch((err) => {
+          console.error('[useChat] Failed to clear persisted chat:', err);
+        });
+      }
+    },
+    [authUser?.id]
+  );
+
+  return {
+    messages,
+    loading,
+    messagesUsed,
+    limitReached,
+    sendMessage,
+    retryMessage,
+    setGroup,
+    setDesiredContext,
+    clearMessages,
+    clearConversation,
+  };
 };

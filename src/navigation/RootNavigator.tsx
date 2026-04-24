@@ -27,7 +27,6 @@ export const RootNavigator = () => {
   const navRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
   const { user, loading: authLoading, guestMode } = useAuth();
   const navReadyRef = useRef(false);
-  const initialNavigationDone = useRef(false);
 
   // Логика определения начального экрана:
   // 1. guestMode === true (выбрал "Начать без аккаунта") → Main
@@ -66,33 +65,16 @@ export const RootNavigator = () => {
 
   // При выходе из аккаунта (user стал null, но не guestMode) → показываем Welcome
   useEffect(() => {
-    if (!navReadyRef.current) return;
-    if (authLoading) return;
-    if (initialNavigationDone.current) return;
+    if (!navReadyRef.current || authLoading) return;
 
-    // Гость — всегда Main
-    if (guestMode) {
-      initialNavigationDone.current = true;
-      return;
-    }
-
-    // Вошёл в аккаунт — Main
-    if (user) {
-      initialNavigationDone.current = true;
-      navRef.current?.reset({
-        index: 0,
-        routes: [{ name: "Main" }],
-      });
-      return;
-    }
-
-    // Был в аккаунте, но вышел (user null, не guest) → Welcome
-    // Проверяем, что мы не уже на Welcome
+    const targetRoute: keyof RootStackParamList = guestMode || user ? "Main" : "Welcome";
     const currentRoute = navRef.current?.getCurrentRoute()?.name;
-    if (currentRoute !== "Welcome") {
+
+    // Prevent stale auth navigation state: always align root route with auth state.
+    if (currentRoute !== targetRoute) {
       navRef.current?.reset({
         index: 0,
-        routes: [{ name: "Welcome" }],
+        routes: [{ name: targetRoute }],
       });
     }
   }, [user, authLoading, guestMode]);

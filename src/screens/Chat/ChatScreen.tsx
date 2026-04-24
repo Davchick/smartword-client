@@ -98,7 +98,18 @@ export const ChatScreen = () => {
   const [selectedGroup, setSelectedGroup] = useState<WordGroup | null>(null);
   const [freeMode, setFreeMode] = useState(false);
 
-  const { messages, loading, messagesUsed, limitReached, sendMessage, retryMessage, setGroup, clearMessages } = useChat(
+  const {
+    messages,
+    loading,
+    messagesUsed,
+    limitReached,
+    sendMessage,
+    retryMessage,
+    setGroup,
+    setDesiredContext,
+    clearMessages,
+    clearConversation,
+  } = useChat(
     profile?.ai_messages_used,
     profile?.last_ai_message_reset_at
   );
@@ -142,6 +153,8 @@ export const ChatScreen = () => {
 
   // Пользователь выбрал конкретный словарь
   const handleChooseDictionary = useCallback(async (group: WordGroup) => {
+    setDesiredContext({ type: 'group', id: group.id, name: group.name });
+    clearConversation();
     setSelectedGroup(group);
     setFreeMode(false);
     setGroup(group.id, group.name); // устанавливаем группу в ref ДО отправки
@@ -149,10 +162,12 @@ export const ChatScreen = () => {
     await sendMessage(`Начинаем практику со словарём "${group.name}"`, true);
     scrollToBottom();
     setTimeout(() => inputRef.current?.focus(), 300);
-  }, [sendMessage, setGroup, scrollToBottom]);
+  }, [clearConversation, sendMessage, setDesiredContext, setGroup, scrollToBottom]);
 
   // Пользователь выбрал свободное общение
   const handleFreeChat = useCallback(async () => {
+    setDesiredContext({ type: 'free' });
+    clearConversation();
     setFreeMode(true);
     setSelectedGroup(null);
     setGroup(undefined, undefined);
@@ -160,7 +175,7 @@ export const ChatScreen = () => {
     await sendMessage('Свободное общение', true);
     scrollToBottom();
     setTimeout(() => inputRef.current?.focus(), 300);
-  }, [sendMessage, setGroup, scrollToBottom]);
+  }, [clearConversation, sendMessage, setDesiredContext, setGroup, scrollToBottom]);
 
   const handleSend = useCallback(async () => {
     if (!inputText.trim() || loading) return;
@@ -180,12 +195,13 @@ export const ChatScreen = () => {
   }, [inputText, loading, profile, messagesUsed, limitReached, sendMessage, scrollToBottom]);
 
   const handleReset = useCallback(() => {
+    setDesiredContext(undefined);
     clearMessages(); // clearMessages уже сбрасывает groupIdRef внутри
     setStage('choosing');
     setSelectedGroup(null);
     setFreeMode(false);
     setInputText('');
-  }, [clearMessages]);
+  }, [clearMessages, setDesiredContext]);
 
   const handleInsertFromHint = useCallback((text: string) => {
     if (!text) return;
@@ -643,7 +659,8 @@ const MessageBubble = ({
     }
 
     return lines
-      .map((line) => line.replace(/^[-•\d.]\s*/, '').trim())
+      // Remove full list markers like "1.", "2)", "-", "•" at line start.
+      .map((line) => line.replace(/^(?:\d+[.)]\s*|[-•*]\s*)/, '').trim())
       .filter(Boolean);
   };
 
