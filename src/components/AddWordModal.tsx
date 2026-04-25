@@ -34,14 +34,24 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
     if (isDisabled) return;
     setLoading(true);
     setError(null);
-    const result = await onSubmit(original.trim(), translation.trim());
-    setLoading(false);
-    if (result.error) {
-      setError(result.error);
-    } else {
+
+    try {
+      const result = await onSubmit(original.trim(), translation.trim());
+      if (result?.error) {
+        setError(result.error);
+        return;
+      }
       setOriginal('');
       setTranslation('');
       onClose();
+    } catch (e) {
+      const message =
+        e instanceof Error && e.message
+          ? e.message
+          : 'Не удалось добавить слово. Попробуйте ещё раз.';
+      setError(message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -59,7 +69,12 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
           style={styles.container}
           behavior={Platform.OS === 'ios' ? 'padding' : 'position'}
         >
-          <View style={[styles.sheet, { backgroundColor: colors.elevated }]} onStartShouldSetResponder={() => true}>
+          {/* Отдельный Pressable нужен, чтобы тап внутри шита не закрывал модалку */}
+          <Pressable onPress={() => {}}>
+            <View
+              style={[styles.sheet, { backgroundColor: colors.elevated }]}
+              onStartShouldSetResponder={() => true}
+            >
             <View style={styles.header}>
               <Text style={[styles.title, { color: colors.text }]}>Новое слово</Text>
               <TouchableOpacity onPress={handleClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -69,7 +84,7 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
 
           <TextInput
             style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-            placeholder="Слово"
+            placeholder="Apple"
             placeholderTextColor={colors.muted}
             value={original}
             onChangeText={setOriginal}
@@ -78,7 +93,7 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
           />
           <TextInput
             style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.text }]}
-            placeholder="Перевод"
+            placeholder="Яблоко"
             placeholderTextColor={colors.muted}
             value={translation}
             onChangeText={setTranslation}
@@ -96,7 +111,8 @@ export const AddWordModal = ({ visible, onClose, onSubmit, totalCount, isPremium
           >
             <Text style={[styles.buttonText, { color: colors.background }]}>{loading ? 'Добавление...' : 'Добавить'}</Text>
           </TouchableOpacity>
-          </View>
+            </View>
+          </Pressable>
         </KeyboardAvoidingView>
       </Pressable>
     </Modal>

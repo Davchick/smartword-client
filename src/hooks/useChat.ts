@@ -282,7 +282,6 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
       const responseData = await apiPostWithRetry<{ reply?: string; messages_used?: number; error?: string }>('/chat', {
         messages: apiMessages,
         group_id: groupIdRef.current,
-        group_name: groupNameRef.current,
         isInitialMessage: false,
       });
 
@@ -410,7 +409,6 @@ export const useChat = (serverMessagesUsed?: number, serverResetDateIso?: string
       const responseData = await apiPostWithRetry<{ reply?: string; messages_used?: number; error?: string }>('/chat', {
         messages: apiMessages,
         group_id: groupIdRef.current,
-        group_name: groupNameRef.current,
         isInitialMessage: isInitialMessage ?? false,
       });
 

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, RotateCcw, Dumbbell, Crown } from 'lucide-react-native';
+import { ArrowLeft, RotateCcw, Dumbbell, Crown, ArrowLeftRight } from 'lucide-react-native';
 import { useWords } from '../../hooks/useWords';
 import { SwipeCard } from '../../components/SwipeCard';
 import { useTheme, fonts } from '../../theme';
@@ -24,6 +24,7 @@ import { useResponsiveTypography } from '../../hooks/useResponsiveTypography';
 import { moderateScale, verticalScale } from '../../utils/responsive';
 import type { TrainingScreenProps } from '../../navigation/types';
 import type { Word } from '../../hooks/useWords';
+import type { SwipeCardHandle } from '../../components/SwipeCard';
 
 type Props = TrainingScreenProps;
 
@@ -66,6 +67,10 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [wordsLearnedInSession, setWordsLearnedInSession] = useState(0);
   const [retryRenderNonce, setRetryRenderNonce] = useState(0);
+  const [showOriginalOnFront, setShowOriginalOnFront] = useState(false);
+  const [isDraggingTopCard, setIsDraggingTopCard] = useState(false);
+  const [isButtonSwipeAnimating, setIsButtonSwipeAnimating] = useState(false);
+  const topCardRef = useRef<SwipeCardHandle | null>(null);
 
   // Отслеживаем достижение лимита во время сессии
   const [hitLimitThisSession, setHitLimitThisSession] = useState(false);
@@ -156,11 +161,20 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
   };
 
   const handleSwipe = async (knew: boolean) => {
-    if (isProcessing || processingRef.current) return;
-    if (weeklyLimitReached && !profile?.is_premium) return;
+    if (isProcessing || processingRef.current) {
+      setIsButtonSwipeAnimating(false);
+      return;
+    }
+    if (weeklyLimitReached && !profile?.is_premium) {
+      setIsButtonSwipeAnimating(false);
+      return;
+    }
 
     const currentWord = trainingWords[currentIndex];
-    if (!currentWord) return;
+    if (!currentWord) {
+      setIsButtonSwipeAnimating(false);
+      return;
+    }
 
     setIsProcessing(true);
     processingRef.current = true;
@@ -215,6 +229,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         setCurrentIndex(0);
         setIsProcessing(false);
         processingRef.current = false;
+        setIsButtonSwipeAnimating(false);
         return;
       }
 
@@ -228,6 +243,7 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
             setRound('retry');
             setIsProcessing(false);
             processingRef.current = false;
+            setIsButtonSwipeAnimating(false);
             return;
           }
         }
@@ -240,12 +256,27 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
       console.error('[Training] handleSwipe error:', err);
       setIsProcessing(false);
       processingRef.current = false;
+      setIsButtonSwipeAnimating(false);
       showToast('Не удалось сохранить прогресс. Попробуйте ещё раз.', 'error', 3000);
       return; // НЕ переходим к следующему слову
     }
 
     setIsProcessing(false);
     processingRef.current = false;
+    setIsButtonSwipeAnimating(false);
+  };
+
+  const requestButtonSwipe = (direction: 'left' | 'right') => {
+    if (isProcessing || isButtonSwipeAnimating) return;
+    setIsButtonSwipeAnimating(true);
+
+    // If ref is unavailable for any reason, fall back to immediate logic (no animation).
+    if (!topCardRef.current) {
+      void handleSwipe(direction === 'right');
+      return;
+    }
+
+    topCardRef.current.swipe(direction);
   };
 
   const handleRestart = async () => {
@@ -585,8 +616,19 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
         <Text style={[styles.counterRight, { color: colors.success }]}>{formatScore(stats.knew)}</Text>
       </View>
 
-      <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
-        <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: colors.primary }]} />
+      <View style={styles.progressArea}>
+        <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+          <View style={[styles.progressFill, { width: `${progress * 100}%`, backgroundColor: colors.primary }]} />
+        </View>
+
+        <TouchableOpacity
+          onPress={() => setShowOriginalOnFront((v) => !v)}
+          style={[styles.swapBtnProgress, { backgroundColor: colors.elevated, borderColor: colors.border }]}
+          activeOpacity={0.85}
+          accessibilityLabel="Invert card sides"
+        >
+          <ArrowLeftRight color={colors.text} size={moderateScale(18)} />
+        </TouchableOpacity>
       </View>
 
       <View style={styles.cardsContainer}>
@@ -599,12 +641,17 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
           return (
             <SwipeCard
               key={`${word.id}${retryKeySuffix}`}
+              ref={stackIndex === 0 ? topCardRef : undefined}
               word={word}
               isTop={stackIndex === 0}
               stackIndex={stackIndex}
+              frontSide={showOriginalOnFront ? 'original' : 'translation'}
               onSwipeRight={() => handleSwipe(true)}
               onSwipeLeft={() => handleSwipe(false)}
               disabled={isProcessing}
+              gesturesDisabled={isProcessing || isButtonSwipeAnimating}
+              onDragActiveChange={stackIndex === 0 ? setIsDraggingTopCard : undefined}
+              hidden={isDraggingTopCard && stackIndex !== 0}
             />
           );
         })}
@@ -620,9 +667,9 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
               opacity: isProcessing ? 0.5 : 1,
             },
           ]}
-          onPress={() => handleSwipe(false)}
+          onPress={() => requestButtonSwipe('left')}
           activeOpacity={0.8}
-          disabled={isProcessing}
+          disabled={isProcessing || isButtonSwipeAnimating}
         >
           <Text style={[styles.actionButtonText, { color: colors.danger }]}>✕</Text>
         </TouchableOpacity>
@@ -636,9 +683,9 @@ export const TrainingScreen = ({ route, navigation }: Props) => {
               opacity: isProcessing ? 0.5 : 1,
             },
           ]}
-          onPress={() => handleSwipe(true)}
+          onPress={() => requestButtonSwipe('right')}
           activeOpacity={0.8}
-          disabled={isProcessing}
+          disabled={isProcessing || isButtonSwipeAnimating}
         >
           <Text style={[styles.actionButtonText, { color: colors.success }]}>✓</Text>
         </TouchableOpacity>
@@ -696,14 +743,29 @@ const useTrainingStyles = () => {
       headerSubtitle: {
         fontSize: typography.small,
       },
+      progressArea: {
+        position: 'relative',
+        marginHorizontal: spacing.lg,
+        paddingBottom: moderateScale(42),
+      },
       progressBar: {
         height: moderateScale(3),
-        marginHorizontal: spacing.lg,
         borderRadius: moderateScale(2),
       },
       progressFill: {
         height: '100%',
         borderRadius: moderateScale(2),
+      },
+      swapBtnProgress: {
+        position: 'absolute',
+        right: 0,
+        bottom: 0,
+        width: moderateScale(38),
+        height: moderateScale(38),
+        borderRadius: moderateScale(12),
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
       },
       cardsContainer: {
         flex: 1,

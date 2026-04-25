@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -6,12 +6,18 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withSequence,
   runOnJS,
   interpolate,
   Extrapolation,
+  Easing,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useTheme, spacing, radii, typography } from '../theme';
+
+export type SwipeCardHandle = {
+  swipe: (direction: 'left' | 'right') => void;
+};
 
 interface Props {
   word: { original: string; translation: string };
@@ -19,24 +25,52 @@ interface Props {
   onSwipeLeft: () => void;
   isTop: boolean;
   stackIndex: number;
-  disabled?: boolean;
+  disabled?: boolean; // blocks swipe callbacks / progress updates
+  gesturesDisabled?: boolean; // blocks user gestures only (buttons may still trigger programmatic swipe)
+  frontSide?: 'original' | 'translation';
+  onDragActiveChange?: (active: boolean) => void;
+  hidden?: boolean;
 }
 
 const triggerHapticMedium = () => {
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 };
 
 const triggerHapticLight = () => {
-  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 };
 
-export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, disabled = false }: Props) => {
+export const SwipeCard = forwardRef<SwipeCardHandle, Props>(({
+  word,
+  onSwipeRight,
+  onSwipeLeft,
+  isTop,
+  stackIndex,
+  disabled = false,
+  gesturesDisabled = false,
+  frontSide = 'original',
+  onDragActiveChange,
+  hidden = false,
+}, ref) => {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const SWIPE_THRESHOLD = windowWidth * 0.12;
+  const safeOriginal = word?.original ?? '';
+  const safeTranslation = word?.translation ?? '';
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
   const hapticTriggered = useSharedValue(false);
+  const enterScale = useSharedValue(1);
+  const enterOpacity = useSharedValue(1);
+  const enterTranslateY = useSharedValue(0);
+  const prevIsTopRef = useRef(isTop);
+  const mountedRef = useRef(false);
+  const programmaticInFlightRef = useRef(false);
+
+  const endProgrammaticSwipe = () => {
+    programmaticInFlightRef.current = false;
+    onDragActiveChange?.(false);
+  };
 
   // Flip state: 0 = front (original), 1 = back (translation) in degrees 0→180
   const flipRotation = useSharedValue(0);
@@ -55,23 +89,91 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
     hapticTriggered.value = false;
     flipRotation.value = 0;
     isFlipped.value = false;
-  }, [isTop, word.original, word.translation, flipRotation, hapticTriggered, isFlipped, translateX, translateY]);
+  }, [isTop, safeOriginal, safeTranslation, flipRotation, hapticTriggered, isFlipped, translateX, translateY]);
+
+  // Entrance animation: when a card becomes the new top after swipe,
+  // it appears with a subtle "Apple-like" motion: fade + lift + gentle settle.
+  useEffect(() => {
+    const wasTop = prevIsTopRef.current;
+    prevIsTopRef.current = isTop;
+
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+
+    if (!wasTop && isTop) {
+      // Start slightly smaller, slightly lower, fully transparent.
+      enterScale.value = 0.92;
+      enterOpacity.value = 0;
+      enterTranslateY.value = 10;
+
+      // Opacity: quick, non-spring.
+      enterOpacity.value = withTiming(1, { duration: 180, easing: Easing.out(Easing.cubic) });
+
+      // TranslateY: ease out to 0.
+      enterTranslateY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+
+      // Scale: subtle overshoot then settle (feels "native"/Apple-like).
+      enterScale.value = withSequence(
+        withTiming(1.02, { duration: 180, easing: Easing.out(Easing.cubic) }),
+        withSpring(1, { damping: 16, stiffness: 180, mass: 0.9 })
+      );
+    }
+  }, [isTop, enterOpacity, enterScale, enterTranslateY]);
 
   // Обновляем swRef при изменении windowWidth
   useEffect(() => { swRef.value = windowWidth; }, [windowWidth]);
 
-  const tapGesture = Gesture.Tap()
-    .enabled(isTop && !disabled)
-    .onEnd(() => {
-      if (!isFlipped.value) {
-        flipRotation.value = withTiming(180, { duration: 350 });
-        isFlipped.value = true;
-        runOnJS(triggerHapticLight)();
+  const swipeProgrammatically = (direction: 'left' | 'right') => {
+    if (!isTop) return;
+    if (disabled) return;
+    if (programmaticInFlightRef.current) return;
+
+    programmaticInFlightRef.current = true;
+
+    if (onDragActiveChange) {
+      onDragActiveChange(true);
+    }
+
+    const targetX = direction === 'right' ? windowWidth * 1.35 : -windowWidth * 1.35;
+    const durationMs = 320;
+
+    translateY.value = withTiming(0, { duration: 180, easing: Easing.out(Easing.cubic) });
+    translateX.value = withTiming(
+      targetX,
+      { duration: durationMs, easing: Easing.out(Easing.cubic) },
+      (finished) => {
+        if (!finished) return;
+        if (direction === 'right') {
+          runOnJS(onSwipeRight)();
+        } else {
+          runOnJS(onSwipeLeft)();
+        }
+        runOnJS(endProgrammaticSwipe)();
       }
+    );
+  };
+
+  useImperativeHandle(ref, () => ({
+    swipe: swipeProgrammatically,
+  }), [disabled, isTop, onSwipeLeft, onSwipeRight, windowWidth]);
+
+  const tapGesture = Gesture.Tap()
+    .enabled(isTop && !gesturesDisabled)
+    .onEnd(() => {
+      flipRotation.value = withTiming(isFlipped.value ? 0 : 180, { duration: 350 });
+      isFlipped.value = !isFlipped.value;
+      runOnJS(triggerHapticLight)();
     });
 
   const panGesture = Gesture.Pan()
-    .enabled(isTop && !disabled)
+    .enabled(isTop && !gesturesDisabled)
+    .onBegin(() => {
+      if (onDragActiveChange) {
+        runOnJS(onDragActiveChange)(true);
+      }
+    })
     .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY / 6;
@@ -85,7 +187,7 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
       }
     })
     .onEnd((event) => {
-      if (disabled) {
+      if (gesturesDisabled) {
         translateX.value = withSpring(0, { damping: 15 });
         translateY.value = withSpring(0, { damping: 15 });
         return;
@@ -107,11 +209,16 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
         translateY.value = withSpring(0, { damping: 15 });
         hapticTriggered.value = false;
       }
+    })
+    .onFinalize(() => {
+      if (onDragActiveChange) {
+        runOnJS(onDragActiveChange)(false);
+      }
     });
 
   const composedGesture = Gesture.Simultaneous(tapGesture, panGesture);
 
-  const scale = 1 - stackIndex * 0.03;
+  const baseScale = 1 - stackIndex * 0.03;
   const yOffset = stackIndex * 8;
 
   const animatedStyle = useAnimatedStyle(() => {
@@ -121,13 +228,19 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
       [-15, 0, 15],
       Extrapolation.CLAMP
     );
+
     return {
       transform: [
         { translateX: isTop ? translateX.value : 0 },
-        { translateY: isTop ? translateY.value + yOffset : yOffset },
+        {
+          translateY: isTop
+            ? translateY.value + yOffset + enterTranslateY.value
+            : yOffset,
+        },
         { rotate: `${isTop ? rotate : 0}deg` },
-        { scale },
+        { scale: baseScale * (isTop ? enterScale.value : 1) },
       ],
+      opacity: hidden ? 0 : (isTop ? enterOpacity.value : 1),
       zIndex: 10 - stackIndex,
     };
   });
@@ -177,19 +290,23 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
 
         {/* Лицевая сторона — слово */}
         <Animated.View style={[styles.cardFace, frontStyle]}>
-          <Text style={[styles.originalText, { color: colors.text }]}>{word.original}</Text>
+          <Text style={[styles.originalText, { color: colors.text }]}>
+            {frontSide === 'translation' ? safeTranslation : safeOriginal}
+          </Text>
           {isTop && (
             <View style={styles.tapHint}>
-              <Text style={[styles.tapHintText, { color: colors.muted }]}>Нажмите, чтобы увидеть перевод</Text>
+              <Text style={[styles.tapHintText, { color: colors.muted }]}>
+                Нажмите, чтобы увидеть {frontSide === 'translation' ? 'слово' : 'перевод'}
+              </Text>
             </View>
           )}
         </Animated.View>
 
         {/* Обратная сторона — перевод */}
         <Animated.View style={[styles.cardFace, backStyle]}>
-          <Text style={[styles.originalText, { color: colors.text }]}>{word.original}</Text>
+          <Text style={[styles.originalText, { color: colors.text }]}>{safeOriginal}</Text>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          <Text style={[styles.translationText, { color: colors.primary }]}>{word.translation}</Text>
+          <Text style={[styles.translationText, { color: colors.primary }]}>{safeTranslation}</Text>
           {isTop && (
             <View style={styles.tapHint}>
               <Text style={[styles.tapHintText, { color: colors.muted }]}>← не знаю · знаю →</Text>
@@ -199,7 +316,7 @@ export const SwipeCard = ({ word, onSwipeRight, onSwipeLeft, isTop, stackIndex, 
       </Animated.View>
     </GestureDetector>
   );
-};
+});
 
 const styles = StyleSheet.create({
   card: {

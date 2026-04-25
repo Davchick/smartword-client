@@ -35,7 +35,6 @@ class ErrorBoundaryInner extends Component<{ children: ReactNode; colors: Record
       return (
         <View style={[styles.container, { backgroundColor: colors.background }]} accessibilityRole="alert">
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-            <Text style={styles.emoji}>😵</Text>
             <Text style={[styles.title, { color: colors.text }]}>{'Что-то пошло не так'}</Text>
             <Text style={[styles.subtitle, { color: colors.muted }]}>
               Произошла непредвиденная ошибка. Попробуйте перезапустить приложение.
@@ -84,9 +83,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 16,
     paddingBottom: 40,
-  },
-  emoji: {
-    fontSize: 64,
   },
   title: {
     fontSize: 22,

@@ -12,7 +12,6 @@ import {
   StyleSheet,
   Animated,
   TouchableOpacity,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckCircle2, XCircle, Info, X } from 'lucide-react-native';
@@ -152,7 +151,12 @@ export const ToastProvider = ({ children }: { children: React.ReactNode }) => {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <View style={styles.container} pointerEvents="box-none" accessibilityRole="alert" aria-live="assertive">
+      <View
+        style={styles.container}
+        pointerEvents="box-none"
+        accessibilityRole="alert"
+        accessibilityLiveRegion="assertive"
+      >
         {toasts.map((t) => (
           <ToastBanner key={t.id} item={t} onDismiss={dismiss} />
         ))}
