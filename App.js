@@ -5,7 +5,6 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts } from 'expo-font';
-import { GoogleSignin, googleSignInAvailable } from './src/lib/googleSignIn';
 import {
   Poppins_600SemiBold,
   Poppins_700Bold,
@@ -66,17 +65,9 @@ const AppInner = () => {
   );
 };
 
-const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
-
 export default function App() {
   const scheme = useColorScheme();
   useEffect(() => {
-    if (googleSignInAvailable && GoogleSignin && GOOGLE_WEB_CLIENT_ID) {
-      GoogleSignin.configure({
-        webClientId: GOOGLE_WEB_CLIENT_ID,
-      });
-    }
-
     // НЕ запрашиваем уведомления при старте — это плохой UX.
     // Разрешения запрашиваются при первом действии пользователя (тренировка, профиль).
   }, []);

@@ -18,13 +18,11 @@ import { ArrowLeft, Eye, EyeOff, Mail, Lock } from 'lucide-react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiPost, setTokens, getBaseUrl } from '../../lib/api';
-import { GoogleSignin, googleSignInAvailable } from '../../lib/googleSignIn';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../components/Toast';
 import { useTheme, fonts } from '../../theme';
 import { importGuestDataIfNeeded } from '../../lib/guestImport';
 import type { RootStackParamList } from '../../navigation/types';
-import { Image } from 'react-native';
 import { useDeviceSize } from '../../hooks/useDeviceSize';
 import { useResponsiveTypography } from '../../hooks/useResponsiveTypography';
 import { moderateScale } from '../../utils/responsive';
@@ -90,24 +88,6 @@ const useSignInStyles = () => {
         borderRadius: radii.md,
         paddingVertical: spacing.md,
         marginTop: spacing.sm,
-      },
-
-      // Google button
-      googleBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: spacing.sm,
-        borderRadius: radii.md,
-        borderWidth: 1,
-        paddingVertical: spacing.md - 2,
-      },
-      googleIconWrap: {
-        width: spacing.lg,
-        height: spacing.lg,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 4,
       },
 
       // Agreement
@@ -194,11 +174,6 @@ const useSignInStyles = () => {
       fontFamily: fonts.bold,
       color: '#FFFFFF',
     },
-    // Google button text
-    googleBtnText: {
-      fontSize: typography.body,
-      fontFamily: fonts.medium,
-    },
     // Forgot link text
     forgotLinkText: {
       fontSize: typography.small,
@@ -233,18 +208,6 @@ const useSignInStyles = () => {
   };
 };
 
-// Google логотип (PNG из assets)
-const GoogleIcon = () => {
-  const iconSize = moderateScale(20);
-  return (
-    <Image
-      source={require('../../../assets/google.png')}
-      style={{ width: iconSize, height: iconSize }}
-      resizeMode="contain"
-    />
-  );
-};
-
 export const SignInScreen = ({ route, navigation }: Props) => {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
@@ -259,7 +222,6 @@ export const SignInScreen = ({ route, navigation }: Props) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -426,85 +388,6 @@ export const SignInScreen = ({ route, navigation }: Props) => {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    if (!googleSignInAvailable || !GoogleSignin) {
-      showToast('Вход через Google доступен только в сборке приложения (npx expo run:android). В Expo Go используйте email и пароль.', 'error');
-      return;
-    }
-    if (!getBaseUrl()) {
-      showToast('Настройте EXPO_PUBLIC_API_URL в .env', 'error');
-      return;
-    }
-    if (!process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID) {
-      showToast('Настройте EXPO_PUBLIC_GOOGLE_CLIENT_ID в .env для входа через Google', 'error');
-      return;
-    }
-    setGoogleLoading(true);
-    try {
-      if (Platform.OS === 'android') {
-        const hasPlayServices = await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-        if (!hasPlayServices) {
-          showToast('Установите Google Play Services', 'error');
-          return;
-        }
-      }
-      const result = await GoogleSignin.signIn();
-      if (result.type === 'cancelled') {
-        return;
-      }
-      if (result.type !== 'success') {
-        showToast('Вход через Google отменён', 'error');
-        return;
-      }
-      let idToken = result.data.idToken;
-      if (!idToken) {
-        const tokens = await GoogleSignin.getTokens();
-        idToken = tokens.idToken;
-      }
-      if (!idToken) {
-        showToast('Не удалось получить токен. Проверьте EXPO_PUBLIC_GOOGLE_CLIENT_ID (Web client ID).', 'error');
-        return;
-      }
-      const data = await apiPost<{
-        access_token?: string;
-        refresh_token?: string;
-        user?: { id: string; email: string; is_premium: boolean; ai_messages_used: number };
-      }>('/auth/google', { id_token: idToken }, { skipAuth: true });
-      if (data.access_token && data.refresh_token && data.user) {
-        await setTokens(data.access_token, data.refresh_token);
-        setUser({
-          id: data.user.id,
-          email: data.user.email,
-          is_premium: data.user.is_premium,
-          ai_messages_used: data.user.ai_messages_used,
-          created_at: new Date().toISOString(),
-        });
-        await setHasAccount(true);
-        await setGuestMode(false);
-        const existing = await AsyncStorage.getItem('smartword_nickname');
-        if (!existing?.trim()) {
-          await AsyncStorage.setItem('smartword_nickname', nicknameFromEmail(data.user.email));
-        }
-        await importGuestDataIfNeeded(data.user.id);
-        showToast('Добро пожаловать!', 'success');
-      }
-    } catch (err: unknown) {
-      const e = err as { message?: string; code?: string; body?: { error?: string } };
-      let msg = e?.body?.error;
-      if (!msg && e?.message) {
-        if (/NativeModule|RNGoogleSignin|not found/i.test(e.message)) {
-          msg = 'Вход через Google требует сборку приложения (npx expo run:android). Expo Go не поддерживается.';
-        } else {
-          msg = e.message;
-        }
-      }
-      if (!msg) msg = 'Ошибка входа через Google. Попробуйте позже.';
-      showToast(msg, 'error');
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
-
   const inputBorder = useCallback((focused: boolean) => ({
     borderBottomWidth: focused ? 2 : 1,
     borderBottomColor: focused ? colors.primary : isDark ? 'rgba(148,163,184,0.3)' : 'rgba(148,163,184,0.4)',
@@ -631,29 +514,6 @@ export const SignInScreen = ({ route, navigation }: Props) => {
                     </Text>
                   )}
                 </TouchableOpacity>
-
-                {/* Google button */}
-                {googleSignInAvailable && (
-                  <TouchableOpacity
-                    style={[styles.googleBtn, { borderColor: isDark ? 'rgba(148,163,184,0.3)' : 'rgba(148,163,184,0.4)' }]}
-                    onPress={handleGoogleSignIn}
-                    disabled={googleLoading}
-                    activeOpacity={0.7}
-                  >
-                    {googleLoading ? (
-                      <ActivityIndicator color={colors.text} size="small" />
-                    ) : (
-                      <>
-                        <View style={styles.googleIconWrap}>
-                          <GoogleIcon />
-                        </View>
-                        <Text style={[styles.googleBtnText, { color: colors.text }]}>
-                          Продолжить через Google
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                )}
 
                 {/* Agreement checkboxes */}
                 {isSignUp && (
